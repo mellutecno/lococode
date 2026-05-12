@@ -1,0 +1,1100 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  Bot,
+  Check,
+  CircleHelp,
+  ClipboardList,
+  Code2,
+  Database,
+  FileStack,
+  FolderKanban,
+  LayoutDashboard,
+  Maximize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Search,
+  Send,
+  SlidersHorizontal,
+  Sparkles,
+  Workflow,
+  X,
+} from "lucide-react";
+import { COMMON_MODELS, MODEL_LABELS } from "./models.js";
+
+const API_BASE = (import.meta.env.VITE_LOCOCODE_API_URL || "").replace(/\/$/, "");
+
+const quickPrompts = [
+  {
+    label: "Gestionale studio medico",
+    icon: Activity,
+    prompt:
+      "Voglio una web app gestionale per cure mediche e dentistiche: pazienti, appuntamenti, preventivi, piani cura, pagamenti e dashboard studio. Non deve fornire diagnosi o consigli medici.",
+  },
+  {
+    label: "Dashboard commerciale",
+    icon: LayoutDashboard,
+    prompt: "Voglio una dashboard per commercialisti con clienti, fatture, scadenze fiscali, report e notifiche.",
+  },
+  {
+    label: "CRM operativo",
+    icon: ClipboardList,
+    prompt: "Crea un CRM operativo con pipeline, contatti, attivita, preventivi e report vendite.",
+  },
+];
+
+export default function App() {
+  const [activeView, setActiveView] = useState("apps");
+  const [apps, setApps] = useState([]);
+  const [selectedAppId, setSelectedAppId] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [chatPrompt, setChatPrompt] = useState("");
+  const [model, setModel] = useState(COMMON_MODELS[0]);
+  const [apiKey, setApiKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("Pronto");
+  const [error, setError] = useState("");
+  const [apiCheck, setApiCheck] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [theme, setTheme] = useState(() => localStorage.getItem("lococode-theme") || "light");
+  const [projectsPanelOpen, setProjectsPanelOpen] = useState(
+    () => localStorage.getItem("lococode-projects-panel-open") !== "false",
+  );
+
+  const selectedApp = useMemo(
+    () => apps.find((app) => app.id === selectedAppId) || apps[0] || null,
+    [apps, selectedAppId],
+  );
+
+  const filteredApps = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return apps;
+    return apps.filter((app) => app.name?.toLowerCase().includes(query));
+  }, [apps, searchTerm]);
+
+  useEffect(() => {
+    void bootstrap();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("lococode-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("lococode-projects-panel-open", projectsPanelOpen ? "true" : "false");
+  }, [projectsPanelOpen]);
+
+  useEffect(() => {
+    const shouldPoll = selectedApp && (selectedApp.status === "building" || selectedApp.autopilot?.running);
+    if (!shouldPoll) return undefined;
+
+    const timer = window.setInterval(() => {
+      void refreshApps(selectedApp.id);
+    }, 2400);
+
+    return () => window.clearInterval(timer);
+  }, [selectedApp?.id, selectedApp?.status, selectedApp?.autopilot?.running]);
+
+  async function bootstrap() {
+    const [settingsResponse, appsResponse] = await Promise.all([
+      apiFetch("/api/settings"),
+      apiFetch("/api/apps"),
+    ]);
+    const settings = await readApiJson(settingsResponse);
+    const appData = await readApiJson(appsResponse);
+    setApiKey(settings.openrouterApiKey || "");
+    setModel(settings.defaultModel || COMMON_MODELS[0]);
+    setApps(appData.apps || []);
+    if (appData.apps?.[0]) setSelectedAppId(appData.apps[0].id);
+  }
+
+  async function saveSettings() {
+    setStatus("Salvataggio impostazioni...");
+    const response = await apiFetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openrouterApiKey: apiKey, defaultModel: model }),
+    });
+    const data = await readApiJson(response);
+    setApiKey(data.openrouterApiKey || "");
+    setModel(data.defaultModel || COMMON_MODELS[0]);
+    setStatus("Impostazioni salvate");
+  }
+
+  async function generateApp({ text, appId = "", overrideModel = "" }) {
+    const cleanPrompt = text.trim();
+    if (!cleanPrompt || busy) return;
+    const chosenModel = overrideModel || model;
+
+    setBusy(true);
+    setError("");
+    setStatus(`Avvio orchestrator con ${modelLabel(chosenModel)}`);
+
+    try {
+      const response = await apiFetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: cleanPrompt,
+          model: chosenModel,
+          appId,
+          openrouterApiKey: apiKey,
+        }),
+      });
+
+      const data = await readApiJson(response);
+      if (!response.ok) {
+        if (data.app?.id) {
+          await refreshApps(data.app.id);
+          setActiveView("chat");
+        }
+        throw new Error(data.error || "Generazione non riuscita.");
+      }
+
+      await refreshApps(data.app.id);
+      setPrompt("");
+      setChatPrompt("");
+      setActiveView("chat");
+      setStatus(`Autopilota avviato con ${modelLabel(chosenModel)}`);
+      if (data.error) setError(data.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStatus("Errore");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshApps(nextSelectedId = selectedAppId) {
+    const response = await apiFetch("/api/apps");
+    const data = await readApiJson(response);
+    setApps(data.apps || []);
+    if (nextSelectedId) setSelectedAppId(nextSelectedId);
+    else if (data.apps?.[0]) setSelectedAppId(data.apps[0].id);
+  }
+
+  async function resumeAutopilot() {
+    if (!selectedApp || busy) return;
+    const projectModel = selectedApp.model || model;
+
+    setBusy(true);
+    setError("");
+    setStatus(`Riavvio autopilota con ${modelLabel(projectModel)}`);
+
+    try {
+      const response = await apiFetch(`/api/apps/${selectedApp.id}/autopilot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: projectModel, openrouterApiKey: apiKey }),
+      });
+      const data = await readApiJson(response);
+      if (!response.ok) {
+        if (data.app?.id) await refreshApps(data.app.id);
+        throw new Error(data.error || "Continuazione non riuscita.");
+      }
+      await refreshApps(data.app.id);
+      setActiveView("chat");
+      setStatus(`Autopilota attivo con ${modelLabel(projectModel)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStatus("Errore");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function testApiConnection() {
+    setApiCheck("Test OpenRouter in corso...");
+    setStatus("Test API...");
+    setError("");
+    try {
+      const response = await apiFetch("/api/check-openrouter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ openrouterApiKey: apiKey, model }),
+      });
+      const data = await readApiJson(response);
+      if (!response.ok) throw new Error(data.error || "Test API fallito.");
+      setApiCheck(`Connessione riuscita con ${modelLabel(data.model)} in ${data.ms} ms`);
+      setStatus("API pronta");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setApiCheck(`Errore API: ${message}`);
+      setError(message);
+      setStatus("Errore API");
+    }
+  }
+
+  return (
+    <main className={`app-shell ${theme === "dark" ? "theme-dark" : ""} ${projectsPanelOpen ? "" : "projects-collapsed"}`}>
+      <Rail activeView={activeView} setActiveView={setActiveView} />
+
+      <ProjectsSidebar
+        apps={filteredApps}
+        selectedApp={selectedApp}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        setActiveView={setActiveView}
+        setSelectedAppId={setSelectedAppId}
+        open={projectsPanelOpen}
+        onToggle={() => setProjectsPanelOpen((value) => !value)}
+      />
+
+      <section className="main-stage">
+        <AppHeader
+          selectedApp={selectedApp}
+          status={status}
+          activeView={activeView}
+          onSettings={() => setActiveView("settings")}
+        />
+
+        {activeView === "apps" && (
+          <HomeView
+            prompt={prompt}
+            setPrompt={setPrompt}
+            model={model}
+            setModel={setModel}
+            busy={busy}
+            onGenerate={() => generateApp({ text: prompt })}
+            onQuick={(text) => {
+              setPrompt(text);
+              void generateApp({ text });
+            }}
+          />
+        )}
+
+        {activeView === "chat" && (
+          <ChatView
+            app={selectedApp}
+            chatPrompt={chatPrompt}
+            setChatPrompt={setChatPrompt}
+            busy={busy}
+            status={status}
+            error={error}
+            onSend={() => generateApp({ text: chatPrompt, appId: selectedApp?.id || "", overrideModel: selectedApp?.model || model })}
+            onResume={resumeAutopilot}
+          />
+        )}
+
+        {activeView === "settings" && (
+          <SettingsView
+            apiKey={apiKey}
+            setApiKey={setApiKey}
+            model={model}
+            setModel={setModel}
+            theme={theme}
+            setTheme={setTheme}
+            onSave={saveSettings}
+            onTest={testApiConnection}
+            apiCheck={apiCheck}
+          />
+        )}
+
+        {activeView === "help" && <HelpView />}
+
+        {error && <div className="toast">{error}</div>}
+      </section>
+    </main>
+  );
+}
+
+function Rail({ activeView, setActiveView }) {
+  return (
+    <nav className="rail">
+      <img className="rail-logo" src="/lococode_logo.png" alt="LocoCode" />
+      <NavButton icon={FolderKanban} label="Progetti" active={activeView === "apps"} onClick={() => setActiveView("apps")} />
+      <NavButton icon={Workflow} label="Orch." active={activeView === "chat"} onClick={() => setActiveView("chat")} title="Orchestrator" />
+      <div className="rail-spacer" />
+      <NavButton icon={CircleHelp} label="Aiuto" active={activeView === "help"} onClick={() => setActiveView("help")} />
+    </nav>
+  );
+}
+
+function NavButton({ active, icon: Icon, label, onClick, title }) {
+  return (
+    <button className={`rail-button ${active ? "active" : ""}`} onClick={onClick} title={title || label}>
+      <Icon size={25} strokeWidth={2.15} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function ProjectsSidebar({ apps, selectedApp, searchTerm, setSearchTerm, setActiveView, setSelectedAppId, open, onToggle }) {
+  if (!open) {
+    return (
+      <aside className="projects-panel collapsed-panel">
+        <button className="panel-toggle vertical" onClick={onToggle} aria-label="Apri pannello progetti" title="Apri progetti">
+          <PanelLeftOpen size={20} />
+          <span>Progetti</span>
+        </button>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="projects-panel">
+      <div className="panel-brand-row">
+        <div className="panel-brand">
+          <strong>LocoCode</strong>
+          <span>Orchestrator Web</span>
+        </div>
+        <button className="panel-toggle" onClick={onToggle} aria-label="Chiudi pannello progetti" title="Chiudi pannello progetti">
+          <PanelLeftClose size={20} />
+        </button>
+      </div>
+      <button className="sidebar-command" onClick={() => setActiveView("apps")}>
+        <Plus size={22} />
+        <span>Nuovo progetto</span>
+      </button>
+      <label className="sidebar-search">
+        <Search size={22} />
+        <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Cerca progetti" />
+      </label>
+
+      <section className="project-section">
+        <h3>Progetti recenti</h3>
+        <div className="app-list">
+          {apps.map((app) => (
+            <button
+              key={app.id}
+              className={`app-item ${selectedApp?.id === app.id ? "selected" : ""}`}
+              onClick={() => {
+                setSelectedAppId(app.id);
+                setActiveView("chat");
+              }}
+            >
+              <strong>{app.name}</strong>
+              <span>{formatDate(app.updatedAt)}</span>
+            </button>
+          ))}
+          {!apps.length && <p className="empty">Nessun progetto ancora.</p>}
+        </div>
+      </section>
+    </aside>
+  );
+}
+
+function AppHeader({ selectedApp, status, activeView, onSettings }) {
+  const label =
+    activeView === "chat" && selectedApp
+      ? selectedApp.name
+      : activeView === "settings"
+        ? "Impostazioni"
+        : activeView === "help"
+          ? "Aiuto"
+          : "Nuovo progetto";
+
+  const taskText = activeView === "chat" && selectedApp ? projectTaskState(selectedApp).header : status;
+
+  return (
+    <header className="app-header">
+      <div className="header-title">
+        <span>{activeView === "help" ? "Guida" : activeView === "settings" ? "Configurazione" : "Area di lavoro"}</span>
+        <strong>{label}</strong>
+      </div>
+      <p className={activeView === "chat" && selectedApp?.status === "error" ? "status-error" : ""}>{taskText}</p>
+      {activeView !== "settings" && (
+        <button className="settings-button" aria-label="Impostazioni" onClick={onSettings}>
+          <SlidersHorizontal size={20} />
+          <span>Impostazioni</span>
+        </button>
+      )}
+    </header>
+  );
+}
+
+function HomeView({ prompt, setPrompt, model, setModel, busy, onGenerate, onQuick }) {
+  return (
+    <div className="home-view">
+      <section className="hero-block">
+        <h1>Crea una nuova app</h1>
+        <Composer
+          value={prompt}
+          onChange={setPrompt}
+          model={model}
+          setModel={setModel}
+          busy={busy}
+          placeholder="Descrivi l'app da creare..."
+          onSubmit={onGenerate}
+        />
+      </section>
+
+      <div className="quick-row">
+        {quickPrompts.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button key={item.label} onClick={() => onQuick(item.prompt)} disabled={busy}>
+              <Icon size={22} />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <section className="orchestrator-note">
+        <Code2 size={28} />
+        <div>
+          <strong>Flusso automatico SDD</strong>
+          <span>Il primo prompt genera specifiche, task, file progetto e anteprima.</span>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Composer({ value, onChange, model, setModel, busy, placeholder, onSubmit, showModel = true }) {
+  return (
+    <section className="composer">
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+      <button className="send-button" aria-label="Genera" disabled={busy || !value.trim()} onClick={onSubmit}>
+        {busy ? <Sparkles className="spin" size={26} /> : <Send size={26} />}
+      </button>
+      <div className="composer-footer">
+        <span className="agent-chip">
+          <Bot size={18} />
+          Orchestrator SDD
+        </span>
+        {showModel && <ModelSelect value={model} onChange={setModel} compact />}
+      </div>
+    </section>
+  );
+}
+
+function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume }) {
+  const [projectPanel, setProjectPanel] = useState("sdd");
+  const [expandedPanel, setExpandedPanel] = useState(false);
+  const visibleMessages = lastConversationMessages(app?.messages || []);
+  const taskState = app ? projectTaskState(app) : null;
+  const canResume =
+    app && !app.autopilot?.running && !busy && (app.sdd?.currentStep || ["error", "partial", "paused"].includes(app.status));
+
+  useEffect(() => {
+    if (!expandedPanel) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [expandedPanel]);
+
+  if (!app) {
+    return (
+      <div className="empty-state">
+        <h1>Nessun progetto selezionato</h1>
+        <p>Crea un progetto dal prompt iniziale per avviare il flusso SDD.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-layout">
+      <section className="chat-panel">
+        <div className="panel-title">
+          <div>
+            <span>Orchestrator SDD</span>
+            <h2>{app.name}</h2>
+          </div>
+          <em>{app.fileCount || app.files?.length || 0} file</em>
+        </div>
+
+        <div className="orchestrator-strip">
+          <div className={`task-card ${app.status === "error" ? "has-error" : ""}`}>
+            <span>{taskState.kicker}</span>
+            <strong>{taskState.label}</strong>
+            <em>{taskState.meta}</em>
+          </div>
+          {canResume && (
+            <button className="secondary-action compact" disabled={busy} onClick={onResume}>
+              Riprendi
+            </button>
+          )}
+        </div>
+
+        <SddPanel app={app} />
+
+        <OperationLog app={app} status={status} error={error} />
+
+        <div className="conversation-heading">
+          <strong>Ultimo scambio</strong>
+          <span>La cronologia completa resta salvata nel progetto.</span>
+        </div>
+        <div className="messages">
+          {visibleMessages.map((message, index) => (
+            <article key={`${message.at}-${index}`} className={`message ${message.role}`}>
+              <p>{message.content}</p>
+            </article>
+          ))}
+          {!visibleMessages.length && <p className="messages-empty">L'ultimo scambio apparira qui.</p>}
+        </div>
+
+        <Composer
+          value={chatPrompt}
+          onChange={setChatPrompt}
+          model={app.model}
+          setModel={() => {}}
+          busy={busy}
+          placeholder="Chiedi una modifica al progetto selezionato..."
+          onSubmit={onSend}
+          showModel={false}
+        />
+      </section>
+
+      <section className="preview-panel">
+        <div className="panel-title">
+          <div>
+            <span>Progetto</span>
+            <h2>{panelTitle(projectPanel, app)}</h2>
+          </div>
+          <div className="panel-actions">
+            <em>{modelLabel(app.model)}</em>
+            <button className="fullscreen-button" onClick={() => setExpandedPanel(true)} aria-label="Apri a schermo intero">
+              <Maximize2 size={18} />
+              <span>Apri grande</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="project-tabs">
+          <button className={projectPanel === "preview" ? "active" : ""} onClick={() => setProjectPanel("preview")}>Anteprima</button>
+          <button className={projectPanel === "sdd" ? "active" : ""} onClick={() => setProjectPanel("sdd")}>SDD</button>
+          <button className={projectPanel === "files" ? "active" : ""} onClick={() => setProjectPanel("files")}>File</button>
+        </div>
+
+        <ProjectPanelContent projectPanel={projectPanel} app={app} />
+      </section>
+
+      {expandedPanel && (
+        <section
+          className="fullscreen-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-label={panelTitle(projectPanel, app)}
+          onWheel={(event) => event.stopPropagation()}
+        >
+          <div className="fullscreen-card">
+            <header>
+              <div>
+                <span>Progetto</span>
+                <h2>{panelTitle(projectPanel, app)}</h2>
+              </div>
+              <button onClick={() => setExpandedPanel(false)} aria-label="Chiudi schermo intero">
+                <X size={24} />
+              </button>
+            </header>
+            <ProjectPanelContent projectPanel={projectPanel} app={app} fullscreen />
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function OperationLog({ app, status, error }) {
+  const lastAssistant = [...(app.messages || [])].reverse().find((message) => message.role === "assistant");
+  const report = app.autopilot?.error;
+  const hasError = Boolean(error || report) || app.status === "error" || /errore|timeout|interrott/i.test(lastAssistant?.content || "");
+  const text = error || report?.cause || lastAssistant?.content || "Nessuna operazione registrata per ora.";
+
+  return (
+    <section className={`operation-log ${hasError ? "has-error" : ""}`}>
+      <div>
+        <strong>Registro operativo</strong>
+        <span>{projectTaskState(app).short}</span>
+      </div>
+      <div className="operation-body">
+        {report ? (
+          <>
+            <strong>{report.title || "Orchestrator fermo"}</strong>
+            <p>{report.task ? `Task: ${report.task}` : text}</p>
+            <p>{report.cause}</p>
+            {report.suggestion && <p>{report.suggestion}</p>}
+          </>
+        ) : (
+          <p>{text}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ProjectPanelContent({ projectPanel, app, fullscreen = false }) {
+  if (projectPanel === "preview") {
+    return <iframe className={fullscreen ? "fullscreen-iframe" : ""} title="Anteprima LocoCode" srcDoc={app.html || emptyPreviewHtml()} />;
+  }
+
+  if (projectPanel === "sdd") return <SddDocumentsPanel app={app} fullscreen={fullscreen} />;
+  if (projectPanel === "files") return <FilesPanel app={app} />;
+  return <SddDocumentsPanel app={app} fullscreen={fullscreen} />;
+}
+
+function panelTitle(projectPanel, app) {
+  if (projectPanel === "sdd") return "Specifiche SDD";
+  if (projectPanel === "files") return "File progetto";
+  return app.status === "building" ? "Generazione in corso" : "Anteprima";
+}
+
+function projectTaskState(app) {
+  const steps = app?.sdd?.steps || [];
+  const doneCount = steps.filter((step) => step.done).length;
+  const total = steps.length;
+  const progress = total ? `${doneCount}/${total}` : "SDD";
+  const task = app?.autopilot?.currentTask || app?.sdd?.currentStep?.label || "";
+  const model = modelLabel(app?.model);
+
+  if (!app) {
+    return {
+      header: "Nessun progetto selezionato",
+      kicker: "Stato",
+      label: "Nessun progetto selezionato",
+      meta: "",
+      short: "Pronto",
+    };
+  }
+
+  if (app.status === "error") {
+    return {
+      header: `Fermo per errore - ${progress}`,
+      kicker: "Errore da correggere",
+      label: task || "Task non completato",
+      meta: `${progress} - ${model}`,
+      short: "Fermo per errore",
+    };
+  }
+
+  if (app.autopilot?.running || app.status === "building") {
+    return {
+      header: `Autopilota attivo - ${progress}`,
+      kicker: "Task corrente",
+      label: task || "Preparazione SDD",
+      meta: `${progress} - ${model}`,
+      short: "In lavorazione",
+    };
+  }
+
+  if (task) {
+    return {
+      header: `Piano SDD - ${progress}`,
+      kicker: "Prossimo task",
+      label: task,
+      meta: `${progress} - ${model}`,
+      short: app.status === "partial" || app.status === "paused" ? "In pausa" : "Pronto",
+    };
+  }
+
+  return {
+    header: total ? `Piano SDD completato - ${progress}` : "In attesa del piano SDD",
+    kicker: total ? "Piano completato" : "Piano in preparazione",
+    label: total ? "Tutti i task SDD risultano completati" : "In attesa del primo prompt",
+    meta: `${progress} - ${model}`,
+    short: total ? "Completato" : "Pronto",
+  };
+}
+
+function lastConversationMessages(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  if (!list.length) return [];
+
+  const lastAssistantIndex = findLastIndex(list, (message) => message.role === "assistant");
+  if (lastAssistantIndex >= 0) {
+    const lastUserIndex = findLastIndex(
+      list.slice(0, lastAssistantIndex),
+      (message) => message.role === "user",
+    );
+    const result = [];
+    if (lastUserIndex >= 0) result.push(list[lastUserIndex]);
+    result.push(list[lastAssistantIndex]);
+    return result;
+  }
+
+  const lastUser = [...list].reverse().find((message) => message.role === "user");
+  return lastUser ? [lastUser] : [list[list.length - 1]];
+}
+
+function findLastIndex(list, predicate) {
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    if (predicate(list[index], index)) return index;
+  }
+  return -1;
+}
+
+function SddDocumentsPanel({ app, fullscreen = false }) {
+  const specs = app.sdd?.specs || {};
+  const [selectedDocument, setSelectedDocument] = useState(0);
+  const documents = [
+    { title: "Documento SDD", content: specs.sdd },
+    { title: "Requisiti", content: specs.requirements },
+    { title: "Architettura", content: specs.architecture },
+    { title: "Task operativi", content: specs.tasks },
+    { title: "Memoria progetto", content: specs.memory },
+  ].filter((item) => String(item.content || "").trim());
+
+  const activeDocument = documents[Math.min(selectedDocument, Math.max(documents.length - 1, 0))];
+
+  if (!documents.length) {
+    return (
+      <section className="sdd-compact-panel">
+        <div className="panel-empty">
+          <strong>SDD non ancora generato</strong>
+          <span>Quando avvii il primo prompt, qui vedrai specifiche, requisiti, architettura e task creati dall'orchestrator.</span>
+        </div>
+      </section>
+    );
+  }
+
+  if (!fullscreen) {
+    return (
+      <section className="sdd-compact-panel">
+        {documents.map((document) => (
+          <article className="sdd-compact-card" key={document.title}>
+            <strong>{document.title}</strong>
+            <p>{compactExcerpt(document.content)}</p>
+          </article>
+        ))}
+      </section>
+    );
+  }
+
+  return (
+    <section className="sdd-documents">
+      <nav className="sdd-doc-nav" aria-label="Documenti SDD">
+        {documents.map((document, index) => (
+          <button
+            key={document.title}
+            className={index === selectedDocument ? "active" : ""}
+            onClick={() => setSelectedDocument(index)}
+          >
+            {document.title}
+          </button>
+        ))}
+      </nav>
+        <article className="sdd-reader">
+          <header>
+            <span>Documento</span>
+            <h3>{activeDocument.title}</h3>
+          </header>
+        <div className="sdd-readable">{renderSddContent(activeDocument.content)}</div>
+      </article>
+    </section>
+  );
+}
+
+function renderSddContent(content) {
+  return String(content || "")
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const trimmed = line.trim();
+      if (!trimmed) return <div className="sdd-space" key={index} />;
+
+      const h1 = trimmed.match(/^#\s+(.+)/);
+      if (h1) return <h2 key={index}>{cleanInlineMarkdown(h1[1])}</h2>;
+
+      const h2 = trimmed.match(/^##\s+(.+)/);
+      if (h2) return <h3 key={index}>{cleanInlineMarkdown(h2[1])}</h3>;
+
+      const h3 = trimmed.match(/^###\s+(.+)/);
+      if (h3) return <h4 key={index}>{cleanInlineMarkdown(h3[1])}</h4>;
+
+      const checked = trimmed.match(/^[-*]\s+\[[xX]\]\s+(.+)/);
+      if (checked) return <p className="sdd-task done" key={index}>{cleanInlineMarkdown(checked[1])}</p>;
+
+      const unchecked = trimmed.match(/^[-*]\s+\[\s\]\s+(.+)/);
+      if (unchecked) return <p className="sdd-task" key={index}>{cleanInlineMarkdown(unchecked[1])}</p>;
+
+      const bullet = trimmed.match(/^[-*]\s+(.+)/);
+      if (bullet) return <p className="sdd-bullet" key={index}>{cleanInlineMarkdown(bullet[1])}</p>;
+
+      return <p key={index}>{cleanInlineMarkdown(trimmed)}</p>;
+    });
+}
+
+function cleanInlineMarkdown(value) {
+  return String(value || "")
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .trim();
+}
+
+function compactExcerpt(content) {
+  return String(content || "")
+    .replace(/[#*_`>-]/g, "")
+    .replace(/\[[ xX]\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 190) || "Documento in preparazione.";
+}
+
+function FilesPanel({ app }) {
+  const files = app.files || [];
+
+  return (
+    <section className="file-browser">
+      <div className="file-summary">
+        <strong>{files.length} file</strong>
+        <span>Cartella progetto: {app.storagePath || "web/data/projects"}</span>
+      </div>
+      <div className="file-list">
+        {files.map((file) => (
+          <div className="file-row" key={file}>
+            <FileStack size={16} />
+            <span>{file}</span>
+          </div>
+        ))}
+        {!files.length && (
+          <div className="panel-empty">
+            <strong>Nessun file generato</strong>
+            <span>Quando avvii un progetto, qui vedrai specifiche SDD, frontend, backend, configurazioni e preview.</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DataPanel({ app }) {
+  const files = app.files || [];
+  const hasBackend = files.some((file) => file.startsWith("backend/"));
+  const hasSpec = Boolean(app.sdd?.specs?.architecture || app.sdd?.specs?.requirements);
+  const databaseNote = extractDatabaseNote(app.sdd?.specs?.architecture || app.sdd?.specs?.requirements || "");
+
+  return (
+    <section className="data-panel">
+      <div className="data-grid">
+        <article>
+          <Database size={22} />
+          <strong>Database progetto</strong>
+          <span>{hasBackend ? "Backend generato: pronto per schema e API." : "Sara creato quando l'orchestrator genera il backend."}</span>
+        </article>
+        <article>
+          <FolderKanban size={22} />
+          <strong>Progetti utente</strong>
+          <span>In produzione saranno collegati a login, token o account utente.</span>
+        </article>
+        <article>
+          <Workflow size={22} />
+          <strong>Prompt e run</strong>
+          <span>Ogni richiesta e ogni fase SDD verranno salvate sul server.</span>
+        </article>
+        <article>
+          <FileStack size={22} />
+          <strong>File generati</strong>
+          <span>Il server conservera versioni e contenuti dei file progetto.</span>
+        </article>
+      </div>
+
+      <div className="data-note">
+        <strong>{hasSpec ? "Note dati dalla specifica" : "Schema dati in attesa"}</strong>
+        <p>{databaseNote || "Dopo la prima generazione, questa sezione mostrera database, tabelle/API previste e collegamento ai file backend."}</p>
+      </div>
+    </section>
+  );
+}
+
+function SddPanel({ app }) {
+  const [open, setOpen] = useState(false);
+  const steps = app.sdd?.steps || [];
+  const specPaths = app.sdd?.filePaths || [];
+  const doneCount = steps.filter((step) => step.done).length;
+  const planSummary = steps.length
+    ? open
+      ? "Dettaglio piano operativo"
+      : `${doneCount} task completati su ${steps.length}`
+    : "Piano in preparazione";
+
+  return (
+    <section className={`sdd-panel ${open ? "open" : "collapsed"}`}>
+      <button className="sdd-toggle" onClick={() => setOpen((value) => !value)}>
+        <div>
+          <strong>Piano progetto</strong>
+          <span>{planSummary}</span>
+        </div>
+        <em>{steps.length ? `${doneCount}/${steps.length}` : "Apri"}</em>
+      </button>
+
+      {open && (
+        <>
+          <div className="sdd-files">
+            {specPaths.length ? specPaths.map((file) => <span key={file}>{file}</span>) : <span>Specifiche in preparazione</span>}
+          </div>
+          <div className="sdd-steps">
+            {steps.slice(0, 8).map((step) => (
+              <div key={step.id} className={`sdd-step ${step.done ? "done" : ""}`}>
+                <span>{step.done ? <Check size={13} /> : ""}</span>
+                <p>{step.label}</p>
+              </div>
+            ))}
+            {!steps.length && <p className="sdd-empty">Il piano operativo comparira dopo la prima generazione.</p>}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function SettingsView({ apiKey, setApiKey, model, setModel, theme, setTheme, onSave, onTest, apiCheck }) {
+  return (
+    <div className="settings-view">
+      <section className="settings-card">
+        <h1>Impostazioni</h1>
+        <label>
+          API key OpenRouter
+          <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} type="password" />
+        </label>
+        <label>
+          Modello predefinito
+          <ModelSelect value={model} onChange={setModel} />
+        </label>
+        <label>
+          Lingua interfaccia
+          <select className="model-input" value="it" disabled>
+            <option value="it">Italiano</option>
+          </select>
+        </label>
+        <div className="settings-row">
+          <span>Aspetto</span>
+          <div className="segmented-control" role="group" aria-label="Aspetto interfaccia">
+            <button className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")} type="button">
+              Chiaro
+            </button>
+            <button className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")} type="button">
+              Scuro
+            </button>
+          </div>
+        </div>
+        <div className="settings-actions">
+          <button className="secondary-action" onClick={onTest}>Test API</button>
+          <button className="primary" onClick={onSave}>Salva impostazioni</button>
+        </div>
+        {apiCheck && <p className="api-check">{apiCheck}</p>}
+      </section>
+    </div>
+  );
+}
+
+function HelpView() {
+  const cards = [
+    {
+      icon: FolderKanban,
+      title: "Progetti",
+      text: "Sono le app create dall'utente. Ogni progetto avra prompt, specifiche SDD, file generati, anteprima e cronologia.",
+    },
+    {
+      icon: Workflow,
+      title: "Orchestrator SDD",
+      text: "E il motore che trasforma il primo prompt in requisiti, architettura, task e file. L'utente non deve guidare ogni passo.",
+    },
+    {
+      icon: FileStack,
+      title: "File",
+      text: "Sono i file prodotti dall'orchestrator: frontend, backend, configurazioni, specifiche e preview. Li trovi dentro il progetto selezionato, nel pannello File.",
+    },
+    {
+      icon: Database,
+      title: "Dati",
+      text: "Sono database, tabelle, record demo e struttura dati dell'app generata. Per ora li leggi dentro SDD e backend; più avanti avranno una sezione tecnica dedicata.",
+    },
+  ];
+
+  return (
+    <div className="help-view">
+      <section className="help-hero">
+        <h1>Come funziona LocoCode</h1>
+        <p>
+          LocoCode sara una web app: gli utenti useranno il frontend dal browser, mentre il backend online gestira OpenRouter, orchestrator, progetti e file generati.
+        </p>
+      </section>
+
+      <section className="help-grid">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <article className="help-card" key={card.title}>
+              <Icon size={26} />
+              <h2>{card.title}</h2>
+              <p>{card.text}</p>
+            </article>
+          );
+        })}
+      </section>
+
+      <section className="architecture-card">
+        <h2>Architettura prevista</h2>
+        <p>
+          In produzione il frontend non dovra salvare tutto solo localmente. Useremo un account utente, oppure un token personale, per collegare ogni progetto al proprietario.
+        </p>
+        <ul>
+          <li>Frontend pubblico: interfaccia, prompt, anteprima, gestione progetti.</li>
+          <li>Backend sul tuo server: API, autenticazione, chiamate OpenRouter, orchestrator SDD.</li>
+          <li>Database server: utenti, progetti, prompt, run AI, file generati e stato dei task.</li>
+          <li>Cache locale opzionale: utile per bozza e sessione, ma non come archivio principale.</li>
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function ModelSelect({ value, onChange, compact = false }) {
+  const options = COMMON_MODELS.includes(value) ? COMMON_MODELS : [value, ...COMMON_MODELS].filter(Boolean);
+
+  return (
+    <select
+      className={`model-input ${compact ? "compact" : ""}`}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      aria-label="Modello"
+    >
+      {options.map((item) => (
+        <option key={item} value={item}>
+          {modelLabel(item)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
+}
+
+function emptyPreviewHtml() {
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#f7f5ff;color:#343b4f}.box{text-align:center}.box h1{margin:0 0 10px;font-size:34px}.box p{margin:0;color:#697184}</style></head><body><div class="box"><h1>Anteprima in preparazione</h1><p>L'orchestrator aggiornera questo pannello dopo la generazione.</p></div></body></html>`;
+}
+
+function modelLabel(model) {
+  return MODEL_LABELS[model] || model || "DeepSeek V4 Pro";
+}
+
+function extractDatabaseNote(text) {
+  const value = String(text || "").trim();
+  if (!value) return "";
+
+  const databaseIndex = value.toLowerCase().indexOf("database");
+  const start = databaseIndex >= 0 ? databaseIndex : 0;
+  return value
+    .slice(start, start + 700)
+    .replace(/[#*_`>-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function apiFetch(path, options) {
+  return fetch(`${API_BASE}${path}`, options);
+}
+
+async function readApiJson(response) {
+  const text = await response.text();
+  if (!text.trim()) return {};
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Risposta API non valida (${response.status}). ${text.slice(0, 220) || "Il server ha risposto senza JSON."}`,
+    );
+  }
+}

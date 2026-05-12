@@ -1,0 +1,7 @@
+node_modules/
+dist/
+data/config.json
+server.log
+server.err.log
+client.log
+client.err.log

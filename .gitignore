@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# Local secrets/config
+.env
+*.env
+*.local
+user_data/
+web/data/
+web/*.log
+web/**/*.log
+
+# Build outputs
+build/
+dist/
+web/dist/
+web/node_modules/
+node_modules/
+*.spec.bak
+
+# LocoCode cleanup archives
+_archive_cleanup_*/
+_analysis/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
