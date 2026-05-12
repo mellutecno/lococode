@@ -135,6 +135,7 @@ app.get("/api/apps/:id/files", async (req, res) => {
 
 app.post("/api/generate", async (req, res) => {
   const prompt = String(req.body.prompt || "").trim();
+  const requestedProjectName = String(req.body.projectName || "").trim();
   const requestedModel = normalizeModelId(req.body.model || "");
   const appId = String(req.body.appId || "").trim();
 
@@ -159,10 +160,15 @@ app.post("/api/generate", async (req, res) => {
   let target = apps.find((item) => item.id === appId);
   const isNewApp = !target;
 
+  if (isNewApp && !requestedProjectName) {
+    res.status(400).json({ error: "Nome progetto mancante." });
+    return;
+  }
+
   if (!target) {
     target = {
       id: `app-${Date.now()}`,
-      name: titleFromPrompt(prompt),
+      name: requestedProjectName,
       createdAt: now,
       updatedAt: now,
       model,
@@ -216,6 +222,32 @@ app.post("/api/generate", async (req, res) => {
 
 app.post("/api/apps/:id/continue", startAutopilotRequest);
 app.post("/api/apps/:id/autopilot", startAutopilotRequest);
+
+app.post("/api/apps/:id/stop", async (req, res) => {
+  const apps = await loadApps();
+  const target = apps.find((item) => item.id === req.params.id);
+
+  if (!target) {
+    res.status(404).json({ error: "App non trovata." });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  appendOperationalLog(target, "Stop richiesto dall'utente. Mi fermo appena termina l'operazione corrente.");
+  target.status = "paused";
+  target.updatedAt = now;
+  target.autopilot = {
+    ...(target.autopilot || {}),
+    running: false,
+    stopRequested: true,
+    updatedAt: now,
+    lastMessage: "Stop richiesto. Progetto in pausa.",
+    error: null,
+  };
+  pushAssistantMessage(target, "Ho messo in pausa l'autopilota. Puoi riprendere dal prossimo task quando vuoi.");
+  await saveApps(apps);
+  res.json({ app: publicApp(target), stopped: true });
+});
 
 async function startAutopilotRequest(req, res) {
   const settings = await loadSettings();
@@ -373,6 +405,11 @@ async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "
     let stallCount = 0;
 
     while (target.sdd?.currentStep && turns < maxTurns) {
+      if (await shouldStopAutopilot(appId)) {
+        await pauseAutopilot(target, apps, "Autopilota fermato su richiesta. Puoi riprendere quando vuoi.");
+        return;
+      }
+
       const beforeTask = getNextTaskLabel(target);
       const beforeDone = (target.sdd?.steps || []).filter((step) => step.done).length;
 
@@ -388,6 +425,11 @@ async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "
 
       pushAssistantMessage(target, result.summary);
       await refreshProjectState(target);
+
+      if (await shouldStopAutopilot(appId)) {
+        await pauseAutopilot(target, apps, "Autopilota fermato su richiesta dopo l'ultimo task completato.");
+        return;
+      }
 
       const afterTask = getNextTaskLabel(target);
       const afterDone = (target.sdd?.steps || []).filter((step) => step.done).length;
@@ -459,6 +501,34 @@ async function finishAutopilot(target, apps) {
       ? `Autopilota in pausa. Prossimo task: ${target.sdd.currentStep.label}.`
       : "Autopilota completato: il piano SDD risulta completato e la preview e stata aggiornata.",
   );
+  await saveApps(apps);
+}
+
+async function shouldStopAutopilot(appId) {
+  const apps = await loadApps();
+  const latest = apps.find((item) => item.id === appId);
+  return Boolean(latest?.autopilot?.stopRequested);
+}
+
+async function pauseAutopilot(target, apps, message) {
+  await refreshProjectState(target);
+  const steps = target.sdd?.steps || [];
+  const now = new Date().toISOString();
+  appendOperationalLog(target, message);
+  target.status = "paused";
+  target.updatedAt = now;
+  target.autopilot = {
+    ...(target.autopilot || {}),
+    running: false,
+    stopRequested: false,
+    currentTask: target.sdd?.currentStep?.label || target.autopilot?.currentTask || "Progetto in pausa",
+    completed: steps.filter((step) => step.done).length,
+    total: steps.length,
+    updatedAt: now,
+    lastMessage: message,
+    error: null,
+  };
+  pushAssistantMessage(target, message);
   await saveApps(apps);
 }
 

@@ -48,6 +48,7 @@ export default function App() {
   const [activeView, setActiveView] = useState("apps");
   const [apps, setApps] = useState([]);
   const [selectedAppId, setSelectedAppId] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [chatPrompt, setChatPrompt] = useState("");
   const [model, setModel] = useState(COMMON_MODELS[0]);
@@ -122,9 +123,15 @@ export default function App() {
     setStatus("Impostazioni salvate");
   }
 
-  async function generateApp({ text, appId = "", overrideModel = "" }) {
+  async function generateApp({ text, appId = "", overrideModel = "", name = "" }) {
     const cleanPrompt = text.trim();
     if (!cleanPrompt || busy) return;
+    const cleanProjectName = String(name || "").trim();
+    if (!appId && !cleanProjectName) {
+      setError("Inserisci un nome progetto prima di avviare la generazione.");
+      setStatus("Nome progetto mancante");
+      return;
+    }
     const chosenModel = overrideModel || model;
 
     setBusy(true);
@@ -137,6 +144,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: cleanPrompt,
+          projectName: cleanProjectName,
           model: chosenModel,
           appId,
           openrouterApiKey: apiKey,
@@ -153,6 +161,7 @@ export default function App() {
       }
 
       await refreshApps(data.app.id);
+      if (!appId) setProjectName("");
       setPrompt("");
       setChatPrompt("");
       setActiveView("chat");
@@ -196,6 +205,30 @@ export default function App() {
       await refreshApps(data.app.id);
       setActiveView("chat");
       setStatus(`Autopilota attivo con ${modelLabel(projectModel)}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStatus("Errore");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stopAutopilot() {
+    if (!selectedApp || busy) return;
+    setBusy(true);
+    setError("");
+    setStatus("Richiedo stop autopilota...");
+
+    try {
+      const response = await apiFetch(`/api/apps/${selectedApp.id}/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await readApiJson(response);
+      if (!response.ok) throw new Error(data.error || "Stop non riuscito.");
+      await refreshApps(data.app.id);
+      setActiveView("chat");
+      setStatus("Autopilota in pausa");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus("Errore");
@@ -253,13 +286,16 @@ export default function App() {
           <HomeView
             prompt={prompt}
             setPrompt={setPrompt}
+            projectName={projectName}
+            setProjectName={setProjectName}
             model={model}
             setModel={setModel}
             busy={busy}
-            onGenerate={() => generateApp({ text: prompt })}
-            onQuick={(text) => {
-              setPrompt(text);
-              void generateApp({ text });
+            onGenerate={() => generateApp({ text: prompt, name: projectName })}
+            onQuick={(item) => {
+              setProjectName(item.label);
+              setPrompt(item.prompt);
+              void generateApp({ text: item.prompt, name: item.label });
             }}
           />
         )}
@@ -274,6 +310,7 @@ export default function App() {
             error={error}
             onSend={() => generateApp({ text: chatPrompt, appId: selectedApp?.id || "", overrideModel: selectedApp?.model || model })}
             onResume={resumeAutopilot}
+            onStop={stopAutopilot}
           />
         )}
 
@@ -291,6 +328,10 @@ export default function App() {
           />
         )}
 
+        {activeView === "tasks" && <TasksWorkspace app={selectedApp} />}
+        {activeView === "sdd" && <SddWorkspace app={selectedApp} />}
+        {activeView === "files" && <FilesWorkspace app={selectedApp} />}
+        {activeView === "log" && <LogWorkspace app={selectedApp} status={status} error={error} />}
         {activeView === "help" && <HelpView />}
 
         {error && <div className="toast">{error}</div>}
@@ -305,6 +346,10 @@ function Rail({ activeView, setActiveView }) {
       <img className="rail-logo" src="/lococode_logo.png" alt="LocoCode" />
       <NavButton icon={FolderKanban} label="Progetti" active={activeView === "apps"} onClick={() => setActiveView("apps")} />
       <NavButton icon={Workflow} label="Orch." active={activeView === "chat"} onClick={() => setActiveView("chat")} title="Orchestrator" />
+      <NavButton icon={ClipboardList} label="Task" active={activeView === "tasks"} onClick={() => setActiveView("tasks")} />
+      <NavButton icon={FileStack} label="SDD" active={activeView === "sdd"} onClick={() => setActiveView("sdd")} />
+      <NavButton icon={Code2} label="File" active={activeView === "files"} onClick={() => setActiveView("files")} />
+      <NavButton icon={Activity} label="Log" active={activeView === "log"} onClick={() => setActiveView("log")} title="Registro operativo" />
       <div className="rail-spacer" />
       <NavButton icon={CircleHelp} label="Aiuto" active={activeView === "help"} onClick={() => setActiveView("help")} />
     </nav>
@@ -377,7 +422,7 @@ function ProjectsSidebar({ apps, selectedApp, searchTerm, setSearchTerm, setActi
 
 function AppHeader({ selectedApp, status, activeView, onSettings }) {
   const label =
-    activeView === "chat" && selectedApp
+    ["chat", "tasks", "sdd", "files", "log"].includes(activeView) && selectedApp
       ? selectedApp.name
       : activeView === "settings"
         ? "Impostazioni"
@@ -385,12 +430,23 @@ function AppHeader({ selectedApp, status, activeView, onSettings }) {
           ? "Aiuto"
           : "Nuovo progetto";
 
-  const taskText = activeView === "chat" && selectedApp ? projectTaskState(selectedApp).header : status;
+  const viewLabel = {
+    apps: "Nuovo progetto",
+    chat: "Orchestrator SDD",
+    tasks: "Task progetto",
+    sdd: "Documenti SDD",
+    files: "File progetto",
+    log: "Registro operativo",
+    settings: "Configurazione",
+    help: "Guida",
+  }[activeView] || "LocoCode";
+
+  const taskText = ["chat", "tasks", "sdd", "files", "log"].includes(activeView) && selectedApp ? projectTaskState(selectedApp).header : status;
 
   return (
     <header className="app-header">
       <div className="header-title">
-        <span>{activeView === "help" ? "Guida" : activeView === "settings" ? "Configurazione" : "Area di lavoro"}</span>
+        <span>{viewLabel}</span>
         <strong>{label}</strong>
       </div>
       <p className={activeView === "chat" && selectedApp?.status === "error" ? "status-error" : ""}>{taskText}</p>
@@ -404,11 +460,19 @@ function AppHeader({ selectedApp, status, activeView, onSettings }) {
   );
 }
 
-function HomeView({ prompt, setPrompt, model, setModel, busy, onGenerate, onQuick }) {
+function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setModel, busy, onGenerate, onQuick }) {
   return (
     <div className="home-view">
       <section className="hero-block">
         <h1>Crea una nuova app</h1>
+        <label className="project-name-field">
+          <span>Nome progetto</span>
+          <input
+            value={projectName}
+            onChange={(event) => setProjectName(event.target.value)}
+            placeholder="Esempio: Gestionale studio medico"
+          />
+        </label>
         <Composer
           value={prompt}
           onChange={setPrompt}
@@ -420,15 +484,15 @@ function HomeView({ prompt, setPrompt, model, setModel, busy, onGenerate, onQuic
         />
       </section>
 
-      <div className="quick-row">
-        {quickPrompts.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button key={item.label} onClick={() => onQuick(item.prompt)} disabled={busy}>
+        <div className="quick-row">
+          {quickPrompts.map((item) => {
+            const Icon = item.icon;
+            return (
+            <button key={item.label} onClick={() => onQuick(item)} disabled={busy}>
               <Icon size={22} />
               <span>{item.label}</span>
             </button>
-          );
+            );
         })}
       </div>
 
@@ -461,13 +525,13 @@ function Composer({ value, onChange, model, setModel, busy, placeholder, onSubmi
   );
 }
 
-function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume }) {
-  const [projectPanel, setProjectPanel] = useState("sdd");
+function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume, onStop }) {
   const [expandedPanel, setExpandedPanel] = useState(false);
-  const visibleMessages = lastConversationMessages(app?.messages || []);
+  const visibleMessages = conversationMessages(app?.messages || []);
   const taskState = app ? projectTaskState(app) : null;
   const canResume =
     app && !app.autopilot?.running && !busy && (app.sdd?.currentStep || ["error", "partial", "paused"].includes(app.status));
+  const canStop = app?.autopilot?.running || app?.status === "building";
 
   useEffect(() => {
     if (!expandedPanel) return undefined;
@@ -511,16 +575,13 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
               Riprendi
             </button>
           )}
+          {canStop && (
+            <button className="secondary-action compact danger" disabled={busy} onClick={onStop}>
+              Ferma
+            </button>
+          )}
         </div>
 
-        <SddPanel app={app} />
-
-        <OperationLog app={app} status={status} error={error} />
-
-        <div className="conversation-heading">
-          <strong>Ultimo scambio</strong>
-          <span>La cronologia completa resta salvata nel progetto.</span>
-        </div>
         <div className="messages">
           {visibleMessages.map((message, index) => (
             <article key={`${message.at}-${index}`} className={`message ${message.role}`}>
@@ -546,7 +607,7 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
         <div className="panel-title">
           <div>
             <span>Progetto</span>
-            <h2>{panelTitle(projectPanel, app)}</h2>
+            <h2>Anteprima applicazione</h2>
           </div>
           <div className="panel-actions">
             <em>{modelLabel(app.model)}</em>
@@ -556,14 +617,7 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
             </button>
           </div>
         </div>
-
-        <div className="project-tabs">
-          <button className={projectPanel === "preview" ? "active" : ""} onClick={() => setProjectPanel("preview")}>Anteprima</button>
-          <button className={projectPanel === "sdd" ? "active" : ""} onClick={() => setProjectPanel("sdd")}>SDD</button>
-          <button className={projectPanel === "files" ? "active" : ""} onClick={() => setProjectPanel("files")}>File</button>
-        </div>
-
-        <ProjectPanelContent projectPanel={projectPanel} app={app} />
+        <ProjectPanelContent projectPanel="preview" app={app} />
       </section>
 
       {expandedPanel && (
@@ -571,20 +625,20 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
           className="fullscreen-panel"
           role="dialog"
           aria-modal="true"
-          aria-label={panelTitle(projectPanel, app)}
+          aria-label="Anteprima applicazione"
           onWheel={(event) => event.stopPropagation()}
         >
           <div className="fullscreen-card">
             <header>
               <div>
                 <span>Progetto</span>
-                <h2>{panelTitle(projectPanel, app)}</h2>
+                <h2>Anteprima applicazione</h2>
               </div>
               <button onClick={() => setExpandedPanel(false)} aria-label="Chiudi schermo intero">
                 <X size={24} />
               </button>
             </header>
-            <ProjectPanelContent projectPanel={projectPanel} app={app} fullscreen />
+            <ProjectPanelContent projectPanel="preview" app={app} fullscreen />
           </div>
         </section>
       )}
@@ -708,24 +762,9 @@ function projectTaskState(app) {
   };
 }
 
-function lastConversationMessages(messages) {
+function conversationMessages(messages) {
   const list = Array.isArray(messages) ? messages : [];
-  if (!list.length) return [];
-
-  const lastAssistantIndex = findLastIndex(list, (message) => message.role === "assistant");
-  if (lastAssistantIndex >= 0) {
-    const lastUserIndex = findLastIndex(
-      list.slice(0, lastAssistantIndex),
-      (message) => message.role === "user",
-    );
-    const result = [];
-    if (lastUserIndex >= 0) result.push(list[lastUserIndex]);
-    result.push(list[lastAssistantIndex]);
-    return result;
-  }
-
-  const lastUser = [...list].reverse().find((message) => message.role === "user");
-  return lastUser ? [lastUser] : [list[list.length - 1]];
+  return list.slice(-12);
 }
 
 function findLastIndex(list, predicate) {
@@ -740,6 +779,89 @@ function formatShortTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+}
+
+function WorkspaceShell({ app, title, subtitle, children }) {
+  if (!app) {
+    return (
+      <div className="empty-state">
+        <h1>Nessun progetto selezionato</h1>
+        <p>Seleziona un progetto dal menu laterale.</p>
+      </div>
+    );
+  }
+
+  return (
+    <section className="workspace-view">
+      <div className="workspace-head">
+        <div>
+          <span>{app.name}</span>
+          <h2>{title}</h2>
+        </div>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function TasksWorkspace({ app }) {
+  const steps = app?.sdd?.steps || [];
+  const done = steps.filter((step) => step.done).length;
+
+  return (
+    <WorkspaceShell app={app} title="Task progetto" subtitle={steps.length ? `${done} completati su ${steps.length}` : "Il piano task verra creato dall'orchestrator."}>
+      <div className="task-list-view">
+        {steps.map((step, index) => (
+          <article className={`task-list-row ${step.done ? "done" : ""}`} key={`${step.id}-${index}`}>
+            <span>{index + 1}</span>
+            <Check size={18} />
+            <div>
+              <strong>{step.label}</strong>
+              <em>{step.done ? "Completato" : "Da fare"}</em>
+            </div>
+          </article>
+        ))}
+        {!steps.length && (
+          <div className="panel-empty">
+            <strong>Nessun task disponibile</strong>
+            <span>Quando l'SDD iniziale sara pronto, qui vedrai tutti i task da completare.</span>
+          </div>
+        )}
+      </div>
+    </WorkspaceShell>
+  );
+}
+
+function SddWorkspace({ app }) {
+  return (
+    <WorkspaceShell app={app} title="Documenti SDD" subtitle="Specifiche, requisiti, architettura e memoria progetto.">
+      <SddDocumentsPanel app={app} fullscreen />
+    </WorkspaceShell>
+  );
+}
+
+function FilesWorkspace({ app }) {
+  return (
+    <WorkspaceShell app={app} title="File progetto" subtitle="Tutti i file generati dall'orchestrator.">
+      <FilesPanel app={app} />
+    </WorkspaceShell>
+  );
+}
+
+function LogWorkspace({ app, status, error }) {
+  return (
+    <WorkspaceShell app={app} title="Registro operativo" subtitle="Cronologia tecnica di quello che LocoCode sta facendo.">
+      <OperationLog app={app} status={status} error={error} />
+      <div className="messages log-messages">
+        {conversationMessages(app?.messages || []).map((message, index) => (
+          <article key={`${message.at}-${index}`} className={`message ${message.role}`}>
+            <p>{message.content}</p>
+          </article>
+        ))}
+      </div>
+    </WorkspaceShell>
+  );
 }
 
 function SddDocumentsPanel({ app, fullscreen = false }) {
