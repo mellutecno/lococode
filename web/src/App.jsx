@@ -595,6 +595,7 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
 function OperationLog({ app, status, error }) {
   const lastAssistant = [...(app.messages || [])].reverse().find((message) => message.role === "assistant");
   const report = app.autopilot?.error;
+  const log = Array.isArray(app.autopilot?.log) ? app.autopilot.log.slice(-8) : [];
   const hasError = Boolean(error || report) || app.status === "error" || /errore|timeout|interrott/i.test(lastAssistant?.content || "");
   const text = error || report?.cause || lastAssistant?.content || "Nessuna operazione registrata per ora.";
 
@@ -613,7 +614,21 @@ function OperationLog({ app, status, error }) {
             {report.suggestion && <p>{report.suggestion}</p>}
           </>
         ) : (
-          <p>{text}</p>
+          <>
+            {log.length ? (
+              <ul className="operation-events">
+                {log.map((entry, index) => (
+                  <li key={`${entry.at}-${index}`}>
+                    <time>{formatShortTime(entry.at)}</time>
+                    <span>{entry.message}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p>{text}</p>
+            )}
+            {status && app.autopilot?.running && <p>{status}</p>}
+          </>
         )}
       </div>
     </section>
@@ -718,6 +733,13 @@ function findLastIndex(list, predicate) {
     if (predicate(list[index], index)) return index;
   }
   return -1;
+}
+
+function formatShortTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 }
 
 function SddDocumentsPanel({ app, fullscreen = false }) {

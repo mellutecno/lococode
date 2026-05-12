@@ -324,6 +324,7 @@ async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "
     await refreshProjectState(target);
     const steps = target.sdd?.steps || [];
     const currentTask = phaseLabel || target.sdd?.currentStep?.label || target.autopilot?.currentTask || "Preparazione progetto";
+    appendOperationalLog(target, phaseLabel ? `Fase in corso: ${phaseLabel}` : `Task aggiornato: ${currentTask}`);
     target.autopilot = {
       ...(target.autopilot || {}),
       running: true,
@@ -391,7 +392,21 @@ async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "
       const afterTask = getNextTaskLabel(target);
       const afterDone = (target.sdd?.steps || []).filter((step) => step.done).length;
       if (afterTask === beforeTask && afterDone <= beforeDone) {
-        stallCount += 1;
+        const autoUpdated = await markCurrentTaskCompleted(target, beforeTask, result.summary);
+        if (autoUpdated) {
+          await refreshProjectState(target);
+          appendOperationalLog(
+            target,
+            `Ho aggiornato automaticamente .lc/spec/tasks.md: completato "${beforeTask}".`,
+          );
+          pushAssistantMessage(
+            target,
+            `Ho completato il task "${beforeTask}" e ho aggiornato automaticamente il piano SDD. Puoi continuare dal prossimo task.`,
+          );
+          stallCount = 0;
+        } else {
+          stallCount += 1;
+        }
       } else {
         stallCount = 0;
       }
@@ -420,6 +435,12 @@ async function finishAutopilot(target, apps) {
   const steps = target.sdd?.steps || [];
   const doneCount = steps.filter((step) => step.done).length;
   const now = new Date().toISOString();
+  appendOperationalLog(
+    target,
+    target.sdd?.currentStep
+      ? `In pausa. Prossimo task: ${target.sdd.currentStep.label}.`
+      : "Piano SDD completato.",
+  );
   target.status = target.sdd?.currentStep ? "paused" : "ready";
   target.updatedAt = now;
   target.autopilot = {
@@ -446,6 +467,7 @@ async function stopAutopilotWithError(target, apps, err, model) {
   await refreshProjectState(target);
   const task = target.autopilot?.currentTask || getNextTaskLabel(target) || "Task SDD corrente";
   const now = new Date().toISOString();
+  appendOperationalLog(target, `Errore nel task "${task}": ${message}`);
   target.status = "error";
   target.updatedAt = now;
   target.autopilot = {
@@ -483,6 +505,67 @@ function buildOperationalError({ task, message, model }) {
     cause: message,
     suggestion,
   };
+}
+
+function appendOperationalLog(target, message) {
+  if (!message) return;
+
+  const previous = Array.isArray(target.autopilot?.log) ? target.autopilot.log : [];
+  target.autopilot = {
+    ...(target.autopilot || {}),
+    log: [
+      ...previous,
+      {
+        at: new Date().toISOString(),
+        message,
+      },
+    ].slice(-18),
+  };
+}
+
+async function markCurrentTaskCompleted(target, taskLabel, note = "") {
+  const tasksPath = ".lc/spec/tasks.md";
+  const current = await readProjectFile(target.id, tasksPath);
+  if (!current.trim()) return false;
+
+  const escaped = escapeRegExp(String(taskLabel || "").trim());
+  let changed = false;
+  let next = current;
+
+  if (escaped) {
+    const exactPattern = new RegExp(`^(\\s*[-*]\\s+\\[)\\s(\\]\\s+.*${escaped}.*)$`, "im");
+    next = next.replace(exactPattern, (_match, prefix, suffix) => {
+      changed = true;
+      return `${prefix}x${suffix}`;
+    });
+  }
+
+  if (!changed) {
+    next = next.replace(/^(\s*[-*]\s+\[)\s(\]\s+.+)$/m, (_match, prefix, suffix) => {
+      changed = true;
+      return `${prefix}x${suffix}`;
+    });
+  }
+
+  if (!changed || next === current) return false;
+
+  await writeProjectFile(target.id, tasksPath, next);
+
+  const memoryPath = ".lc/memory/project_context.md";
+  const memory = await readProjectFile(target.id, memoryPath);
+  const stamp = new Date().toISOString();
+  const cleanNote = String(note || "").replace(/\s+/g, " ").slice(0, 500);
+  await writeProjectFile(
+    target.id,
+    memoryPath,
+    `${memory.trim()}\n\n---\n\n## Avanzamento automatico ${stamp}\n\nTask completato: ${taskLabel || "prossimo task SDD"}.\n${cleanNote ? `\nNota: ${cleanNote}\n` : ""}`,
+  );
+
+  return true;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function pushAssistantMessage(target, content) {

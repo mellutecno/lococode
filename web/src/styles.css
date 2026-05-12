@@ -883,14 +883,42 @@ button:disabled {
 }
 
 .operation-body {
-  max-height: 96px;
+  max-height: 190px;
   overflow: auto;
-  display: grid;
+  display: block;
   gap: 6px;
 }
 
 .operation-body > strong {
   color: var(--ink);
+}
+
+.operation-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.operation-events li {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.operation-events time {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.operation-events span {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 700;
 }
 
 .message {
