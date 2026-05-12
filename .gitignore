@@ -15,6 +15,9 @@ user_data/
 web/data/
 web/*.log
 web/**/*.log
+data/
+logs/
+projects/
 
 # Build outputs
 build/
@@ -23,6 +26,7 @@ web/dist/
 web/node_modules/
 node_modules/
 *.spec.bak
+*.tar.gz
 
 # LocoCode cleanup archives
 _archive_cleanup_*/
