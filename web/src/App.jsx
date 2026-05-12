@@ -9,7 +9,10 @@ import {
   Database,
   FileStack,
   FolderKanban,
+  KeyRound,
   LayoutDashboard,
+  LogOut,
+  Mail,
   Maximize2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -24,6 +27,7 @@ import {
 import { COMMON_MODELS, MODEL_LABELS } from "./models.js";
 
 const API_BASE = (import.meta.env.VITE_LOCOCODE_API_URL || "").replace(/\/$/, "");
+const SESSION_KEY = "lococode-session-token";
 
 const quickPrompts = [
   {
@@ -58,6 +62,12 @@ export default function App() {
   const [error, setError] = useState("");
   const [apiCheck, setApiCheck] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authToken, setAuthToken] = useState("");
+  const [authStep, setAuthStep] = useState("email");
+  const [authMessage, setAuthMessage] = useState("");
   const [theme, setTheme] = useState(() => localStorage.getItem("lococode-theme") || "light");
   const [projectsPanelOpen, setProjectsPanelOpen] = useState(
     () => localStorage.getItem("lococode-projects-panel-open") !== "false",
@@ -98,6 +108,30 @@ export default function App() {
   }, [selectedApp?.id, selectedApp?.status, selectedApp?.autopilot?.running]);
 
   async function bootstrap() {
+    const token = localStorage.getItem(SESSION_KEY);
+    if (!token) {
+      setStatus("Accesso richiesto");
+      setAuthOpen(true);
+      return;
+    }
+
+    const sessionResponse = await apiFetch("/api/auth/session");
+    if (!sessionResponse.ok) {
+      localStorage.removeItem(SESSION_KEY);
+      setCurrentUser(null);
+      setApps([]);
+      setSelectedAppId("");
+      setStatus("Accesso richiesto");
+      setAuthOpen(true);
+      return;
+    }
+
+    const sessionData = await readApiJson(sessionResponse);
+    setCurrentUser(sessionData.user || null);
+    await loadProtectedState();
+  }
+
+  async function loadProtectedState(nextSelectedId = selectedAppId) {
     const [settingsResponse, appsResponse] = await Promise.all([
       apiFetch("/api/settings"),
       apiFetch("/api/apps"),
@@ -107,10 +141,85 @@ export default function App() {
     setApiKey(settings.openrouterApiKey || "");
     setModel(settings.defaultModel || COMMON_MODELS[0]);
     setApps(appData.apps || []);
-    if (appData.apps?.[0]) setSelectedAppId(appData.apps[0].id);
+    if (nextSelectedId) setSelectedAppId(nextSelectedId);
+    else if (appData.apps?.[0]) setSelectedAppId(appData.apps[0].id);
+    setStatus("Pronto");
+  }
+
+  function requireAuth() {
+    if (currentUser) return true;
+    setAuthOpen(true);
+    setStatus("Accesso richiesto");
+    setError("Inserisci email e token per lavorare sui tuoi progetti.");
+    return false;
+  }
+
+  async function requestLoginToken() {
+    const email = authEmail.trim();
+    if (!email || busy) return;
+
+    setBusy(true);
+    setAuthMessage("Invio token...");
+    setError("");
+    try {
+      const response = await apiFetch("/api/auth/request-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await readApiJson(response);
+      if (!response.ok) throw new Error(data.error || "Invio token non riuscito.");
+      setAuthStep("token");
+      setAuthMessage(data.message || "Controlla la posta e inserisci il token.");
+    } catch (err) {
+      setAuthMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyLoginToken() {
+    const email = authEmail.trim();
+    const token = authToken.trim();
+    if (!email || !token || busy) return;
+
+    setBusy(true);
+    setAuthMessage("Verifico token...");
+    setError("");
+    try {
+      const response = await apiFetch("/api/auth/verify-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, token }),
+      });
+      const data = await readApiJson(response);
+      if (!response.ok) throw new Error(data.error || "Token non valido.");
+      localStorage.setItem(SESSION_KEY, data.sessionToken);
+      setCurrentUser(data.user || null);
+      setAuthToken("");
+      setAuthOpen(false);
+      setAuthMessage("");
+      await loadProtectedState("");
+    } catch (err) {
+      setAuthMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function logout() {
+    await apiFetch("/api/auth/logout", { method: "POST" });
+    localStorage.removeItem(SESSION_KEY);
+    setCurrentUser(null);
+    setApps([]);
+    setSelectedAppId("");
+    setActiveView("apps");
+    setAuthOpen(true);
+    setStatus("Accesso richiesto");
   }
 
   async function saveSettings() {
+    if (!requireAuth()) return;
     setStatus("Salvataggio impostazioni...");
     const response = await apiFetch("/api/settings", {
       method: "POST",
@@ -124,6 +233,7 @@ export default function App() {
   }
 
   async function generateApp({ text, appId = "", overrideModel = "", name = "" }) {
+    if (!requireAuth()) return;
     const cleanPrompt = text.trim();
     if (!cleanPrompt || busy) return;
     const cleanProjectName = String(name || "").trim();
@@ -176,6 +286,7 @@ export default function App() {
   }
 
   async function refreshApps(nextSelectedId = selectedAppId) {
+    if (!currentUser) return;
     const response = await apiFetch("/api/apps");
     const data = await readApiJson(response);
     setApps(data.apps || []);
@@ -184,6 +295,7 @@ export default function App() {
   }
 
   async function resumeAutopilot() {
+    if (!requireAuth()) return;
     if (!selectedApp || busy) return;
     const projectModel = selectedApp.model || model;
 
@@ -214,6 +326,7 @@ export default function App() {
   }
 
   async function stopAutopilot() {
+    if (!requireAuth()) return;
     if (!selectedApp || busy) return;
     setBusy(true);
     setError("");
@@ -238,6 +351,7 @@ export default function App() {
   }
 
   async function testApiConnection() {
+    if (!requireAuth()) return;
     setApiCheck("Test OpenRouter in corso...");
     setStatus("Test API...");
     setError("");
@@ -261,17 +375,28 @@ export default function App() {
 
   return (
     <main className={`app-shell ${theme === "dark" ? "theme-dark" : ""} ${projectsPanelOpen ? "" : "projects-collapsed"}`}>
-      <Rail activeView={activeView} setActiveView={setActiveView} />
+      <Rail activeView={activeView} setActiveView={(view) => {
+        if (!currentUser && !["apps", "help"].includes(view)) {
+          setAuthOpen(true);
+          return;
+        }
+        setActiveView(view);
+      }} />
 
       <ProjectsSidebar
         apps={filteredApps}
         selectedApp={selectedApp}
+        currentUser={currentUser}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
-        setActiveView={setActiveView}
+        setActiveView={(view) => {
+          if (!currentUser && view !== "apps") setAuthOpen(true);
+          else setActiveView(view);
+        }}
         setSelectedAppId={setSelectedAppId}
         open={projectsPanelOpen}
         onToggle={() => setProjectsPanelOpen((value) => !value)}
+        onAuth={() => setAuthOpen(true)}
       />
 
       <section className="main-stage">
@@ -279,6 +404,9 @@ export default function App() {
           selectedApp={selectedApp}
           status={status}
           activeView={activeView}
+          currentUser={currentUser}
+          onAuth={() => setAuthOpen(true)}
+          onLogout={logout}
           onSettings={() => setActiveView("settings")}
         />
 
@@ -336,6 +464,22 @@ export default function App() {
 
         {error && <div className="toast">{error}</div>}
       </section>
+
+      {authOpen && (
+        <AuthModal
+          email={authEmail}
+          setEmail={setAuthEmail}
+          token={authToken}
+          setToken={setAuthToken}
+          step={authStep}
+          setStep={setAuthStep}
+          message={authMessage}
+          busy={busy}
+          onRequestToken={requestLoginToken}
+          onVerifyToken={verifyLoginToken}
+          onClose={() => setAuthOpen(false)}
+        />
+      )}
     </main>
   );
 }
@@ -365,7 +509,66 @@ function NavButton({ active, icon: Icon, label, onClick, title }) {
   );
 }
 
-function ProjectsSidebar({ apps, selectedApp, searchTerm, setSearchTerm, setActiveView, setSelectedAppId, open, onToggle }) {
+function AuthModal({ email, setEmail, token, setToken, step, setStep, message, busy, onRequestToken, onVerifyToken, onClose }) {
+  return (
+    <section className="auth-overlay" role="dialog" aria-modal="true" aria-label="Accesso LocoCode">
+      <div className="auth-card">
+        <button className="auth-close" onClick={onClose} aria-label="Chiudi accesso">
+          <X size={20} />
+        </button>
+        <div className="auth-icon">
+          {step === "email" ? <Mail size={28} /> : <KeyRound size={28} />}
+        </div>
+        <h2>Accedi ai tuoi progetti</h2>
+        <p>Inserisci la tua email: ti mandiamo un token temporaneo. Da quel momento lavorerai solo nella tua cartella utente.</p>
+
+        <label>
+          Email
+          <input
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="nome@email.it"
+            type="email"
+            autoComplete="email"
+          />
+        </label>
+
+        {step === "token" && (
+          <label>
+            Token
+            <input
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+              placeholder="123456"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+            />
+          </label>
+        )}
+
+        {message && <p className="auth-message">{message}</p>}
+
+        <div className="auth-actions">
+          {step === "token" && (
+            <button className="secondary-action" type="button" onClick={() => setStep("email")}>
+              Cambia email
+            </button>
+          )}
+          <button
+            className="primary"
+            type="button"
+            disabled={busy || !email.trim() || (step === "token" && !token.trim())}
+            onClick={step === "email" ? onRequestToken : onVerifyToken}
+          >
+            {step === "email" ? "Invia token" : "Entra"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProjectsSidebar({ apps, selectedApp, currentUser, searchTerm, setSearchTerm, setActiveView, setSelectedAppId, open, onToggle, onAuth }) {
   if (!open) {
     return (
       <aside className="projects-panel collapsed-panel">
@@ -400,6 +603,12 @@ function ProjectsSidebar({ apps, selectedApp, searchTerm, setSearchTerm, setActi
       <section className="project-section">
         <h3>Progetti recenti</h3>
         <div className="app-list">
+          {!currentUser && (
+            <button className="app-item auth-item" onClick={onAuth}>
+              <strong>Accedi con token</strong>
+              <span>Inserisci email e token per vedere i tuoi progetti.</span>
+            </button>
+          )}
           {apps.map((app) => (
             <button
               key={app.id}
@@ -413,14 +622,14 @@ function ProjectsSidebar({ apps, selectedApp, searchTerm, setSearchTerm, setActi
               <span>{formatDate(app.updatedAt)}</span>
             </button>
           ))}
-          {!apps.length && <p className="empty">Nessun progetto ancora.</p>}
+          {currentUser && !apps.length && <p className="empty">Nessun progetto ancora.</p>}
         </div>
       </section>
     </aside>
   );
 }
 
-function AppHeader({ selectedApp, status, activeView, onSettings }) {
+function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLogout, onSettings }) {
   const label =
     ["chat", "tasks", "sdd", "files", "log"].includes(activeView) && selectedApp
       ? selectedApp.name
@@ -450,8 +659,19 @@ function AppHeader({ selectedApp, status, activeView, onSettings }) {
         <strong>{label}</strong>
       </div>
       <p className={activeView === "chat" && selectedApp?.status === "error" ? "status-error" : ""}>{taskText}</p>
+      {currentUser ? (
+        <button className="user-button" aria-label="Esci" onClick={onLogout} title={currentUser.email}>
+          <LogOut size={20} />
+          <span>{currentUser.email}</span>
+        </button>
+      ) : (
+        <button className="user-button" aria-label="Accedi" onClick={onAuth}>
+          <KeyRound size={20} />
+          <span>Accedi</span>
+        </button>
+      )}
       {activeView !== "settings" && (
-        <button className="settings-button" aria-label="Impostazioni" onClick={onSettings}>
+        <button className="settings-button" aria-label="Impostazioni" onClick={currentUser ? onSettings : onAuth}>
           <SlidersHorizontal size={20} />
           <span>Impostazioni</span>
         </button>
@@ -794,6 +1014,10 @@ function chatMessageContent(message) {
   if (message.role !== "assistant") return text;
 
   return cleanOperationText(text, 700)
+    .replace(/Prossimo task SDD applicato con\s+[\w./:-]+\.?\s*/i, "Task SDD applicato. ")
+    .replace(/Task SDD applicato con\s+[\w./:-]+\.?\s*/i, "Task SDD applicato. ")
+    .replace(/SDD creato e MVP iniziale generato con\s+[\w./:-]+\.?\s*/i, "SDD creato e MVP iniziale generato. ")
+    .replace(/Modifica applicata seguendo SDD con\s+[\w./:-]+\.?\s*/i, "Modifica applicata. ")
     .replace(/File aggiornati:\s*[\s\S]*$/i, "File aggiornati salvati nel progetto.")
     .replace(/\n{3,}/g, "\n\n");
 }
@@ -801,6 +1025,8 @@ function chatMessageContent(message) {
 function cleanOperationText(value, maxChars = 360) {
   const text = String(value || "")
     .replace(/\s+/g, " ")
+    .replace(/\s+con\s+deepseek\/deepseek-v4-pro/gi, "")
+    .replace(/\s+con\s+moonshotai\/kimi-k2\.6/gi, "")
     .replace(/File aggiornati:\s*.+$/i, "File aggiornati salvati nel progetto.")
     .trim();
 
@@ -1338,7 +1564,12 @@ function extractDatabaseNote(text) {
 }
 
 function apiFetch(path, options) {
-  return fetch(`${API_BASE}${path}`, options);
+  const headers = new Headers(options?.headers || {});
+  const token = localStorage.getItem(SESSION_KEY);
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return fetch(`${API_BASE}${path}`, { ...(options || {}), headers });
 }
 
 async function readApiJson(response) {

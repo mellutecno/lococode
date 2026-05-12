@@ -1,5 +1,7 @@
 import express from "express";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import nodemailer from "nodemailer";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,11 +10,16 @@ const rootDir = path.resolve(__dirname, "..");
 const repoDir = path.resolve(rootDir, "..");
 const dataDir = path.join(rootDir, "data");
 const projectsDir = path.join(dataDir, "projects");
+const usersDir = path.join(dataDir, "users");
 const appsPath = path.join(dataDir, "apps.json");
 const configPath = path.join(dataDir, "config.json");
 const legacyConfigPath = path.join(repoDir, "user_data", "config.json");
 const port = Number(process.env.LOCOCODE_API_PORT || 8787);
 const openRouterTimeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS || 0);
+const usersPath = path.join(dataDir, "users.json");
+const authSecret = process.env.LOCOCODE_AUTH_SECRET || "lococode-local-auth-secret";
+const loginTokenTtlMs = Number(process.env.LOCOCODE_LOGIN_TOKEN_TTL_MS || 15 * 60 * 1000);
+const sessionTtlMs = Number(process.env.LOCOCODE_SESSION_TTL_MS || 30 * 24 * 60 * 60 * 1000);
 const runningJobs = new Map();
 
 const commonModels = [
@@ -37,6 +44,7 @@ app.use(express.json({ limit: "12mb" }));
 
 await fs.mkdir(dataDir, { recursive: true });
 await fs.mkdir(projectsDir, { recursive: true });
+await fs.mkdir(usersDir, { recursive: true });
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, mode: "web-sdd-orchestrator" });
@@ -46,21 +54,133 @@ app.get("/api/models", (_req, res) => {
   res.json({ models: commonModels });
 });
 
-app.get("/api/settings", async (_req, res) => {
-  res.json(await loadSettings());
+app.get("/api/auth/session", async (req, res) => {
+  const user = await getSessionUser(req);
+  if (!user) {
+    res.status(401).json({ authenticated: false });
+    return;
+  }
+
+  res.json({ authenticated: true, user: publicUser(user) });
+});
+
+app.post("/api/auth/request-token", async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  if (!email) {
+    res.status(400).json({ error: "Inserisci un indirizzo email valido." });
+    return;
+  }
+
+  const store = await loadUsersStore();
+  const user = findOrCreateUser(store, email);
+  const token = generateLoginToken();
+  const now = new Date().toISOString();
+  user.pendingTokenHash = hashSecret(token);
+  user.pendingTokenExpiresAt = new Date(Date.now() + loginTokenTtlMs).toISOString();
+  user.pendingTokenSentAt = now;
+  user.updatedAt = now;
+  await saveUsersStore(store);
+
+  try {
+    const delivery = await sendLoginTokenEmail(email, token);
+    res.json({
+      ok: true,
+      email,
+      sent: delivery.sent,
+      message: delivery.sent
+        ? "Token inviato. Controlla la posta e inseriscilo qui."
+        : "Token creato, ma SMTP non configurato sul server.",
+      ...(process.env.LOCOCODE_DEBUG_AUTH_TOKEN === "1" ? { debugToken: token } : {}),
+    });
+  } catch (err) {
+    res.status(502).json({
+      error: `Non sono riuscito a inviare il token: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+});
+
+app.post("/api/auth/verify-token", async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const token = String(req.body.token || "").trim();
+
+  if (!email || !token) {
+    res.status(400).json({ error: "Email e token sono obbligatori." });
+    return;
+  }
+
+  const store = await loadUsersStore();
+  const user = store.users.find((item) => item.email === email);
+  if (!user || !user.pendingTokenHash || user.pendingTokenHash !== hashSecret(token)) {
+    res.status(401).json({ error: "Token non valido." });
+    return;
+  }
+
+  if (!user.pendingTokenExpiresAt || new Date(user.pendingTokenExpiresAt).getTime() < Date.now()) {
+    res.status(401).json({ error: "Token scaduto. Richiedine uno nuovo." });
+    return;
+  }
+
+  const sessionToken = crypto.randomBytes(32).toString("hex");
+  const now = new Date().toISOString();
+  user.pendingTokenHash = "";
+  user.pendingTokenExpiresAt = "";
+  user.sessionHash = hashSecret(sessionToken);
+  user.sessionExpiresAt = new Date(Date.now() + sessionTtlMs).toISOString();
+  user.lastLoginAt = now;
+  user.updatedAt = now;
+  await ensureUserStorage(user);
+  await saveUsersStore(store);
+
+  res.json({ ok: true, sessionToken, user: publicUser(user) });
+});
+
+app.post("/api/auth/logout", async (req, res) => {
+  const user = await getSessionUser(req);
+  if (user) {
+    const store = await loadUsersStore();
+    const stored = store.users.find((item) => item.id === user.id);
+    if (stored) {
+      stored.sessionHash = "";
+      stored.sessionExpiresAt = "";
+      stored.updatedAt = new Date().toISOString();
+      await saveUsersStore(store);
+    }
+  }
+  res.json({ ok: true });
+});
+
+app.get("/api/settings", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  res.json(await loadSettings(user));
 });
 
 app.post("/api/settings", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const store = await loadUsersStore();
+  const stored = store.users.find((item) => item.id === user.id);
+  if (!stored) {
+    res.status(401).json({ error: "Sessione non valida." });
+    return;
+  }
+
   const settings = {
     openrouterApiKey: String(req.body.openrouterApiKey || "").trim(),
     defaultModel: normalizeModelId(req.body.defaultModel || commonModels[0]),
   };
-  await fs.writeFile(configPath, JSON.stringify(settings, null, 2), "utf8");
+  stored.settings = settings;
+  stored.updatedAt = new Date().toISOString();
+  await saveUsersStore(store);
   res.json(settings);
 });
 
 app.post("/api/check-openrouter", async (req, res) => {
-  const settings = await loadSettings();
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const settings = await loadSettings(user);
   const apiKey = String(req.body.openrouterApiKey || settings.openrouterApiKey || "").trim();
   const model = normalizeModelId(req.body.model || settings.defaultModel || commonModels[0]);
 
@@ -90,11 +210,14 @@ app.post("/api/check-openrouter", async (req, res) => {
   }
 });
 
-app.get("/api/apps", async (_req, res) => {
-  const apps = await loadApps();
+app.get("/api/apps", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const apps = await loadApps(user);
   for (const target of apps) {
     await refreshProjectState(target);
-    if (target.autopilot?.running && !runningJobs.has(target.id)) {
+    if (target.autopilot?.running && !runningJobs.has(jobKey(user.id, target.id))) {
       recoverStaleAutopilot(target);
     }
     if (!target.autopilot?.running && target.status === "ready" && target.sdd?.currentStep) {
@@ -112,7 +235,7 @@ app.get("/api/apps", async (_req, res) => {
       }
     }
   }
-  await saveApps(apps);
+  await saveApps(apps, user);
   res.json({ apps: apps.map(publicApp) });
 });
 
@@ -144,26 +267,32 @@ function recoverStaleAutopilot(target) {
 }
 
 app.get("/api/apps/:id/files", async (req, res) => {
-  const apps = await loadApps();
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const apps = await loadApps(user);
   const target = apps.find((item) => item.id === req.params.id);
   if (!target) {
     res.status(404).json({ error: "App non trovata." });
     return;
   }
 
-  const root = projectRoot(target.id);
+  const root = projectRoot(target);
   const files = await listProjectFiles(root);
   const payload = [];
   for (const relPath of files) {
     payload.push({
       path: relPath,
-      content: await readProjectFile(target.id, relPath),
+      content: await readProjectFile(target, relPath),
     });
   }
   res.json({ files: payload });
 });
 
 app.post("/api/generate", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
   const prompt = String(req.body.prompt || "").trim();
   const requestedProjectName = String(req.body.projectName || "").trim();
   const requestedModel = normalizeModelId(req.body.model || "");
@@ -174,7 +303,7 @@ app.post("/api/generate", async (req, res) => {
     return;
   }
 
-  const settings = await loadSettings();
+  const settings = await loadSettings(user);
   const model = requestedModel || settings.defaultModel || commonModels[0];
   const apiKey = String(req.body.openrouterApiKey || settings.openrouterApiKey || "").trim();
 
@@ -185,7 +314,7 @@ app.post("/api/generate", async (req, res) => {
     return;
   }
 
-  const apps = await loadApps();
+  const apps = await loadApps(user);
   const now = new Date().toISOString();
   let target = apps.find((item) => item.id === appId);
   const isNewApp = !target;
@@ -198,6 +327,7 @@ app.post("/api/generate", async (req, res) => {
   if (!target) {
     target = {
       id: `app-${Date.now()}`,
+      ownerId: user.id,
       name: requestedProjectName,
       createdAt: now,
       updatedAt: now,
@@ -214,7 +344,7 @@ app.post("/api/generate", async (req, res) => {
     await createInitialWorkspace(target, prompt);
   }
 
-  if (target.autopilot?.running || runningJobs.has(target.id)) {
+  if (target.autopilot?.running || runningJobs.has(jobKey(user.id, target.id))) {
     res.status(409).json({
       error: "Questo progetto sta gia lavorando. Attendi il completamento oppure controlla il registro operativo.",
       app: publicApp(target),
@@ -237,9 +367,10 @@ app.post("/api/generate", async (req, res) => {
   };
   target.messages = Array.isArray(target.messages) ? target.messages : [];
   target.messages.push({ role: "user", content: prompt, at: now });
-  await saveApps(apps);
+  await saveApps(apps, user);
 
   startAutopilotJob({
+    userId: user.id,
     appId: target.id,
     apiKey,
     model,
@@ -254,7 +385,10 @@ app.post("/api/apps/:id/continue", startAutopilotRequest);
 app.post("/api/apps/:id/autopilot", startAutopilotRequest);
 
 app.post("/api/apps/:id/stop", async (req, res) => {
-  const apps = await loadApps();
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const apps = await loadApps(user);
   const target = apps.find((item) => item.id === req.params.id);
 
   if (!target) {
@@ -275,13 +409,16 @@ app.post("/api/apps/:id/stop", async (req, res) => {
     error: null,
   };
   pushAssistantMessage(target, "Ho messo in pausa l'autopilota. Puoi riprendere dal prossimo task quando vuoi.");
-  await saveApps(apps);
+  await saveApps(apps, user);
   res.json({ app: publicApp(target), stopped: true });
 });
 
 async function startAutopilotRequest(req, res) {
-  const settings = await loadSettings();
-  const apps = await loadApps();
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const settings = await loadSettings(user);
+  const apps = await loadApps(user);
   const target = apps.find((item) => item.id === req.params.id);
 
   if (!target) {
@@ -299,7 +436,7 @@ async function startAutopilotRequest(req, res) {
     return;
   }
 
-  if (target.autopilot?.running || runningJobs.has(target.id)) {
+  if (target.autopilot?.running || runningJobs.has(jobKey(user.id, target.id))) {
     res.json({ app: publicApp(target), usedAi: true, queued: true, alreadyRunning: true, error: "" });
     return;
   }
@@ -321,17 +458,20 @@ async function startAutopilotRequest(req, res) {
   target.messages = Array.isArray(target.messages) ? target.messages : [];
   target.messages.push({
     role: "assistant",
-    content: "Autopilota riavviato: continuo automaticamente dal prossimo task SDD e mi fermo solo in caso di errore.",
+    content: "Riprendo dal prossimo task SDD.",
     at: now,
   });
-  await saveApps(apps);
+  await saveApps(apps, user);
 
-  startAutopilotJob({ appId: target.id, apiKey, model, userPrompt: "", mode: "continue" });
+  startAutopilotJob({ userId: user.id, appId: target.id, apiKey, model, userPrompt: "", mode: "continue" });
   res.json({ app: publicApp(target), usedAi: true, queued: true, error: "" });
 }
 
 app.get("/api/apps/:id/preview", async (req, res) => {
-  const apps = await loadApps();
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const apps = await loadApps(user);
   const target = apps.find((item) => item.id === req.params.id);
   if (!target) {
     res.status(404).send("App non trovata");
@@ -362,23 +502,31 @@ app.listen(port, () => {
   console.log(`LocoCode API running on http://localhost:${port}`);
 });
 
-function startAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "continue" }) {
-  if (runningJobs.has(appId)) return false;
+function startAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", mode = "continue" }) {
+  const key = jobKey(userId, appId);
+  if (runningJobs.has(key)) return false;
 
-  const job = runAutopilotJob({ appId, apiKey, model, userPrompt, mode })
+  const job = runAutopilotJob({ userId, appId, apiKey, model, userPrompt, mode })
     .catch((err) => {
       console.error(`Autopilot job failed for ${appId}:`, err);
     })
     .finally(() => {
-      runningJobs.delete(appId);
+      runningJobs.delete(key);
     });
 
-  runningJobs.set(appId, job);
+  runningJobs.set(key, job);
   return true;
 }
 
-async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "continue" }) {
-  const apps = await loadApps();
+function jobKey(userId, appId) {
+  return `${userId || "legacy"}:${appId}`;
+}
+
+async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", mode = "continue" }) {
+  const user = await loadUserById(userId);
+  if (!user) return;
+
+  const apps = await loadApps(user);
   const target = apps.find((item) => item.id === appId);
   if (!target) return;
 
@@ -399,7 +547,7 @@ async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "
     };
     target.status = "building";
     target.updatedAt = target.autopilot.updatedAt;
-    await saveApps(apps);
+    await saveApps(apps, user);
   };
 
   try {
@@ -435,8 +583,8 @@ async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "
     let stallCount = 0;
 
     while (target.sdd?.currentStep && turns < maxTurns) {
-      if (await shouldStopAutopilot(appId)) {
-        await pauseAutopilot(target, apps, "Autopilota fermato su richiesta. Puoi riprendere quando vuoi.");
+      if (await shouldStopAutopilot(user, appId)) {
+        await pauseAutopilot(target, apps, user, "Autopilota fermato su richiesta. Puoi riprendere quando vuoi.");
         return;
       }
 
@@ -456,8 +604,8 @@ async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "
       pushAssistantMessage(target, result.summary);
       await refreshProjectState(target);
 
-      if (await shouldStopAutopilot(appId)) {
-        await pauseAutopilot(target, apps, "Autopilota fermato su richiesta dopo l'ultimo task completato.");
+      if (await shouldStopAutopilot(user, appId)) {
+        await pauseAutopilot(target, apps, user, "Autopilota fermato su richiesta dopo l'ultimo task completato.");
         return;
       }
 
@@ -473,7 +621,7 @@ async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "
           );
           pushAssistantMessage(
             target,
-            `Ho completato il task "${beforeTask}" e ho aggiornato automaticamente il piano SDD. Puoi continuare dal prossimo task.`,
+            `Task completato: "${beforeTask}". Piano SDD aggiornato.`,
           );
           stallCount = 0;
         } else {
@@ -496,13 +644,13 @@ async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "
       throw new Error("Limite di sicurezza raggiunto: ho eseguito molti task senza arrivare alla fine del piano SDD.");
     }
 
-    await finishAutopilot(target, apps);
+    await finishAutopilot(target, apps, user);
   } catch (err) {
-    await stopAutopilotWithError(target, apps, err, model);
+    await stopAutopilotWithError(target, apps, user, err, model);
   }
 }
 
-async function finishAutopilot(target, apps) {
+async function finishAutopilot(target, apps, user) {
   await refreshProjectState(target);
   const steps = target.sdd?.steps || [];
   const doneCount = steps.filter((step) => step.done).length;
@@ -528,19 +676,19 @@ async function finishAutopilot(target, apps) {
   pushAssistantMessage(
     target,
     target.sdd?.currentStep
-      ? `Autopilota in pausa. Prossimo task: ${target.sdd.currentStep.label}.`
-      : "Autopilota completato: il piano SDD risulta completato e la preview e stata aggiornata.",
+      ? `In pausa. Prossimo task: ${target.sdd.currentStep.label}.`
+      : "Piano SDD completato. Preview aggiornata.",
   );
-  await saveApps(apps);
+  await saveApps(apps, user);
 }
 
-async function shouldStopAutopilot(appId) {
-  const apps = await loadApps();
+async function shouldStopAutopilot(user, appId) {
+  const apps = await loadApps(user);
   const latest = apps.find((item) => item.id === appId);
   return Boolean(latest?.autopilot?.stopRequested);
 }
 
-async function pauseAutopilot(target, apps, message) {
+async function pauseAutopilot(target, apps, user, message) {
   await refreshProjectState(target);
   const steps = target.sdd?.steps || [];
   const now = new Date().toISOString();
@@ -559,10 +707,10 @@ async function pauseAutopilot(target, apps, message) {
     error: null,
   };
   pushAssistantMessage(target, message);
-  await saveApps(apps);
+  await saveApps(apps, user);
 }
 
-async function stopAutopilotWithError(target, apps, err, model) {
+async function stopAutopilotWithError(target, apps, user, err, model) {
   const message = formatOpenRouterError(err);
   await refreshProjectState(target);
   const task = target.autopilot?.currentTask || getNextTaskLabel(target) || "Task SDD corrente";
@@ -580,9 +728,9 @@ async function stopAutopilotWithError(target, apps, err, model) {
   };
   pushAssistantMessage(
     target,
-    `Errore nel task "${task}" con ${model}: ${message}\n\nCosa fare: leggi il registro operativo, correggi la causa indicata e premi Riprendi quando sei pronto.`,
+    `Errore nel task "${task}": ${message}`,
   );
-  await saveApps(apps);
+  await saveApps(apps, user);
 }
 
 function buildOperationalError({ task, message, model }) {
@@ -625,7 +773,7 @@ function appendOperationalLog(target, message) {
 
 async function markCurrentTaskCompleted(target, taskLabel, note = "") {
   const tasksPath = ".lc/spec/tasks.md";
-  const current = await readProjectFile(target.id, tasksPath);
+  const current = await readProjectFile(target, tasksPath);
   if (!current.trim()) return false;
 
   const wanted = normalizeTaskText(taskLabel);
@@ -658,14 +806,14 @@ async function markCurrentTaskCompleted(target, taskLabel, note = "") {
 
   if (!changed || next === current) return false;
 
-  await writeProjectFile(target.id, tasksPath, next);
+  await writeProjectFile(target, tasksPath, next);
 
   const memoryPath = ".lc/memory/project_context.md";
-  const memory = await readProjectFile(target.id, memoryPath);
+  const memory = await readProjectFile(target, memoryPath);
   const stamp = new Date().toISOString();
   const cleanNote = String(note || "").replace(/\s+/g, " ").slice(0, 500);
   await writeProjectFile(
-    target.id,
+    target,
     memoryPath,
     `${memory.trim()}\n\n---\n\n## Avanzamento automatico ${stamp}\n\nTask completato: ${taskLabel || "prossimo task SDD"}.\n${cleanNote ? `\nNota: ${cleanNote}\n` : ""}`,
   );
@@ -709,6 +857,7 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
     maxTokens: 9000,
     timeoutMs: openRouterTimeoutMs,
   });
+  appendModelNarration(target, aiText);
 
   const operations = parseOperations(aiText);
   if (!operations.length) {
@@ -717,7 +866,7 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
     );
   }
 
-  const result = await applyOperations(target.id, operations);
+  const result = await applyOperations(target, operations);
   if (result.errors.length) {
     throw new Error(`Operazioni file non valide: ${result.errors.join("; ")}`);
   }
@@ -730,11 +879,11 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
     mode === "initial"
       ? "SDD creato e primo MVP generato"
       : mode === "continue"
-        ? "Prossimo task SDD applicato"
-        : "Modifica applicata seguendo SDD";
+        ? "Task SDD applicato"
+        : "Modifica applicata";
 
   return {
-    summary: `${action} con ${model}. ${summarizeTouchedFiles(createdOrUpdated)}.`,
+    summary: `${action}. ${summarizeTouchedFiles(createdOrUpdated)}.`,
     touched: createdOrUpdated,
     changedFiles: createdOrUpdated.length,
   };
@@ -771,6 +920,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       maxTokens: phase.maxTokens,
       timeoutMs: openRouterTimeoutMs,
     });
+    appendModelNarration(target, aiText, phase.label);
 
     const operations = parseOperations(aiText);
     if (!operations.length) {
@@ -779,7 +929,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       );
     }
 
-    const result = await applyOperations(target.id, operations);
+    const result = await applyOperations(target, operations);
     if (result.errors.length) {
       throw new Error(`Fase ${phase.label}: operazioni file non valide: ${result.errors.join("; ")}`);
     }
@@ -791,7 +941,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   }
 
   return {
-    summary: `SDD creato e MVP iniziale generato con ${model}. ${summarizeTouchedFiles([...new Set(touched)])}.`,
+    summary: `SDD creato e MVP iniziale generato. ${summarizeTouchedFiles([...new Set(touched)])}.`,
     touched: [...new Set(touched)],
     changedFiles: new Set(touched).size,
   };
@@ -801,7 +951,26 @@ function summarizeTouchedFiles(files) {
   const list = Array.isArray(files) ? files.filter(Boolean) : [];
   if (!list.length) return "Nessun file modificato";
   const preview = list.slice(0, 3).join(", ");
-  return list.length <= 3 ? `File aggiornati: ${preview}` : `${list.length} file aggiornati (${preview}...)`;
+  return list.length <= 3 ? "File salvati nel progetto" : `${list.length} file salvati nel progetto`;
+}
+
+function appendModelNarration(target, aiText, phaseLabel = "") {
+  const narration = extractModelNarration(aiText);
+  if (!narration) return;
+  appendOperationalLog(target, phaseLabel ? `Nota operativa (${phaseLabel}): ${narration}` : `Nota operativa: ${narration}`);
+}
+
+function extractModelNarration(aiText) {
+  const text = String(aiText || "")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/<file\s+path=["'][^"']+["'][\s\S]*?<\/file>/gi, " ")
+    .replace(/\{[\s\S]*"files"\s*:\s*\[[\s\S]*\}/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!text || text.length < 8) return "";
+  if (/^(ok|fatto|done)$/i.test(text)) return "";
+  return text.length > 260 ? `${text.slice(0, 260).trim()}...` : text;
 }
 
 function buildOrchestratorSystemPrompt() {
@@ -937,7 +1106,7 @@ function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, 
 }
 
 async function createInitialWorkspace(target, initialPrompt) {
-  const root = projectRoot(target.id);
+  const root = projectRoot(target);
   const now = new Date().toISOString();
   const safeName = safeProjectName(target.name);
   const files = {
@@ -970,23 +1139,23 @@ async function createInitialWorkspace(target, initialPrompt) {
   };
 
   for (const [relPath, content] of Object.entries(files)) {
-    await writeProjectFile(target.id, relPath, content);
+    await writeProjectFile(target, relPath, content);
   }
 }
 
 async function refreshProjectState(target) {
-  const root = projectRoot(target.id);
+  const root = projectRoot(target);
   const files = await listProjectFiles(root);
   target.files = files;
   target.fileCount = files.length;
   target.html = await readPreviewHtml(target);
 
   const specs = {
-    sdd: await readProjectFile(target.id, ".lc/spec/sdd.md"),
-    requirements: await readProjectFile(target.id, ".lc/spec/requirements.md"),
-    architecture: await readProjectFile(target.id, ".lc/spec/architecture.md"),
-    tasks: await readProjectFile(target.id, ".lc/spec/tasks.md"),
-    memory: await readProjectFile(target.id, ".lc/memory/project_context.md"),
+    sdd: await readProjectFile(target, ".lc/spec/sdd.md"),
+    requirements: await readProjectFile(target, ".lc/spec/requirements.md"),
+    architecture: await readProjectFile(target, ".lc/spec/architecture.md"),
+    tasks: await readProjectFile(target, ".lc/spec/tasks.md"),
+    memory: await readProjectFile(target, ".lc/memory/project_context.md"),
   };
   const steps = parseTaskList(specs.tasks);
   const currentStep = steps.find((step) => !step.done) || null;
@@ -1008,7 +1177,7 @@ async function refreshProjectState(target) {
 }
 
 async function loadProjectMemory(target) {
-  const root = projectRoot(target.id);
+  const root = projectRoot(target);
   const files = await listProjectFiles(root);
   const memoryFiles = [
     ".lc/spec/requirements.md",
@@ -1020,7 +1189,7 @@ async function loadProjectMemory(target) {
 
   const chunks = [];
   for (const relPath of memoryFiles) {
-    const content = await readProjectFile(target.id, relPath);
+    const content = await readProjectFile(target, relPath);
     if (content.trim()) {
       chunks.push(`--- FILE: ${relPath} ---\n${truncate(content, 9000)}`);
     }
@@ -1155,8 +1324,8 @@ function extractActionFromHeader(header) {
   return "write";
 }
 
-async function applyOperations(appId, operations) {
-  const root = projectRoot(appId);
+async function applyOperations(target, operations) {
+  const root = projectRoot(target);
   await fs.mkdir(root, { recursive: true });
 
   const result = {
@@ -1257,11 +1426,19 @@ async function callOpenRouter({
   }
 }
 
-async function loadSettings() {
+async function loadSettings(user = null) {
   const defaults = {
     openrouterApiKey: "",
     defaultModel: commonModels[0],
   };
+
+  if (user) {
+    return {
+      ...defaults,
+      ...(user.settings || {}),
+      defaultModel: normalizeModelId(user.settings?.defaultModel || defaults.defaultModel),
+    };
+  }
 
   const own = await readJson(configPath);
   if (own) {
@@ -1281,13 +1458,137 @@ async function loadSettings() {
   };
 }
 
-async function loadApps() {
-  const data = await readJson(appsPath);
+async function loadUsersStore() {
+  const data = await readJson(usersPath);
+  return { users: Array.isArray(data?.users) ? data.users : [] };
+}
+
+async function saveUsersStore(store) {
+  await fs.writeFile(usersPath, JSON.stringify({ users: store.users || [] }, null, 2), "utf8");
+}
+
+async function getSessionUser(req) {
+  const header = String(req.headers.authorization || "");
+  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+  if (!token) return null;
+
+  const store = await loadUsersStore();
+  const tokenHash = hashSecret(token);
+  const user = store.users.find((item) => item.sessionHash === tokenHash);
+  if (!user || !user.sessionExpiresAt || new Date(user.sessionExpiresAt).getTime() < Date.now()) return null;
+
+  await ensureUserStorage(user);
+  return user;
+}
+
+async function requireUser(req, res) {
+  const user = await getSessionUser(req);
+  if (!user) {
+    res.status(401).json({ error: "Accesso richiesto. Inserisci email e token." });
+    return null;
+  }
+  return user;
+}
+
+async function loadUserById(userId) {
+  const store = await loadUsersStore();
+  const user = store.users.find((item) => item.id === userId);
+  if (!user) return null;
+  await ensureUserStorage(user);
+  return user;
+}
+
+function findOrCreateUser(store, email) {
+  const existing = store.users.find((item) => item.email === email);
+  if (existing) return existing;
+
+  const now = new Date().toISOString();
+  const user = {
+    id: `usr-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`,
+    email,
+    createdAt: now,
+    updatedAt: now,
+    settings: {
+      openrouterApiKey: "",
+      defaultModel: commonModels[0],
+    },
+    pendingTokenHash: "",
+    pendingTokenExpiresAt: "",
+    sessionHash: "",
+    sessionExpiresAt: "",
+  };
+  store.users.unshift(user);
+  return user;
+}
+
+async function ensureUserStorage(user) {
+  await fs.mkdir(userRoot(user.id), { recursive: true });
+  await fs.mkdir(userProjectsDir(user.id), { recursive: true });
+  if (!(await exists(userAppsPath(user.id)))) {
+    await fs.writeFile(userAppsPath(user.id), JSON.stringify({ apps: [] }, null, 2), "utf8");
+  }
+}
+
+function publicUser(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    createdAt: user.createdAt,
+    lastLoginAt: user.lastLoginAt || "",
+  };
+}
+
+function normalizeEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
+function generateLoginToken() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function hashSecret(value) {
+  return crypto.createHmac("sha256", authSecret).update(String(value || "")).digest("hex");
+}
+
+async function sendLoginTokenEmail(email, token) {
+  const host = process.env.SMTP_HOST;
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@lococode.local";
+  if (!host) {
+    console.warn(`SMTP non configurato. Token LocoCode per ${email}: ${token}`);
+    return { sent: false };
+  }
+
+  const portValue = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER || "";
+  const pass = process.env.SMTP_PASS || "";
+  const transporter = nodemailer.createTransport({
+    host,
+    port: portValue,
+    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true" || portValue === 465,
+    auth: user && pass ? { user, pass } : undefined,
+  });
+
+  await transporter.sendMail({
+    from,
+    to: email,
+    subject: "Il tuo token LocoCode",
+    text: `Il tuo token LocoCode e: ${token}\n\nScade tra 15 minuti.`,
+    html: `<p>Il tuo token LocoCode e:</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${token}</p><p>Scade tra 15 minuti.</p>`,
+  });
+
+  return { sent: true };
+}
+
+async function loadApps(user = null) {
+  const data = await readJson(user ? userAppsPath(user.id) : appsPath);
   return Array.isArray(data?.apps) ? data.apps : [];
 }
 
-async function saveApps(apps) {
-  await fs.writeFile(appsPath, JSON.stringify({ apps }, null, 2), "utf8");
+async function saveApps(apps, user = null) {
+  const targetPath = user ? userAppsPath(user.id) : appsPath;
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.writeFile(targetPath, JSON.stringify({ apps }, null, 2), "utf8");
 }
 
 async function readJson(filePath) {
@@ -1299,13 +1600,18 @@ async function readJson(filePath) {
 }
 
 function publicApp(appData) {
-  return {
+  const safe = {
     ...appData,
+  };
+  delete safe.ownerId;
+
+  return {
+    ...safe,
     html: appData.html || "",
     files: Array.isArray(appData.files) ? appData.files : [],
     fileCount: appData.fileCount || (Array.isArray(appData.files) ? appData.files.length : 0),
     sdd: appData.sdd || emptySddState(),
-    storagePath: projectRoot(appData.id),
+    storagePath: appData.ownerId ? `users/${appData.ownerId}/projects/${appData.id}` : projectRoot(appData),
   };
 }
 
@@ -1337,10 +1643,10 @@ function formatOpenRouterError(err) {
 }
 
 async function readPreviewHtml(target) {
-  const preview = await readProjectFile(target.id, "preview/index.html");
+  const preview = await readProjectFile(target, "preview/index.html");
   if (preview.trim()) return preview;
 
-  const rootIndex = await readProjectFile(target.id, "index.html");
+  const rootIndex = await readProjectFile(target, "index.html");
   if (looksLikeStandaloneHtml(rootIndex)) return rootIndex;
 
   return target.html || "";
@@ -1350,21 +1656,21 @@ function looksLikeStandaloneHtml(value) {
   return /<!doctype html|<html[\s>]/i.test(value || "");
 }
 
-async function readProjectFile(appId, relPath) {
+async function readProjectFile(target, relPath) {
   const safe = normalizeSafePath(relPath);
   if (!safe) return "";
 
   try {
-    return await fs.readFile(path.join(projectRoot(appId), safe), "utf8");
+    return await fs.readFile(path.join(projectRoot(target), safe), "utf8");
   } catch {
     return "";
   }
 }
 
-async function writeProjectFile(appId, relPath, content) {
+async function writeProjectFile(target, relPath, content) {
   const safe = normalizeSafePath(relPath);
   if (!safe) throw new Error(`Percorso non sicuro: ${relPath}`);
-  const targetPath = path.join(projectRoot(appId), safe);
+  const targetPath = path.join(projectRoot(target), safe);
   await fs.mkdir(path.dirname(targetPath), { recursive: true });
   await fs.writeFile(targetPath, content, "utf8");
 }
@@ -1391,7 +1697,22 @@ async function listProjectFiles(root) {
   return results.sort((a, b) => a.localeCompare(b));
 }
 
-function projectRoot(appId) {
+function userRoot(userId) {
+  return path.join(usersDir, userId);
+}
+
+function userProjectsDir(userId) {
+  return path.join(userRoot(userId), "projects");
+}
+
+function userAppsPath(userId) {
+  return path.join(userRoot(userId), "apps.json");
+}
+
+function projectRoot(targetOrId) {
+  const appId = typeof targetOrId === "object" ? targetOrId.id : String(targetOrId || "");
+  const ownerId = typeof targetOrId === "object" ? targetOrId.ownerId : "";
+  if (ownerId) return path.join(userProjectsDir(ownerId), appId);
   return path.join(projectsDir, appId);
 }
 
