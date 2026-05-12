@@ -94,6 +94,9 @@ app.get("/api/apps", async (_req, res) => {
   const apps = await loadApps();
   for (const target of apps) {
     await refreshProjectState(target);
+    if (target.autopilot?.running && !runningJobs.has(target.id)) {
+      recoverStaleAutopilot(target);
+    }
     if (!target.autopilot?.running && target.status === "ready" && target.sdd?.currentStep) {
       target.status = "partial";
     }
@@ -112,6 +115,33 @@ app.get("/api/apps", async (_req, res) => {
   await saveApps(apps);
   res.json({ apps: apps.map(publicApp) });
 });
+
+function recoverStaleAutopilot(target) {
+  const now = new Date().toISOString();
+  const steps = target.sdd?.steps || [];
+  const currentTask = target.sdd?.currentStep?.label || target.autopilot?.currentTask || "Progetto in pausa";
+  const message = "Autopilota interrotto da riavvio server. Puoi riprendere dal prossimo task.";
+
+  appendOperationalLog(target, message);
+  target.status = target.sdd?.currentStep ? "paused" : "ready";
+  target.updatedAt = now;
+  target.autopilot = {
+    ...(target.autopilot || {}),
+    running: false,
+    stopRequested: false,
+    currentTask,
+    completed: steps.filter((step) => step.done).length,
+    total: steps.length,
+    updatedAt: now,
+    lastMessage: message,
+    error: null,
+  };
+
+  target.messages = Array.isArray(target.messages) ? target.messages : [];
+  if (!target.messages.some((item) => item.content === message)) {
+    pushAssistantMessage(target, message);
+  }
+}
 
 app.get("/api/apps/:id/files", async (req, res) => {
   const apps = await loadApps();
