@@ -455,7 +455,7 @@ async function runAutopilotJob({ appId, apiKey, model, userPrompt = "", mode = "
 
       if (stallCount >= 2) {
         throw new Error(
-          `Il task "${beforeTask}" non risulta avanzare: il modello ha scritto file, ma non ha aggiornato il piano SDD marcando il task completato. Correggi .lc/spec/tasks.md oppure riprova con un modello diverso.`,
+          `Il task "${beforeTask}" non risulta avanzare: il modello non ha aggiornato il piano SDD. LocoCode prova a spuntare automaticamente .lc/spec/tasks.md dopo ogni task; se ricapita, il task va verificato manualmente.`,
         );
       }
 
@@ -598,24 +598,33 @@ async function markCurrentTaskCompleted(target, taskLabel, note = "") {
   const current = await readProjectFile(target.id, tasksPath);
   if (!current.trim()) return false;
 
-  const escaped = escapeRegExp(String(taskLabel || "").trim());
+  const wanted = normalizeTaskText(taskLabel);
   let changed = false;
-  let next = current;
+  const lines = current.split(/\r?\n/);
+  const nextLines = lines.map((line) => {
+    if (changed || !/^\s*[-*]\s+\[\s\]\s+.+$/.test(line)) return line;
 
-  if (escaped) {
-    const exactPattern = new RegExp(`^(\\s*[-*]\\s+\\[)\\s(\\]\\s+.*${escaped}.*)$`, "im");
-    next = next.replace(exactPattern, (_match, prefix, suffix) => {
-      changed = true;
-      return `${prefix}x${suffix}`;
-    });
-  }
+    const label = line.replace(/^\s*[-*]\s+\[\s\]\s+/, "");
+    const normalized = normalizeTaskText(label);
+    if (wanted && normalized && normalized !== wanted && !normalized.includes(wanted) && !wanted.includes(normalized)) {
+      return line;
+    }
+
+    changed = true;
+    return line.replace(/\[\s\]/, "[x]");
+  });
 
   if (!changed) {
-    next = next.replace(/^(\s*[-*]\s+\[)\s(\]\s+.+)$/m, (_match, prefix, suffix) => {
-      changed = true;
-      return `${prefix}x${suffix}`;
-    });
+    for (let index = 0; index < nextLines.length; index += 1) {
+      if (/^\s*[-*]\s+\[\s\]\s+.+$/.test(nextLines[index])) {
+        nextLines[index] = nextLines[index].replace(/\[\s\]/, "[x]");
+        changed = true;
+        break;
+      }
+    }
   }
+
+  const next = nextLines.join("\n");
 
   if (!changed || next === current) return false;
 
@@ -634,8 +643,13 @@ async function markCurrentTaskCompleted(target, taskLabel, note = "") {
   return true;
 }
 
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function normalizeTaskText(value) {
+  return String(value || "")
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 function pushAssistantMessage(target, content) {
@@ -690,7 +704,9 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
         : "Modifica applicata seguendo SDD";
 
   return {
-    summary: `${action} con ${model}. File aggiornati: ${createdOrUpdated.slice(0, 8).join(", ")}${createdOrUpdated.length > 8 ? "..." : ""}.`,
+    summary: `${action} con ${model}. ${summarizeTouchedFiles(createdOrUpdated)}.`,
+    touched: createdOrUpdated,
+    changedFiles: createdOrUpdated.length,
   };
 }
 
@@ -745,8 +761,17 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   }
 
   return {
-    summary: `SDD creato e MVP iniziale generato con ${model}. File aggiornati: ${[...new Set(touched)].slice(0, 10).join(", ")}${touched.length > 10 ? "..." : ""}.`,
+    summary: `SDD creato e MVP iniziale generato con ${model}. ${summarizeTouchedFiles([...new Set(touched)])}.`,
+    touched: [...new Set(touched)],
+    changedFiles: new Set(touched).size,
   };
+}
+
+function summarizeTouchedFiles(files) {
+  const list = Array.isArray(files) ? files.filter(Boolean) : [];
+  if (!list.length) return "Nessun file modificato";
+  const preview = list.slice(0, 3).join(", ");
+  return list.length <= 3 ? `File aggiornati: ${preview}` : `${list.length} file aggiornati (${preview}...)`;
 }
 
 function buildOrchestratorSystemPrompt() {
@@ -767,9 +792,10 @@ function buildOrchestratorSystemPrompt() {
     "- Non inserire API key o segreti nei file.",
     "- Ogni modifica deve restituire file completi, non patch parziali.",
     "- Usa solo percorsi relativi alla root progetto.",
+    "- Non creare mai .venv, venv, node_modules, dist o build: l'ambiente verra installato dall'utente o dal deploy.",
     "- Per la preview web devi sempre creare o aggiornare preview/index.html come file HTML singolo con CSS e JS inline, senza CDN e senza asset remoti.",
     "- Se generi backend, includi sempre backend/requirements.txt, backend/app/__init__.py, backend/app/main.py e backend/.env.example.",
-    "- Aggiorna .lc/spec/tasks.md spuntando i task completati.",
+    "- Aggiorna sempre .lc/spec/tasks.md spuntando il task corrente completato con [x].",
     "",
     "Formato obbligatorio per creare/modificare file:",
     "```file path=\"percorso/relativo/file.ext\"",
@@ -872,8 +898,10 @@ function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, 
     "Istruzioni operative:",
     "- Non ripartire da zero.",
     "- Modifica solo i file necessari.",
-    "- Aggiorna sempre .lc/spec/tasks.md e .lc/memory/project_context.md.",
+    "- Aggiorna sempre .lc/spec/tasks.md spuntando il task corrente completato con [x].",
+    "- Aggiorna sempre .lc/memory/project_context.md con una nota breve.",
     "- Aggiorna preview/index.html se cambia il comportamento o la UI.",
+    "- Non creare mai .venv, venv, node_modules, dist o build.",
     "- Restituisci solo blocchi file nel formato richiesto.",
   ].join("\n");
 }
@@ -937,6 +965,7 @@ async function refreshProjectState(target) {
     specs,
     steps,
     currentStep,
+    phase: currentStep?.phase || "",
     filePaths: [
       ".lc/spec/sdd.md",
       ".lc/spec/requirements.md",
@@ -1320,7 +1349,7 @@ async function listProjectFiles(root) {
       const full = path.join(dir, entry.name);
       const rel = path.relative(root, full).replaceAll("\\", "/");
       if (entry.isDirectory()) {
-        if (["node_modules", "dist", "build", "__pycache__"].includes(entry.name)) continue;
+        if ([".git", ".venv", "venv", "node_modules", "dist", "build", "__pycache__", ".pytest_cache", ".mypy_cache"].includes(entry.name)) continue;
         await walk(full);
       } else {
         results.push(rel);
@@ -1342,6 +1371,7 @@ function normalizeSafePath(relPath) {
   if (/^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("/")) return "";
   const parts = normalized.split("/").filter(Boolean);
   if (!parts.length || parts.includes("..")) return "";
+  if (parts.some((part) => [".git", ".venv", "venv", "node_modules", "dist", "build", "__pycache__"].includes(part))) return "";
   return parts.join("/");
 }
 
@@ -1350,7 +1380,17 @@ function parseTaskList(tasksMarkdown) {
 
   const steps = [];
   const lines = tasksMarkdown.split(/\r?\n/);
+  let currentPhase = "";
+  let currentPhaseNumber = 0;
+
   for (const line of lines) {
+    const heading = line.match(/^\s*#{1,4}\s+(?<title>.+)$/);
+    if (heading?.groups?.title && /fase|phase/i.test(heading.groups.title)) {
+      currentPhase = cleanTaskHeading(heading.groups.title);
+      currentPhaseNumber = Number((currentPhase.match(/fase\s+(\d+)/i) || [])[1] || currentPhaseNumber || 0);
+      continue;
+    }
+
     const match = line.match(/^\s*[-*]\s+\[(?<mark>[ xX])\]\s+(?<label>.+)$/);
     if (!match?.groups) continue;
 
@@ -1364,10 +1404,21 @@ function parseTaskList(tasksMarkdown) {
       id: `task-${steps.length + 1}`,
       label: rawLabel,
       done: match.groups.mark.toLowerCase() === "x",
+      phase: currentPhase,
+      phaseNumber: currentPhaseNumber,
     });
   }
 
   return steps;
+}
+
+function cleanTaskHeading(value) {
+  return String(value || "")
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .replace(/[✓✔]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function getNextTaskLabel(target) {

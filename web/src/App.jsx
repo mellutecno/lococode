@@ -555,15 +555,7 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
 
   return (
     <div className="chat-layout">
-      <section className="chat-panel">
-        <div className="panel-title">
-          <div>
-            <span>Orchestrator SDD</span>
-            <h2>{app.name}</h2>
-          </div>
-          <em>{app.fileCount || app.files?.length || 0} file</em>
-        </div>
-
+      <section className="chat-panel orchestrator-panel">
         <div className="orchestrator-strip">
           <div className={`task-card ${app.status === "error" ? "has-error" : ""}`}>
             <span>{taskState.kicker}</span>
@@ -582,13 +574,15 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
           )}
         </div>
 
+        <OperationLog app={app} status={status} error={error} compact />
+
         <div className="messages">
           {visibleMessages.map((message, index) => (
             <article key={`${message.at}-${index}`} className={`message ${message.role}`}>
-              <p>{message.content}</p>
+              <p>{chatMessageContent(message)}</p>
             </article>
           ))}
-          {!visibleMessages.length && <p className="messages-empty">L'ultimo scambio apparira qui.</p>}
+          {!visibleMessages.length && <p className="messages-empty">Scrivi una richiesta o avvia il prossimo task.</p>}
         </div>
 
         <Composer
@@ -646,26 +640,30 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
   );
 }
 
-function OperationLog({ app, status, error }) {
+function OperationLog({ app, status, error, compact = false }) {
   const lastAssistant = [...(app.messages || [])].reverse().find((message) => message.role === "assistant");
   const report = app.autopilot?.error;
-  const log = Array.isArray(app.autopilot?.log) ? app.autopilot.log.slice(-8) : [];
+  const log = Array.isArray(app.autopilot?.log) ? app.autopilot.log.slice(compact ? -5 : -14) : [];
   const hasError = Boolean(error || report) || app.status === "error" || /errore|timeout|interrott/i.test(lastAssistant?.content || "");
-  const text = error || report?.cause || lastAssistant?.content || "Nessuna operazione registrata per ora.";
+  const taskState = projectTaskState(app);
+  const text = cleanOperationText(error || report?.cause || lastAssistant?.content || "Nessuna operazione registrata per ora.");
 
   return (
-    <section className={`operation-log ${hasError ? "has-error" : ""}`}>
-      <div>
-        <strong>Registro operativo</strong>
-        <span>{projectTaskState(app).short}</span>
+    <section className={`operation-log ${compact ? "compact-log" : ""} ${hasError ? "has-error" : ""}`}>
+      <div className="operation-head">
+        <div>
+          <strong>{compact ? "Ultime operazioni" : "Registro operativo"}</strong>
+          <span>{taskState.short}</span>
+        </div>
+        {app.autopilot?.running && <em>Live</em>}
       </div>
       <div className="operation-body">
         {report ? (
           <>
             <strong>{report.title || "Orchestrator fermo"}</strong>
             <p>{report.task ? `Task: ${report.task}` : text}</p>
-            <p>{report.cause}</p>
-            {report.suggestion && <p>{report.suggestion}</p>}
+            <p>{cleanOperationText(report.cause)}</p>
+            {report.suggestion && <p>{cleanOperationText(report.suggestion)}</p>}
           </>
         ) : (
           <>
@@ -674,7 +672,7 @@ function OperationLog({ app, status, error }) {
                 {log.map((entry, index) => (
                   <li key={`${entry.at}-${index}`}>
                     <time>{formatShortTime(entry.at)}</time>
-                    <span>{entry.message}</span>
+                    <span>{cleanOperationText(entry.message, compact ? 180 : 420)}</span>
                   </li>
                 ))}
               </ul>
@@ -709,9 +707,15 @@ function projectTaskState(app) {
   const steps = app?.sdd?.steps || [];
   const doneCount = steps.filter((step) => step.done).length;
   const total = steps.length;
+  const currentStep = app?.sdd?.currentStep || steps.find((step) => !step.done) || null;
+  const currentIndex = currentStep ? steps.findIndex((step) => step.id === currentStep.id || step.label === currentStep.label) : -1;
   const progress = total ? `${doneCount}/${total}` : "SDD";
-  const task = app?.autopilot?.currentTask || app?.sdd?.currentStep?.label || "";
-  const model = modelLabel(app?.model);
+  const taskProgress = total ? `${currentIndex >= 0 ? currentIndex + 1 : doneCount}/${total}` : "SDD";
+  const phase = formatPhaseLabel(currentStep?.phase || app?.sdd?.phase || "");
+  const shortPhase = compactPhaseLabel(phase);
+  const meta = total ? `${phase} - Task ${taskProgress} - ${modelLabel(app?.model)}` : modelLabel(app?.model);
+  const headerMeta = total ? `${phase} - Task ${taskProgress}` : "Piano SDD in preparazione";
+  const task = app?.autopilot?.currentTask || currentStep?.label || "";
 
   if (!app) {
     return {
@@ -725,31 +729,31 @@ function projectTaskState(app) {
 
   if (app.status === "error") {
     return {
-      header: `Fermo per errore - ${progress}`,
+      header: `Fermo per errore - ${headerMeta}`,
       kicker: "Errore da correggere",
       label: task || "Task non completato",
-      meta: `${progress} - ${model}`,
-      short: "Fermo per errore",
+      meta,
+      short: `${shortPhase} - Task ${taskProgress}`,
     };
   }
 
   if (app.autopilot?.running || app.status === "building") {
     return {
-      header: `Autopilota attivo - ${progress}`,
+      header: `Autopilota attivo - ${headerMeta}`,
       kicker: "Task corrente",
       label: task || "Preparazione SDD",
-      meta: `${progress} - ${model}`,
-      short: "In lavorazione",
+      meta,
+      short: `${shortPhase} - Task ${taskProgress}`,
     };
   }
 
   if (task) {
     return {
-      header: `Piano SDD - ${progress}`,
+      header: `${headerMeta}`,
       kicker: "Prossimo task",
       label: task,
-      meta: `${progress} - ${model}`,
-      short: app.status === "partial" || app.status === "paused" ? "In pausa" : "Pronto",
+      meta,
+      short: app.status === "partial" || app.status === "paused" ? `${shortPhase} - in pausa` : `${shortPhase} - pronto`,
     };
   }
 
@@ -762,9 +766,46 @@ function projectTaskState(app) {
   };
 }
 
+function formatPhaseLabel(value) {
+  const text = String(value || "")
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "")
+    .replace(/\s*(?:✓|✔|âœ“|âœ”)\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return text || "Fase non definita";
+}
+
+function compactPhaseLabel(value) {
+  const text = formatPhaseLabel(value);
+  const match = text.match(/fase\s+\d+/i);
+  return match ? match[0].replace(/^fase/i, "Fase") : text;
+}
+
 function conversationMessages(messages) {
   const list = Array.isArray(messages) ? messages : [];
   return list.slice(-12);
+}
+
+function chatMessageContent(message) {
+  const text = String(message?.content || "").trim();
+  if (!text) return "";
+  if (message.role !== "assistant") return text;
+
+  return cleanOperationText(text, 700)
+    .replace(/File aggiornati:\s*[\s\S]*$/i, "File aggiornati salvati nel progetto.")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+function cleanOperationText(value, maxChars = 360) {
+  const text = String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/File aggiornati:\s*.+$/i, "File aggiornati salvati nel progetto.")
+    .trim();
+
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars).trim()}...`;
 }
 
 function findLastIndex(list, predicate) {
@@ -807,21 +848,55 @@ function WorkspaceShell({ app, title, subtitle, children }) {
 
 function TasksWorkspace({ app }) {
   const steps = app?.sdd?.steps || [];
-  const done = steps.filter((step) => step.done).length;
+  const [doneOpen, setDoneOpen] = useState(false);
+  const [todoOpen, setTodoOpen] = useState(true);
+  const indexedSteps = steps.map((step, index) => ({ ...step, number: index + 1 }));
+  const doneSteps = indexedSteps.filter((step) => step.done);
+  const todoSteps = indexedSteps.filter((step) => !step.done);
+  const currentTask = todoSteps[0] || null;
+  const currentPhase = formatPhaseLabel(currentTask?.phase || app?.sdd?.phase || "");
 
   return (
-    <WorkspaceShell app={app} title="Task progetto" subtitle={steps.length ? `${done} completati su ${steps.length}` : "Il piano task verra creato dall'orchestrator."}>
-      <div className="task-list-view">
-        {steps.map((step, index) => (
-          <article className={`task-list-row ${step.done ? "done" : ""}`} key={`${step.id}-${index}`}>
-            <span>{index + 1}</span>
-            <Check size={18} />
-            <div>
-              <strong>{step.label}</strong>
-              <em>{step.done ? "Completato" : "Da fare"}</em>
-            </div>
+    <WorkspaceShell app={app} title="Task progetto" subtitle={steps.length ? `${doneSteps.length} completati su ${steps.length}` : "Il piano task verra creato dall'orchestrator."}>
+      <div className="task-dashboard">
+        <div className="task-summary-grid">
+          <article>
+            <span>Completati</span>
+            <strong>{doneSteps.length}</strong>
           </article>
-        ))}
+          <article>
+            <span>Da fare</span>
+            <strong>{todoSteps.length}</strong>
+          </article>
+          <article>
+            <span>Fase attuale</span>
+            <strong>{currentPhase}</strong>
+          </article>
+          <article>
+            <span>Task</span>
+            <strong>{currentTask ? `${currentTask.number}/${steps.length}` : `${doneSteps.length}/${steps.length}`}</strong>
+          </article>
+        </div>
+
+        {currentTask && (
+          <article className="current-task-summary">
+            <span>Prossimo task</span>
+            <strong>{currentTask.label}</strong>
+          </article>
+        )}
+
+        <TaskGroup title="Da fare" count={todoSteps.length} open={todoOpen} onToggle={() => setTodoOpen((value) => !value)}>
+          {todoSteps.map((step, index) => (
+            <TaskRow key={`${step.id}-${step.number}`} step={step} current={index === 0} />
+          ))}
+        </TaskGroup>
+
+        <TaskGroup title="Completati" count={doneSteps.length} open={doneOpen} onToggle={() => setDoneOpen((value) => !value)}>
+          {doneSteps.map((step) => (
+            <TaskRow key={`${step.id}-${step.number}`} step={step} />
+          ))}
+        </TaskGroup>
+
         {!steps.length && (
           <div className="panel-empty">
             <strong>Nessun task disponibile</strong>
@@ -830,6 +905,31 @@ function TasksWorkspace({ app }) {
         )}
       </div>
     </WorkspaceShell>
+  );
+}
+
+function TaskGroup({ title, count, open, onToggle, children }) {
+  return (
+    <section className={`task-group ${open ? "open" : ""}`}>
+      <button className="task-group-toggle" onClick={onToggle}>
+        <span>{title}</span>
+        <em>{count}</em>
+      </button>
+      {open && <div className="task-group-body">{count ? children : <p>Nessun task in questa sezione.</p>}</div>}
+    </section>
+  );
+}
+
+function TaskRow({ step, current = false }) {
+  return (
+    <article className={`task-list-row ${step.done ? "done" : ""} ${current ? "current" : ""}`}>
+      <span>{step.number}</span>
+      <Check size={18} />
+      <div>
+        <strong>{step.label}</strong>
+        <em>{current ? "Prossimo" : step.done ? "Completato" : "Da fare"}</em>
+      </div>
+    </article>
   );
 }
 
@@ -853,13 +953,16 @@ function LogWorkspace({ app, status, error }) {
   return (
     <WorkspaceShell app={app} title="Registro operativo" subtitle="Cronologia tecnica di quello che LocoCode sta facendo.">
       <OperationLog app={app} status={status} error={error} />
-      <div className="messages log-messages">
-        {conversationMessages(app?.messages || []).map((message, index) => (
-          <article key={`${message.at}-${index}`} className={`message ${message.role}`}>
-            <p>{message.content}</p>
-          </article>
-        ))}
-      </div>
+      <section className="log-conversation">
+        <h3>Ultimi messaggi</h3>
+        <div className="messages log-messages">
+          {conversationMessages(app?.messages || []).map((message, index) => (
+            <article key={`${message.at}-${index}`} className={`message ${message.role}`}>
+              <p>{chatMessageContent(message)}</p>
+            </article>
+          ))}
+        </div>
+      </section>
     </WorkspaceShell>
   );
 }
@@ -902,7 +1005,7 @@ function SddDocumentsPanel({ app, fullscreen = false }) {
   }
 
   return (
-    <section className="sdd-documents">
+    <section className="sdd-documents" onWheel={forwardWheelToSddReader}>
       <nav className="sdd-doc-nav" aria-label="Documenti SDD">
         {documents.map((document, index) => (
           <button
@@ -923,6 +1026,14 @@ function SddDocumentsPanel({ app, fullscreen = false }) {
       </article>
     </section>
   );
+}
+
+function forwardWheelToSddReader(event) {
+  if (event.target.closest?.(".sdd-doc-nav")) return;
+  const reader = event.currentTarget.querySelector(".sdd-readable");
+  if (!reader) return;
+  reader.scrollTop += event.deltaY;
+  event.preventDefault();
 }
 
 function renderSddContent(content) {

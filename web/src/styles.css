@@ -570,6 +570,10 @@ button:disabled {
   gap: 12px;
 }
 
+.orchestrator-panel {
+  gap: 10px;
+}
+
 .panel-title {
   min-width: 0;
   display: flex;
@@ -858,6 +862,14 @@ button:disabled {
   padding: 6px 2px;
 }
 
+.orchestrator-panel .messages {
+  flex: 1 1 180px;
+  min-height: 140px;
+  max-height: 250px;
+  border-top: 1px solid var(--line);
+  padding: 12px 2px 6px;
+}
+
 .conversation-heading {
   display: flex;
   justify-content: space-between;
@@ -885,6 +897,11 @@ button:disabled {
   gap: 8px;
 }
 
+.operation-log.compact-log {
+  max-height: 190px;
+  overflow: hidden;
+}
+
 .operation-log.has-error {
   border-color: #f0b8b8;
   background: #fff5f5;
@@ -895,10 +912,28 @@ button:disabled {
   border-color: #6f2c35;
 }
 
-.operation-log div {
+.operation-head {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  align-items: flex-start;
+}
+
+.operation-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.operation-head em {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
 }
 
 .operation-log strong {
@@ -924,6 +959,10 @@ button:disabled {
   overflow: auto;
   display: block;
   gap: 6px;
+}
+
+.compact-log .operation-body {
+  max-height: 126px;
 }
 
 .operation-body > strong {
@@ -1002,7 +1041,8 @@ button:disabled {
 .workspace-view > .sdd-documents,
 .workspace-view > .file-browser,
 .workspace-view > .operation-log,
-.task-list-view {
+.task-dashboard,
+.log-conversation {
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -1013,10 +1053,122 @@ button:disabled {
   padding: 16px;
 }
 
-.task-list-view {
+.task-dashboard {
   display: grid;
   align-content: start;
+  gap: 14px;
+}
+
+.task-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
+}
+
+.task-summary-grid article {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  padding: 13px 14px;
+  display: grid;
+  gap: 5px;
+}
+
+.task-summary-grid article.wide {
+  grid-column: span 2;
+}
+
+.task-summary-grid span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.task-summary-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.task-summary-grid article.wide strong {
+  font-size: 16px;
+}
+
+.current-task-summary {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  padding: 14px 16px;
+  display: grid;
+  gap: 5px;
+}
+
+.current-task-summary span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.current-task-summary strong {
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.task-group {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.task-group-toggle {
+  width: 100%;
+  min-height: 54px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 950;
+}
+
+.task-group-toggle em {
+  min-width: 34px;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-style: normal;
+}
+
+.task-group-body {
+  max-height: 360px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.task-group-body p {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 750;
 }
 
 .task-list-row {
@@ -1029,6 +1181,12 @@ button:disabled {
   grid-template-columns: 38px 24px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
+}
+
+.task-list-row.current {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: inset 4px 0 0 var(--accent);
 }
 
 .task-list-row > span {
@@ -1051,6 +1209,10 @@ button:disabled {
   color: #22a06b;
 }
 
+.task-list-row.current svg {
+  color: var(--accent);
+}
+
 .task-list-row strong {
   display: block;
   color: var(--ink);
@@ -1067,10 +1229,19 @@ button:disabled {
 .log-messages {
   flex: 1;
   min-height: 180px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--surface);
-  padding: 16px;
+  border-top: 1px solid var(--line);
+  padding: 14px 0 0;
+}
+
+.log-conversation {
+  display: flex;
+  flex-direction: column;
+}
+
+.log-conversation h3 {
+  margin: 0;
+  flex: 0 0 auto;
+  font-size: 16px;
 }
 
 .message {
@@ -1079,10 +1250,11 @@ button:disabled {
 }
 
 .message.user {
-  max-width: 76%;
+  max-width: min(560px, 76%);
   margin-left: auto;
   border-radius: 18px;
-  background: #edf0ff;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
   padding: 12px 14px;
 }
 
@@ -1095,6 +1267,8 @@ button:disabled {
 .message p {
   margin: 0;
   line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .messages-empty {
@@ -1217,6 +1391,11 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(180px, 230px) minmax(0, 1fr);
   gap: 12px;
+  overflow: hidden;
+}
+
+.workspace-view > .sdd-documents {
+  overflow: hidden;
 }
 
 .sdd-doc-nav {
@@ -1359,7 +1538,8 @@ button:disabled {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
+  scrollbar-gutter: stable;
   background: var(--surface);
   color: var(--ink);
   margin: 0;
