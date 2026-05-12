@@ -14,6 +14,9 @@ const usersDir = path.join(dataDir, "users");
 const appsPath = path.join(dataDir, "apps.json");
 const configPath = path.join(dataDir, "config.json");
 const legacyConfigPath = path.join(repoDir, "user_data", "config.json");
+
+await loadEnvFile(path.join(rootDir, ".env"));
+
 const port = Number(process.env.LOCOCODE_API_PORT || 8787);
 const openRouterTimeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS || 0);
 const usersPath = path.join(dataDir, "users.json");
@@ -45,6 +48,37 @@ app.use(express.json({ limit: "12mb" }));
 await fs.mkdir(dataDir, { recursive: true });
 await fs.mkdir(projectsDir, { recursive: true });
 await fs.mkdir(usersDir, { recursive: true });
+
+async function loadEnvFile(filePath) {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const separator = trimmed.indexOf("=");
+      if (separator <= 0) continue;
+
+      const key = trimmed.slice(0, separator).trim();
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || process.env[key] !== undefined) continue;
+
+      process.env[key] = parseEnvValue(trimmed.slice(separator + 1).trim());
+    }
+  } catch (err) {
+    if (!err || err.code !== "ENOENT") {
+      console.warn(`Non riesco a leggere ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
+function parseEnvValue(value) {
+  if (
+    (value.startsWith("\"") && value.endsWith("\"")) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, mode: "web-sdd-orchestrator" });
