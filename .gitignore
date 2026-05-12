@@ -27,6 +27,7 @@ web/node_modules/
 node_modules/
 *.spec.bak
 *.tar.gz
+*.backup_*
 
 # LocoCode cleanup archives
 _archive_cleanup_*/
