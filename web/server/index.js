@@ -1,9 +1,11 @@
 import express from "express";
+import react from "@vitejs/plugin-react";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import nodemailer from "nodemailer";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { build as viteBuild } from "vite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -25,6 +27,7 @@ const loginTokenTtlMs = Number(process.env.LOCOCODE_LOGIN_TOKEN_TTL_MS || 24 * 6
 const sessionTtlMs = Number(process.env.LOCOCODE_SESSION_TTL_MS || 30 * 24 * 60 * 60 * 1000);
 const heartbeatTimeoutMs = Number(process.env.LOCOCODE_HEARTBEAT_TIMEOUT_MS || 2 * 60 * 1000);
 const runningJobs = new Map();
+const frontendBuilds = new Map();
 
 const commonModels = [
   "deepseek/deepseek-v4-pro",
@@ -535,6 +538,45 @@ app.get("/api/apps/:id/preview", async (req, res) => {
 
   res.type("html").send(html);
 });
+
+app.get("/api/apps/:id/live-preview", livePreviewRequest);
+app.get("/api/apps/:id/live-preview/*splat", livePreviewRequest);
+
+async function livePreviewRequest(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const apps = await loadApps(user);
+  const target = apps.find((item) => item.id === req.params.id);
+  if (!target) {
+    res.status(404).send("App non trovata");
+    return;
+  }
+
+  if (getPreviewQueryToken(req)) {
+    res.cookie("lococode_preview_token", getPreviewQueryToken(req), {
+      httpOnly: true,
+      sameSite: "lax",
+      path: `/api/apps/${target.id}/live-preview`,
+      maxAge: 60 * 60 * 1000,
+    });
+  }
+
+  await refreshProjectState(target);
+  const builtFrontend = await ensureFrontendPreviewBuild(target);
+  if (builtFrontend) target.preview = await resolvePreviewState(target, target.files || []);
+  const staticPath = previewStaticPath(req.params.splat);
+  const served = await serveFrontendBuildFile(target, staticPath, res);
+  if (served) return;
+
+  const html = await readPreviewHtml(target);
+  if (!html) {
+    res.status(404).send("Preview non disponibile.");
+    return;
+  }
+
+  res.type("html").send(html);
+}
 
 const distDir = path.join(rootDir, "dist");
 app.use(express.static(distDir));
@@ -1068,10 +1110,13 @@ function buildOrchestratorSystemPrompt() {
     "- Rispondi in italiano nei documenti SDD.",
     "- Non fare domande bloccanti quando puoi scegliere una soluzione ragionevole.",
     "- Non inserire API key o segreti nei file.",
+    "- Ogni progetto generato deve tendere a un prodotto testabile: frontend, backend, database/config e istruzioni di avvio coerenti.",
+    "- Se l'app prevede accesso utenti, crea credenziali demo fittizie documentate nel README, mai credenziali reali.",
     "- Ogni modifica deve restituire file completi, non patch parziali.",
     "- Usa solo percorsi relativi alla root progetto.",
     "- Non creare mai .venv, venv, node_modules, dist o build: l'ambiente verra installato dall'utente o dal deploy.",
-    "- Per la preview web devi sempre creare o aggiornare preview/index.html come file HTML singolo con CSS e JS inline, senza CDN e senza asset remoti.",
+    "- La preview principale deve essere l'app reale in frontend/ quando esiste: React + Vite, buildabile e navigabile.",
+    "- Usa preview/index.html solo come fallback iniziale quando il frontend vero non e ancora pronto.",
     "- Se generi backend, includi sempre backend/requirements.txt, backend/app/__init__.py, backend/app/main.py e backend/.env.example.",
     "- Aggiorna sempre .lc/spec/tasks.md spuntando il task corrente completato con [x].",
     "",
@@ -1150,12 +1195,13 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "- frontend/index.html",
     "- frontend/src/App.jsx",
     "- frontend/src/styles.css",
-    "- preview/index.html",
+    "- preview/index.html (fallback, non sostituisce il frontend reale)",
     "- .lc/spec/tasks.md",
     "- .lc/memory/project_context.md",
     "",
-    "Il frontend deve essere in italiano, gestionale, responsive, con dati demo realistici ma fittizi.",
-    "preview/index.html deve essere un HTML singolo con CSS e JS inline, senza CDN e senza asset remoti, cosi la preview funziona subito nell'iframe.",
+    "Il frontend deve essere in italiano, gestionale, responsive, navigabile e con dati demo realistici ma fittizi.",
+    "L'utente deve poter provare l'MVP come prodotto: pagine principali, pulsanti, form e routing devono funzionare nella preview reale.",
+    "preview/index.html serve solo da fallback statico se il frontend vero non e ancora pronto.",
     "Aggiorna il piano dei task completati in questa fase.",
     "Restituisci solo blocchi file.",
   ].join("\n");
@@ -1178,7 +1224,8 @@ function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, 
     "- Modifica solo i file necessari.",
     "- Aggiorna sempre .lc/spec/tasks.md spuntando il task corrente completato con [x].",
     "- Aggiorna sempre .lc/memory/project_context.md con una nota breve.",
-    "- Aggiorna preview/index.html se cambia il comportamento o la UI.",
+    "- Se esiste frontend/, aggiorna il frontend reale quando cambia comportamento o UI.",
+    "- Aggiorna preview/index.html solo come fallback statico quando il frontend reale non e ancora pronto.",
     "- Non creare mai .venv, venv, node_modules, dist o build.",
     "- Restituisci solo blocchi file nel formato richiesto.",
   ].join("\n");
@@ -1214,7 +1261,7 @@ async function createInitialWorkspace(target, initialPrompt) {
       2,
     ),
     ".lc/memory/project_context.md": `# Project Context\n\nGenerato da LocoCode il ${now}.\n\n## Prompt iniziale\n\n${initialPrompt}\n`,
-    ".gitignore": ["node_modules/", "dist/", "build/", ".env", "__pycache__/", "*.pyc", ".lc/tmp/"].join("\n"),
+    ".gitignore": ["node_modules/", "dist/", "build/", ".env", "__pycache__/", "*.pyc", ".lc/tmp/", ".lococode_runtime/"].join("\n"),
   };
 
   for (const [relPath, content] of Object.entries(files)) {
@@ -1227,6 +1274,7 @@ async function refreshProjectState(target) {
   const files = await listProjectFiles(root);
   target.files = files;
   target.fileCount = files.length;
+  target.preview = await resolvePreviewState(target, files);
   target.html = await readPreviewHtml(target);
 
   const specs = {
@@ -1253,6 +1301,183 @@ async function refreshProjectState(target) {
     ].filter((relPath) => files.includes(relPath)),
   };
   target.phase = currentStep ? "building" : "ready";
+}
+
+async function resolvePreviewState(target, files = []) {
+  const hasFrontend = files.includes("frontend/package.json") && files.includes("frontend/index.html");
+  const frontendDistIndex = await frontendDistIndexPath(target);
+  const hasLiveBuild = Boolean(frontendDistIndex);
+
+  return {
+    mode: hasLiveBuild ? "frontend" : "fallback",
+    hasFrontend,
+    hasLiveBuild,
+    url: `/api/apps/${target.id}/live-preview/`,
+    fallbackUrl: `/api/apps/${target.id}/preview`,
+    updatedAt: hasLiveBuild ? await fileMtimeIso(frontendDistIndex) : "",
+  };
+}
+
+async function ensureFrontendPreviewBuild(target) {
+  const frontendDirPath = frontendDir(target);
+  if (!(await exists(path.join(frontendDirPath, "index.html")))) return false;
+  if (!(await exists(path.join(frontendDirPath, "package.json")))) return false;
+
+  const key = jobKey(target.ownerId || "legacy", `${target.id}:preview`);
+  if (frontendBuilds.has(key)) return frontendBuilds.get(key);
+
+  const buildJob = buildFrontendPreview(target)
+    .catch((err) => {
+      appendOperationalLog(target, `Preview reale non pronta: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    })
+    .finally(() => {
+      frontendBuilds.delete(key);
+    });
+
+  frontendBuilds.set(key, buildJob);
+  return buildJob;
+}
+
+async function buildFrontendPreview(target) {
+  const frontendDirPath = frontendDir(target);
+  const outDir = frontendRuntimeDistDir(target);
+  const sourceMtime = await latestMtimeMs(frontendDirPath, new Set(["node_modules", "dist", "build", ".lococode_runtime"]));
+  const distIndex = path.join(outDir, "index.html");
+  const distMtime = await fileMtimeMs(distIndex);
+
+  if (distMtime && sourceMtime && distMtime >= sourceMtime) return true;
+
+  await fs.mkdir(outDir, { recursive: true });
+  await viteBuild({
+    root: frontendDirPath,
+    base: "./",
+    configFile: false,
+    publicDir: false,
+    logLevel: "silent",
+    plugins: [react()],
+    resolve: {
+      alias: {
+        react: path.join(rootDir, "node_modules/react"),
+        "react-dom": path.join(rootDir, "node_modules/react-dom"),
+        "react-dom/client": path.join(rootDir, "node_modules/react-dom/client"),
+        "lucide-react": path.join(rootDir, "node_modules/lucide-react"),
+      },
+    },
+    build: {
+      outDir,
+      emptyOutDir: true,
+      sourcemap: false,
+    },
+  });
+
+  return exists(distIndex);
+}
+
+async function serveFrontendBuildFile(target, requestedPath, res) {
+  const distDirPath = frontendRuntimeDistDir(target);
+  const safePath = normalizePreviewAssetPath(requestedPath);
+  const targetPath = safePath ? path.join(distDirPath, safePath) : path.join(distDirPath, "index.html");
+  const indexPath = path.join(distDirPath, "index.html");
+  let filePath = targetPath;
+
+  if (!(await exists(filePath))) {
+    if (safePath && path.extname(safePath)) return false;
+    filePath = indexPath;
+  }
+
+  if (!(await exists(filePath))) return false;
+
+  res.type(mimeTypeForPath(filePath));
+  res.setHeader("Cache-Control", "no-store");
+  res.send(await fs.readFile(filePath));
+  return true;
+}
+
+function previewStaticPath(value) {
+  if (Array.isArray(value)) return value.join("/");
+  return String(value || "").replaceAll(",", "/");
+}
+
+function normalizePreviewAssetPath(value) {
+  const normalized = String(value || "").replaceAll("\\", "/").replace(/^\/+/, "").trim();
+  if (!normalized) return "";
+  const parts = normalized.split("/").filter(Boolean);
+  if (parts.includes("..")) return "";
+  return parts.join("/");
+}
+
+async function frontendDistIndexPath(target) {
+  const filePath = path.join(frontendRuntimeDistDir(target), "index.html");
+  return (await exists(filePath)) ? filePath : "";
+}
+
+function frontendDir(target) {
+  return path.join(projectRoot(target), "frontend");
+}
+
+function frontendRuntimeDistDir(target) {
+  return path.join(projectRoot(target), ".lococode_runtime", "frontend-dist");
+}
+
+async function latestMtimeMs(dir, ignoredNames = new Set()) {
+  let latest = 0;
+
+  async function walk(current) {
+    let entries = [];
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (ignoredNames.has(entry.name)) continue;
+      const fullPath = path.join(current, entry.name);
+      const stat = await fs.stat(fullPath);
+      if (stat.mtimeMs > latest) latest = stat.mtimeMs;
+      if (entry.isDirectory()) await walk(fullPath);
+    }
+  }
+
+  await walk(dir);
+  return latest;
+}
+
+async function fileMtimeMs(filePath) {
+  try {
+    return (await fs.stat(filePath)).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+async function fileMtimeIso(filePath) {
+  try {
+    return (await fs.stat(filePath)).mtime.toISOString();
+  } catch {
+    return "";
+  }
+}
+
+function mimeTypeForPath(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  return {
+    ".html": "html",
+    ".js": "application/javascript",
+    ".mjs": "application/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+  }[ext] || "application/octet-stream";
 }
 
 async function loadProjectMemory(target) {
@@ -1583,9 +1808,30 @@ async function getSessionUser(req) {
 }
 
 function getRequestSessionHash(req) {
-  const header = String(req.headers.authorization || "");
-  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+  const token = getBearerToken(req) || getPreviewQueryToken(req) || getCookieValue(req, "lococode_preview_token");
   return token ? hashSecret(token) : "";
+}
+
+function getBearerToken(req) {
+  const header = String(req.headers.authorization || "");
+  return header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+}
+
+function getPreviewQueryToken(req) {
+  const token = req.query?.preview_token || req.query?.token || "";
+  return String(token).trim();
+}
+
+function getCookieValue(req, name) {
+  const raw = String(req.headers.cookie || "");
+  if (!raw) return "";
+
+  for (const chunk of raw.split(";")) {
+    const [key, ...valueParts] = chunk.trim().split("=");
+    if (key === name) return decodeURIComponent(valueParts.join("=") || "");
+  }
+
+  return "";
 }
 
 async function requireUser(req, res) {
@@ -1777,6 +2023,14 @@ function publicApp(appData) {
   return {
     ...safe,
     html: appData.html || "",
+    preview: appData.preview || {
+      mode: "fallback",
+      hasFrontend: false,
+      hasLiveBuild: false,
+      url: `/api/apps/${appData.id}/live-preview/`,
+      fallbackUrl: `/api/apps/${appData.id}/preview`,
+      updatedAt: "",
+    },
     files: Array.isArray(appData.files) ? appData.files : [],
     fileCount: appData.fileCount || (Array.isArray(appData.files) ? appData.files.length : 0),
     sdd: appData.sdd || emptySddState(),
@@ -1854,7 +2108,7 @@ async function listProjectFiles(root) {
       const full = path.join(dir, entry.name);
       const rel = path.relative(root, full).replaceAll("\\", "/");
       if (entry.isDirectory()) {
-        if ([".git", ".venv", "venv", "node_modules", "dist", "build", "__pycache__", ".pytest_cache", ".mypy_cache"].includes(entry.name)) continue;
+        if ([".git", ".venv", "venv", "node_modules", "dist", "build", "__pycache__", ".pytest_cache", ".mypy_cache", ".lococode_runtime"].includes(entry.name)) continue;
         await walk(full);
       } else {
         results.push(rel);
@@ -1891,7 +2145,7 @@ function normalizeSafePath(relPath) {
   if (/^[a-zA-Z]:\//.test(normalized) || normalized.startsWith("/")) return "";
   const parts = normalized.split("/").filter(Boolean);
   if (!parts.length || parts.includes("..")) return "";
-  if (parts.some((part) => [".git", ".venv", "venv", "node_modules", "dist", "build", "__pycache__"].includes(part))) return "";
+  if (parts.some((part) => [".git", ".venv", "venv", "node_modules", "dist", "build", "__pycache__", ".lococode_runtime"].includes(part))) return "";
   return parts.join("/");
 }
 

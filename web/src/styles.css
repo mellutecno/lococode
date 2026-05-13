@@ -1507,49 +1507,29 @@ button:disabled {
 
 .phone-device {
   position: relative;
-  width: min(370px, 100%);
+  width: min(388px, 100%);
   max-height: 100%;
-  aspect-ratio: 9 / 19.5;
-  border-radius: 44px;
-  background:
-    linear-gradient(145deg, #242834, #05070d 64%),
-    #10131b;
-  box-shadow:
-    inset 0 0 0 2px rgba(255, 255, 255, 0.08),
-    inset 0 0 0 7px #11141c,
-    0 24px 70px rgba(17, 24, 39, 0.22);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
+  aspect-ratio: 488 / 1000;
+  background: url("/iphone-preview.png") center / contain no-repeat;
+  filter: drop-shadow(0 26px 56px rgba(17, 24, 39, 0.2));
 }
 
 .phone-device::before {
-  content: "";
-  position: absolute;
-  inset: 7px;
-  border-radius: 38px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  pointer-events: none;
+  content: none;
 }
 
 .phone-speaker {
-  position: absolute;
-  z-index: 2;
-  top: 18px;
-  left: 50%;
-  width: 76px;
-  height: 20px;
-  border-radius: 999px;
-  background: #0a0d14;
-  transform: translateX(-50%);
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+  display: none;
 }
 
 .phone-screen {
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  left: 5.3%;
+  right: 5.3%;
+  top: 9.1%;
+  bottom: 2.5%;
   overflow: hidden;
-  border-radius: 31px;
+  border-radius: 28px;
   background: white;
   box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.08);
 }
@@ -1563,14 +1543,7 @@ button:disabled {
 }
 
 .phone-home-indicator {
-  position: absolute;
-  left: 50%;
-  bottom: 20px;
-  width: 108px;
-  height: 4px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.58);
-  transform: translateX(-50%);
+  display: none;
 }
 
 .phone-preview-fullscreen {
@@ -1579,7 +1552,7 @@ button:disabled {
 }
 
 .phone-preview-fullscreen .phone-device {
-  width: min(460px, 100%);
+  width: min(488px, 100%);
 }
 
 .preview-panel > .phone-preview,

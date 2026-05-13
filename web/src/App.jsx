@@ -966,14 +966,23 @@ function OperationLog({ app, status, error, compact = false }) {
 
 function ProjectPanelContent({ projectPanel, app, fullscreen = false }) {
   if (projectPanel === "preview") {
+    const previewUrl = app ? livePreviewUrl(app) : "";
+
     return (
       <div className={`phone-preview ${fullscreen ? "phone-preview-fullscreen" : ""}`}>
         <div className="phone-device" aria-label="Anteprima applicazione in formato smartphone">
-          <div className="phone-speaker" />
           <div className="phone-screen">
-            <iframe className={fullscreen ? "fullscreen-iframe" : ""} title="Anteprima LocoCode" srcDoc={app.html || emptyPreviewHtml()} />
+            {previewUrl ? (
+              <iframe
+                key={`${app.id}-${app.preview?.updatedAt || app.updatedAt || ""}`}
+                className={fullscreen ? "fullscreen-iframe" : ""}
+                title="Anteprima LocoCode"
+                src={previewUrl}
+              />
+            ) : (
+              <iframe className={fullscreen ? "fullscreen-iframe" : ""} title="Anteprima LocoCode" srcDoc={emptyPreviewHtml()} />
+            )}
           </div>
-          <div className="phone-home-indicator" />
         </div>
       </div>
     );
@@ -1602,6 +1611,15 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
+}
+
+function livePreviewUrl(app) {
+  const base = app?.preview?.url || `/api/apps/${app?.id}/live-preview/`;
+  const token = localStorage.getItem(SESSION_KEY) || "";
+  if (!token) return `${API_BASE}${app?.preview?.fallbackUrl || base}`;
+
+  const separator = base.includes("?") ? "&" : "?";
+  return `${API_BASE}${base}${separator}preview_token=${encodeURIComponent(token)}`;
 }
 
 function emptyPreviewHtml() {
