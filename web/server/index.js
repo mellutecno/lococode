@@ -1,13 +1,16 @@
 import express from "express";
 import react from "@vitejs/plugin-react";
+import { execFile } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import nodemailer from "nodemailer";
 import path from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { build as viteBuild } from "vite";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const execFileAsync = promisify(execFile);
 const rootDir = path.resolve(__dirname, "..");
 const repoDir = path.resolve(rootDir, "..");
 const dataDir = path.join(rootDir, "data");
@@ -1348,6 +1351,7 @@ async function buildFrontendPreview(target) {
 
   if (distMtime && sourceMtime && distMtime >= sourceMtime) return true;
 
+  await ensureFrontendDependencies(frontendDirPath);
   await fs.mkdir(outDir, { recursive: true });
   await viteBuild({
     root: frontendDirPath,
@@ -1372,6 +1376,30 @@ async function buildFrontendPreview(target) {
   });
 
   return exists(distIndex);
+}
+
+async function ensureFrontendDependencies(frontendDirPath) {
+  const packageJsonPath = path.join(frontendDirPath, "package.json");
+  const nodeModulesPath = path.join(frontendDirPath, "node_modules");
+  const markerPath = path.join(nodeModulesPath, ".lococode-install.json");
+  const packageMtime = await fileMtimeMs(packageJsonPath);
+  const marker = await readJson(markerPath);
+
+  if ((await exists(nodeModulesPath)) && marker?.packageMtime === packageMtime) return;
+
+  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  await execFileAsync(
+    npmCommand,
+    ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--package-lock=false"],
+    {
+      cwd: frontendDirPath,
+      timeout: 5 * 60 * 1000,
+      maxBuffer: 1024 * 1024 * 8,
+    },
+  );
+
+  await fs.mkdir(nodeModulesPath, { recursive: true });
+  await fs.writeFile(markerPath, JSON.stringify({ packageMtime, installedAt: new Date().toISOString() }, null, 2), "utf8");
 }
 
 async function serveFrontendBuildFile(target, requestedPath, res) {
