@@ -568,6 +568,7 @@ async function livePreviewRequest(req, res) {
   await refreshProjectState(target);
   const builtFrontend = await ensureFrontendPreviewBuild(target);
   if (builtFrontend) target.preview = await resolvePreviewState(target, target.files || []);
+  await saveApps(apps, user);
   const staticPath = previewStaticPath(req.params.splat);
   const served = await serveFrontendBuildFile(target, staticPath, res);
   if (served) return;
