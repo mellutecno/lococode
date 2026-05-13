@@ -468,6 +468,32 @@ app.post("/api/apps/:id/stop", async (req, res) => {
   res.json({ app: publicApp(target), stopped: true });
 });
 
+app.delete("/api/apps/:id/logs", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const apps = await loadApps(user);
+  const target = apps.find((item) => item.id === req.params.id);
+
+  if (!target) {
+    res.status(404).json({ error: "App non trovata." });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  target.updatedAt = now;
+  target.autopilot = {
+    ...(target.autopilot || {}),
+    log: [],
+    error: target.status === "error" ? target.autopilot?.error || null : null,
+    lastMessage: "Log puliti dall'utente.",
+    updatedAt: now,
+  };
+
+  await saveApps(apps, user);
+  res.json({ app: publicApp(target), cleared: true });
+});
+
 async function startAutopilotRequest(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -535,7 +561,7 @@ app.get("/api/apps/:id/preview", async (req, res) => {
 
   const html = await readPreviewHtml(target);
   if (!html) {
-    res.status(404).send("Preview non disponibile: l'orchestrator non ha ancora creato preview/index.html.");
+    res.status(404).send("Preview non disponibile: LocoCode non ha ancora creato preview/index.html.");
     return;
   }
 
@@ -840,7 +866,7 @@ async function stopAutopilotWithError(target, apps, user, err, model) {
 
 function buildOperationalError({ task, message, model }) {
   const lower = String(message || "").toLowerCase();
-  let suggestion = "Correggi la causa indicata e poi usa Riprendi: l'orchestrator continuera dal task fermo.";
+  let suggestion = "Correggi la causa indicata e poi usa Riprendi: LocoCode continuera dal task fermo.";
   if (lower.includes("api key") || lower.includes("401") || lower.includes("unauthorized")) {
     suggestion = "Controlla la API key OpenRouter nelle impostazioni e riprova.";
   } else if (lower.includes("429") || lower.includes("rate")) {
@@ -852,7 +878,7 @@ function buildOperationalError({ task, message, model }) {
   }
 
   return {
-    title: "Orchestrator fermo",
+    title: "LocoCode fermo",
     task,
     model,
     cause: message,
@@ -967,7 +993,7 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
   const operations = parseOperations(aiText);
   if (!operations.length) {
     throw new Error(
-      "Il modello ha risposto, ma non ha restituito blocchi file applicabili. L'orchestrator web richiede blocchi ```file path=\"...\".",
+      "Il modello ha risposto, ma non ha restituito blocchi file applicabili. LocoCode richiede blocchi ```file path=\"...\".",
     );
   }
 
@@ -1100,7 +1126,7 @@ function extractModelNarration(aiText) {
 
 function buildOrchestratorSystemPrompt() {
   return [
-    "Sei LocoCode Web, un SDD Orchestrator per creare web app complete.",
+    "Sei LocoCode Web, il motore che crea web app complete partendo da una richiesta utente.",
     "Non sei una chat generica: lavori per specifiche, task piccoli e file reali.",
     "",
     "Stack predefinito:",

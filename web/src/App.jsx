@@ -5,7 +5,6 @@ import {
   Check,
   CircleHelp,
   ClipboardList,
-  Code2,
   Database,
   FileStack,
   FolderKanban,
@@ -261,7 +260,7 @@ export default function App() {
 
     setBusy(true);
     setError("");
-    setStatus(`Avvio orchestrator con ${modelLabel(chosenModel)}`);
+    setStatus("Avvio LocoCode...");
 
     try {
       const response = await apiFetch("/api/generate", {
@@ -290,7 +289,7 @@ export default function App() {
       setPrompt("");
       setChatPrompt("");
       setActiveView("chat");
-      setStatus(`Avanzamento avviato con ${modelLabel(chosenModel)}`);
+      setStatus("Avanzamento avviato");
       if (data.error) setError(data.error);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -316,7 +315,7 @@ export default function App() {
 
     setBusy(true);
     setError("");
-    setStatus(`Riavvio avanzamento con ${modelLabel(projectModel)}`);
+    setStatus("Riavvio avanzamento");
 
     try {
       const response = await apiFetch(`/api/apps/${selectedApp.id}/autopilot`, {
@@ -331,7 +330,7 @@ export default function App() {
       }
       await refreshApps(data.app.id);
       setActiveView("chat");
-      setStatus(`Avanzamento attivo con ${modelLabel(projectModel)}`);
+      setStatus("Avanzamento attivo");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus("Errore");
@@ -360,6 +359,31 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus("Errore");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearProjectLogs() {
+    if (!requireAuth()) return;
+    if (!selectedApp || busy) return;
+    setBusy(true);
+    setError("");
+    setStatus("Pulizia log...");
+
+    try {
+      const response = await apiFetch(`/api/apps/${selectedApp.id}/logs`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await readApiJson(response);
+      if (!response.ok) throw new Error(data.error || "Pulizia log non riuscita.");
+      await refreshApps(data.app.id);
+      setActiveView("log");
+      setStatus("Log puliti");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStatus("Errore pulizia log");
     } finally {
       setBusy(false);
     }
@@ -470,8 +494,7 @@ export default function App() {
 
         {activeView === "tasks" && <TasksWorkspace app={selectedApp} />}
         {activeView === "sdd" && <SddWorkspace app={selectedApp} />}
-        {activeView === "files" && <FilesWorkspace app={selectedApp} />}
-        {activeView === "log" && <LogWorkspace app={selectedApp} status={status} error={error} />}
+        {activeView === "log" && <LogWorkspace app={selectedApp} status={status} error={error} onClearLogs={clearProjectLogs} busy={busy} />}
         {activeView === "help" && <HelpView />}
 
         {error && <div className="toast">{error}</div>}
@@ -501,10 +524,9 @@ function Rail({ activeView, setActiveView }) {
     <nav className="rail">
       <img className="rail-logo" src="/lococode_logo.png" alt="LocoCode" />
       <NavButton icon={FolderKanban} label="Progetti" active={activeView === "projects"} onClick={() => setActiveView("projects")} />
-      <NavButton icon={Workflow} label="Lavoro" active={activeView === "chat"} onClick={() => setActiveView("chat")} title="Orchestrator" />
+      <NavButton icon={Workflow} label="Lavoro" active={activeView === "chat"} onClick={() => setActiveView("chat")} title="LocoCode" />
       <NavButton icon={ClipboardList} label="Task" active={activeView === "tasks"} onClick={() => setActiveView("tasks")} />
-      <NavButton icon={FileStack} label="SDD" active={activeView === "sdd"} onClick={() => setActiveView("sdd")} />
-      <NavButton icon={Code2} label="File" active={activeView === "files"} onClick={() => setActiveView("files")} />
+      <NavButton icon={FileStack} label="Piano" active={activeView === "sdd"} onClick={() => setActiveView("sdd")} />
       <NavButton icon={Activity} label="Log" active={activeView === "log"} onClick={() => setActiveView("log")} title="Registro operativo" />
       <div className="rail-spacer" />
       <NavButton icon={SlidersHorizontal} label="Setup" active={activeView === "settings"} onClick={() => setActiveView("settings")} title="Impostazioni" />
@@ -657,9 +679,9 @@ function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLog
   const viewLabel = {
     projects: "Progetti",
     apps: "Nuovo progetto",
-    chat: "Orchestrator SDD",
+    chat: "LocoCode",
     tasks: "Task progetto",
-    sdd: "Documenti SDD",
+    sdd: "Piano progetto",
     files: "File progetto",
     log: "Registro operativo",
     settings: "Configurazione",
@@ -746,7 +768,7 @@ function Composer({ value, onChange, model, setModel, busy, placeholder, onSubmi
       <div className="composer-footer">
         <span className="agent-chip">
           <Bot size={18} />
-          Orchestrator SDD
+          LocoCode
         </span>
         {showModel && <ModelSelect value={model} onChange={setModel} compact />}
       </div>
@@ -878,13 +900,11 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
         <div className="panel-title">
           <div>
             <span>Progetto</span>
-            <h2>Anteprima applicazione</h2>
+            <h2>Anteprima</h2>
           </div>
           <div className="panel-actions">
-            <em>{modelLabel(app.model)}</em>
-            <button className="fullscreen-button" onClick={() => setExpandedPanel(true)} aria-label="Apri a schermo intero">
+            <button className="fullscreen-button icon-only" onClick={() => setExpandedPanel(true)} aria-label="Apri anteprima a schermo intero" title="Apri anteprima a schermo intero">
               <Maximize2 size={18} />
-              <span>Apri grande</span>
             </button>
           </div>
         </div>
@@ -896,14 +916,14 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
           className="fullscreen-panel"
           role="dialog"
           aria-modal="true"
-          aria-label="Anteprima applicazione"
+          aria-label="Anteprima"
           onWheel={(event) => event.stopPropagation()}
         >
           <div className="fullscreen-card">
             <header>
               <div>
                 <span>Progetto</span>
-                <h2>Anteprima applicazione</h2>
+                <h2>Anteprima</h2>
               </div>
               <button onClick={() => setExpandedPanel(false)} aria-label="Chiudi schermo intero">
                 <X size={24} />
@@ -1005,11 +1025,12 @@ function projectTaskState(app) {
   const total = steps.length;
   const currentStep = app?.sdd?.currentStep || steps.find((step) => !step.done) || null;
   const currentIndex = currentStep ? steps.findIndex((step) => step.id === currentStep.id || step.label === currentStep.label) : -1;
-  const progress = total ? `${doneCount}/${total}` : "SDD";
-  const taskProgress = total ? `${currentIndex >= 0 ? currentIndex + 1 : doneCount}/${total}` : "SDD";
-  const phase = formatPhaseLabel(currentStep?.phase || app?.sdd?.phase || "");
+  const progress = total ? `${doneCount}/${total}` : "In preparazione";
+  const taskProgress = total ? `${currentIndex >= 0 ? currentIndex + 1 : doneCount}/${total}` : "In preparazione";
+  const planCompleted = total > 0 && doneCount >= total;
+  const phase = planCompleted ? "Completato" : formatPhaseLabel(currentStep?.phase || app?.sdd?.phase || "");
   const shortPhase = compactPhaseLabel(phase);
-  const meta = total ? `${phase} - Task ${taskProgress} - ${modelLabel(app?.model)}` : modelLabel(app?.model);
+  const meta = total ? `${phase} - Task ${taskProgress}` : "";
   const headerMeta = total ? `${phase} - Task ${taskProgress}` : "Piano in preparazione";
   const task = app?.autopilot?.currentTask || currentStep?.label || "";
 
@@ -1057,7 +1078,7 @@ function projectTaskState(app) {
     header: total ? `Piano completato - ${progress}` : "In attesa del piano",
     kicker: total ? "Piano completato" : "Piano in preparazione",
     label: total ? "Tutti i task risultano completati" : "In attesa del primo prompt",
-    meta: `${progress} - ${modelLabel(app?.model)}`,
+    meta: progress,
     short: total ? "Completato" : "Pronto",
   };
 }
@@ -1165,7 +1186,7 @@ function TasksWorkspace({ app }) {
   const currentPhase = formatPhaseLabel(currentTask?.phase || app?.sdd?.phase || "");
 
   return (
-    <WorkspaceShell app={app} title="Task progetto" subtitle={steps.length ? `${doneSteps.length} completati su ${steps.length}` : "Il piano task verra creato dall'orchestrator."}>
+    <WorkspaceShell app={app} title="Task progetto" subtitle={steps.length ? `${doneSteps.length} completati su ${steps.length}` : "Il piano task verra creato da LocoCode."}>
       <div className="task-dashboard">
         <div className="task-summary-grid">
           <article>
@@ -1243,7 +1264,7 @@ function TaskRow({ step, current = false }) {
 
 function SddWorkspace({ app }) {
   return (
-    <WorkspaceShell app={app} title="Documenti SDD" subtitle="Specifiche, requisiti, architettura e memoria progetto.">
+    <WorkspaceShell app={app} title="Piano progetto" subtitle="Specifiche, requisiti, architettura e task.">
       <SddDocumentsPanel app={app} fullscreen />
     </WorkspaceShell>
   );
@@ -1251,26 +1272,21 @@ function SddWorkspace({ app }) {
 
 function FilesWorkspace({ app }) {
   return (
-    <WorkspaceShell app={app} title="File progetto" subtitle="Tutti i file generati dall'orchestrator.">
+    <WorkspaceShell app={app} title="File progetto" subtitle="Tutti i file generati da LocoCode.">
       <FilesPanel app={app} />
     </WorkspaceShell>
   );
 }
 
-function LogWorkspace({ app, status, error }) {
+function LogWorkspace({ app, status, error, onClearLogs, busy }) {
   return (
     <WorkspaceShell app={app} title="Registro operativo" subtitle="Cronologia tecnica di quello che LocoCode sta facendo.">
+      <div className="log-actions">
+        <button className="secondary-action compact danger" disabled={busy || !app} onClick={onClearLogs}>
+          Pulisci log
+        </button>
+      </div>
       <OperationLog app={app} status={status} error={error} />
-      <section className="log-conversation">
-        <h3>Ultimi messaggi</h3>
-        <div className="messages log-messages">
-          {conversationMessages(app?.messages || []).map((message, index) => (
-            <article key={`${message.at}-${index}`} className={`message ${message.role}`}>
-              <p>{chatMessageContent(message)}</p>
-            </article>
-          ))}
-        </div>
-      </section>
     </WorkspaceShell>
   );
 }
@@ -1293,7 +1309,7 @@ function SddDocumentsPanel({ app, fullscreen = false }) {
       <section className="sdd-compact-panel">
         <div className="panel-empty">
           <strong>SDD non ancora generato</strong>
-          <span>Quando avvii il primo prompt, qui vedrai specifiche, requisiti, architettura e task creati dall'orchestrator.</span>
+          <span>Quando avvii il primo prompt, qui vedrai specifiche, requisiti, architettura e task creati da LocoCode.</span>
         </div>
       </section>
     );
@@ -1428,7 +1444,7 @@ function DataPanel({ app }) {
         <article>
           <Database size={22} />
           <strong>Database progetto</strong>
-          <span>{hasBackend ? "Backend generato: pronto per schema e API." : "Sara creato quando l'orchestrator genera il backend."}</span>
+          <span>{hasBackend ? "Backend generato: pronto per schema e API." : "Sara creato quando LocoCode genera il backend."}</span>
         </article>
         <article>
           <FolderKanban size={22} />
@@ -1528,34 +1544,27 @@ function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiC
 function HelpView() {
   const cards = [
     {
-      icon: FolderKanban,
-      title: "Progetti",
-      text: "Sono le app create dall'utente. Ogni progetto avra prompt, specifiche SDD, file generati, anteprima e cronologia.",
+      icon: Plus,
+      title: "1. Descrivi l'app",
+      text: "Dai un nome al progetto e scrivi cosa deve fare la web app. LocoCode prepara il piano e parte in automatico.",
     },
     {
       icon: Workflow,
-      title: "Orchestrator SDD",
-      text: "E il motore che trasforma il primo prompt in requisiti, architettura, task e file. L'utente non deve guidare ogni passo.",
+      title: "2. Segui l'avanzamento",
+      text: "Nel pannello Lavoro leggi cosa sta facendo, cosa ha completato e se serve un tuo intervento.",
     },
     {
-      icon: FileStack,
-      title: "File",
-      text: "Sono i file prodotti dall'orchestrator: frontend, backend, configurazioni, specifiche e preview. Li trovi dentro il progetto selezionato, nel pannello File.",
-    },
-    {
-      icon: Database,
-      title: "Dati",
-      text: "Sono database, tabelle, record demo e struttura dati dell'app generata. Per ora li leggi dentro SDD e backend; più avanti avranno una sezione tecnica dedicata.",
+      icon: LayoutDashboard,
+      title: "3. Prova la demo",
+      text: "Quando la web app e pronta, la provi nell'anteprima reale. Se prevede login, userai credenziali demo fittizie.",
     },
   ];
 
   return (
     <div className="help-view">
       <section className="help-hero">
-        <h1>Come funziona LocoCode</h1>
-        <p>
-          LocoCode sara una web app: gli utenti useranno il frontend dal browser, mentre il backend online gestira OpenRouter, orchestrator, progetti e file generati.
-        </p>
+        <h1>Crea una web app da provare</h1>
+        <p>LocoCode trasforma una richiesta in una demo testabile sul tuo server, senza mostrare al cliente file tecnici o log inutili.</p>
       </section>
 
       <section className="help-grid">
@@ -1571,22 +1580,13 @@ function HelpView() {
         })}
       </section>
 
-      <section className="architecture-card">
-        <h2>Architettura prevista</h2>
-        <p>
-          In produzione il frontend non dovra salvare tutto solo localmente. Useremo un account utente, oppure un token personale, per collegare ogni progetto al proprietario.
-        </p>
-        <ul>
-          <li>Frontend pubblico: interfaccia, prompt, anteprima, gestione progetti.</li>
-          <li>Backend sul tuo server: API, autenticazione, chiamate OpenRouter, orchestrator SDD.</li>
-          <li>Database server: utenti, progetti, prompt, run AI, file generati e stato dei task.</li>
-          <li>Cache locale opzionale: utile per bozza e sessione, ma non come archivio principale.</li>
-        </ul>
+      <section className="architecture-card help-simple-card">
+        <h2>Dopo la demo</h2>
+        <p>Se il cliente e soddisfatto, potra contattarti per acquistare o mettere in produzione l'applicazione. I dettagli commerciali li definiamo dopo.</p>
       </section>
     </div>
   );
 }
-
 function ModelSelect({ value, onChange, compact = false }) {
   const options = COMMON_MODELS.includes(value) ? COMMON_MODELS : [value, ...COMMON_MODELS].filter(Boolean);
 
@@ -1623,7 +1623,7 @@ function livePreviewUrl(app) {
 }
 
 function emptyPreviewHtml() {
-  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#f7f5ff;color:#343b4f}.box{text-align:center}.box h1{margin:0 0 10px;font-size:34px}.box p{margin:0;color:#697184}</style></head><body><div class="box"><h1>Anteprima in preparazione</h1><p>L'orchestrator aggiornera questo pannello dopo la generazione.</p></div></body></html>`;
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#f7f5ff;color:#343b4f}.box{text-align:center}.box h1{margin:0 0 10px;font-size:34px}.box p{margin:0;color:#697184}</style></head><body><div class="box"><h1>Anteprima in preparazione</h1><p>LocoCode aggiornera questo pannello dopo la generazione.</p></div></body></html>`;
 }
 
 function modelLabel(model) {

@@ -805,18 +805,19 @@ button:disabled {
 }
 
 .fullscreen-button {
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: 12px;
   background: var(--surface-soft);
   color: var(--ink);
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 900;
-  white-space: nowrap;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.fullscreen-button.icon-only span {
+  display: none;
 }
 
 .orchestrator-strip {
@@ -1247,6 +1248,11 @@ button:disabled {
   padding: 16px;
 }
 
+.log-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .task-dashboard {
   display: grid;
   align-content: start;
@@ -1548,11 +1554,13 @@ button:disabled {
 
 .phone-preview-fullscreen {
   min-height: 0;
-  padding: 22px;
+  padding: 10px;
 }
 
 .phone-preview-fullscreen .phone-device {
-  width: min(488px, 100%);
+  width: auto;
+  height: min(100%, 820px);
+  max-width: 100%;
 }
 
 .preview-panel > .phone-preview,
@@ -1682,7 +1690,7 @@ button:disabled {
   inset: 0;
   z-index: 50;
   background: rgba(8, 10, 18, 0.58);
-  padding: 28px;
+  padding: 18px;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -1691,13 +1699,13 @@ button:disabled {
 
 .fullscreen-card {
   width: min(1480px, 100%);
-  height: min(920px, 100%);
+  height: min(960px, 100%);
   min-height: 0;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--surface);
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.32);
-  padding: 16px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1712,16 +1720,16 @@ button:disabled {
   gap: 14px;
 }
 
+.fullscreen-card > header h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
 .fullscreen-card > header span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
   text-transform: uppercase;
-}
-
-.fullscreen-card > header h2 {
-  margin: 2px 0 0;
-  font-size: 24px;
 }
 
 .fullscreen-card > header button {
@@ -1758,6 +1766,9 @@ button:disabled {
 .fullscreen-card > .phone-preview {
   flex: 1;
   min-height: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .sdd-reader {
@@ -2074,7 +2085,7 @@ button:disabled {
 
 .help-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -2342,17 +2353,17 @@ button:disabled {
 
   .rail-button {
     flex: 0 0 auto;
-    width: 76px;
-    min-width: 76px;
-    min-height: 58px;
+    width: 92px;
+    min-width: 92px;
+    min-height: 68px;
     border-radius: 16px;
     display: inline-flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 6px 8px;
-    gap: 4px;
-    font-size: 11px;
+    padding: 8px 10px;
+    gap: 6px;
+    font-size: 12px;
     scroll-snap-align: start;
   }
 
@@ -2377,6 +2388,7 @@ button:disabled {
     text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1.1;
   }
 
   .main-stage {
