@@ -477,6 +477,7 @@ export default function App() {
             onSend={() => generateApp({ text: chatPrompt, appId: selectedApp?.id || "", overrideModel: selectedApp?.model || model })}
             onResume={resumeAutopilot}
             onStop={stopAutopilot}
+            onBackToProjects={() => setActiveView("projects")}
           />
         )}
 
@@ -776,17 +777,23 @@ function Composer({ value, onChange, model, setModel, busy, placeholder, onSubmi
   );
 }
 
-function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume, onStop }) {
+function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume, onStop, onBackToProjects }) {
   const [expandedPanel, setExpandedPanel] = useState(false);
+  const [completedDetailsOpen, setCompletedDetailsOpen] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(() => {
     const saved = Number(localStorage.getItem(PREVIEW_WIDTH_KEY));
     return Number.isFinite(saved) ? clampPreviewWidth(saved) : 54;
   });
   const visibleMessages = conversationMessages(app?.messages || []);
   const taskState = app ? projectTaskState(app) : null;
+  const projectComplete = isProjectComplete(app);
   const canResume =
     app && !app.autopilot?.running && !busy && (app.sdd?.currentStep || ["error", "partial", "paused"].includes(app.status));
   const canStop = app?.autopilot?.running || app?.status === "building";
+
+  useEffect(() => {
+    setCompletedDetailsOpen(false);
+  }, [app?.id, projectComplete]);
 
   useEffect(() => {
     if (!expandedPanel) return undefined;
@@ -837,7 +844,29 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
     return (
       <div className="empty-state">
         <h1>Nessun progetto selezionato</h1>
-        <p>Crea un progetto dal prompt iniziale per avviare il flusso SDD.</p>
+        <p>Crea un progetto dal prompt iniziale per avviare il flusso LocoCode.</p>
+      </div>
+    );
+  }
+
+  if (projectComplete && !completedDetailsOpen) {
+    return (
+      <div className="completed-workspace">
+        <article className="completed-project-row">
+          <div>
+            <span>Progetto completato</span>
+            <strong>{app.name}</strong>
+            <em>{taskState.header}</em>
+          </div>
+          <div className="completed-project-actions">
+            <button className="secondary-action compact" onClick={onBackToProjects}>
+              Progetti
+            </button>
+            <button className="primary compact" onClick={() => setCompletedDetailsOpen(true)}>
+              Apri dettagli
+            </button>
+          </div>
+        </article>
       </div>
     );
   }
@@ -851,16 +880,23 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
             <strong>{taskState.label}</strong>
             <em>{taskState.meta}</em>
           </div>
-          {canResume && (
-            <button className="secondary-action compact" disabled={busy} onClick={onResume}>
-              Riprendi
-            </button>
-          )}
-          {canStop && (
-            <button className="secondary-action compact danger" disabled={busy} onClick={onStop}>
-              Ferma
-            </button>
-          )}
+          <div className="orchestrator-actions">
+            {canResume && (
+              <button className="secondary-action compact" disabled={busy} onClick={onResume}>
+                Riprendi
+              </button>
+            )}
+            {canStop && (
+              <button className="secondary-action compact danger" disabled={busy} onClick={onStop}>
+                Ferma
+              </button>
+            )}
+            {projectComplete && (
+              <button className="secondary-action compact" disabled={busy} onClick={() => setCompletedDetailsOpen(false)}>
+                Chiudi dettagli
+              </button>
+            )}
+          </div>
         </div>
 
         <OperationLog app={app} status={status} error={error} compact />
@@ -1014,9 +1050,15 @@ function ProjectPanelContent({ projectPanel, app, fullscreen = false }) {
 }
 
 function panelTitle(projectPanel, app) {
-  if (projectPanel === "sdd") return "Specifiche SDD";
+  if (projectPanel === "sdd") return "Piano progetto";
   if (projectPanel === "files") return "File progetto";
   return app.status === "building" ? "Generazione in corso" : "Anteprima";
+}
+
+function isProjectComplete(app) {
+  const steps = app?.sdd?.steps || [];
+  if (!steps.length) return false;
+  return !app?.sdd?.currentStep && steps.every((step) => step.done);
 }
 
 function projectTaskState(app) {
@@ -1058,7 +1100,7 @@ function projectTaskState(app) {
     return {
       header: `Avanzamento attivo - ${headerMeta}`,
       kicker: "Task corrente",
-      label: task || "Preparazione SDD",
+      label: task || "Preparazione piano",
       meta,
       short: `${shortPhase} - Task ${taskProgress}`,
     };
@@ -1113,8 +1155,9 @@ function chatMessageContent(message) {
   return cleanOperationText(text, 700)
     .replace(/Prossimo task SDD applicato con\s+[\w./:-]+\.?\s*/i, "Task applicato. ")
     .replace(/Task SDD applicato con\s+[\w./:-]+\.?\s*/i, "Task applicato. ")
-    .replace(/SDD creato e MVP iniziale generato con\s+[\w./:-]+\.?\s*/i, "SDD creato e MVP iniziale generato. ")
+    .replace(/SDD creato e MVP iniziale generato con\s+[\w./:-]+\.?\s*/i, "Piano creato e MVP iniziale generato. ")
     .replace(/Modifica applicata seguendo SDD con\s+[\w./:-]+\.?\s*/i, "Modifica applicata. ")
+    .replace(/\bSDD\b/g, "piano")
     .replace(/File aggiornati:\s*[\s\S]*$/i, "File aggiornati salvati nel progetto.")
     .replace(/\n{3,}/g, "\n\n");
 }
@@ -1229,7 +1272,7 @@ function TasksWorkspace({ app }) {
         {!steps.length && (
           <div className="panel-empty">
             <strong>Nessun task disponibile</strong>
-            <span>Quando l'SDD iniziale sara pronto, qui vedrai tutti i task da completare.</span>
+            <span>Quando il piano iniziale sara pronto, qui vedrai tutti i task da completare.</span>
           </div>
         )}
       </div>
@@ -1295,7 +1338,7 @@ function SddDocumentsPanel({ app, fullscreen = false }) {
   const specs = app.sdd?.specs || {};
   const [selectedDocument, setSelectedDocument] = useState(0);
   const documents = [
-    { title: "Documento SDD", content: specs.sdd },
+    { title: "Piano", content: specs.sdd },
     { title: "Requisiti", content: specs.requirements },
     { title: "Architettura", content: specs.architecture },
     { title: "Task operativi", content: specs.tasks },
@@ -1308,7 +1351,7 @@ function SddDocumentsPanel({ app, fullscreen = false }) {
     return (
       <section className="sdd-compact-panel">
         <div className="panel-empty">
-          <strong>SDD non ancora generato</strong>
+          <strong>Piano non ancora generato</strong>
           <span>Quando avvii il primo prompt, qui vedrai specifiche, requisiti, architettura e task creati da LocoCode.</span>
         </div>
       </section>
@@ -1330,7 +1373,7 @@ function SddDocumentsPanel({ app, fullscreen = false }) {
 
   return (
     <section className="sdd-documents" onWheel={forwardWheelToSddReader}>
-      <nav className="sdd-doc-nav" aria-label="Documenti SDD">
+      <nav className="sdd-doc-nav" aria-label="Documenti progetto">
         {documents.map((document, index) => (
           <button
             key={document.title}
@@ -1424,7 +1467,7 @@ function FilesPanel({ app }) {
         {!files.length && (
           <div className="panel-empty">
             <strong>Nessun file generato</strong>
-            <span>Quando avvii un progetto, qui vedrai specifiche SDD, frontend, backend, configurazioni e preview.</span>
+            <span>Quando avvii un progetto, qui vedrai specifiche, frontend, backend, configurazioni e preview.</span>
           </div>
         )}
       </div>
@@ -1454,7 +1497,7 @@ function DataPanel({ app }) {
         <article>
           <Workflow size={22} />
           <strong>Prompt e run</strong>
-          <span>Ogni richiesta e ogni fase SDD verranno salvate sul server.</span>
+          <span>Ogni richiesta e ogni fase del progetto verranno salvate sul server.</span>
         </article>
         <article>
           <FileStack size={22} />
@@ -1546,7 +1589,7 @@ function HelpView() {
     {
       icon: Plus,
       title: "1. Descrivi l'app",
-      text: "Dai un nome al progetto e scrivi cosa deve fare la web app. LocoCode prepara il piano e parte in automatico.",
+      text: "Dai un nome al progetto e scrivi cosa deve fare la web app. LocoCode prepara il piano e costruisce una prima versione reale.",
     },
     {
       icon: Workflow,
@@ -1556,15 +1599,15 @@ function HelpView() {
     {
       icon: LayoutDashboard,
       title: "3. Prova la demo",
-      text: "Quando la web app e pronta, la provi nell'anteprima reale. Se prevede login, userai credenziali demo fittizie.",
+      text: "Quando la web app e pronta, provi la demo. Se ti piace, puoi acquistarla e continuare da quella base.",
     },
   ];
 
   return (
     <div className="help-view">
       <section className="help-hero">
-        <h1>Crea una web app da provare</h1>
-        <p>LocoCode trasforma una richiesta in una demo testabile sul tuo server, senza mostrare al cliente file tecnici o log inutili.</p>
+        <h1>Crea una web app</h1>
+        <p>Avrai una versione demo testabile sul server. Se ti piace, puoi acquistarla e usarla partendo dal lavoro gia fatto.</p>
       </section>
 
       <section className="help-grid">
@@ -1581,8 +1624,8 @@ function HelpView() {
       </section>
 
       <section className="architecture-card help-simple-card">
-        <h2>Dopo la demo</h2>
-        <p>Se il cliente e soddisfatto, potra contattarti per acquistare o mettere in produzione l'applicazione. I dettagli commerciali li definiamo dopo.</p>
+        <h2>Dalla demo al prodotto</h2>
+        <p>La demo non viene buttata: diventa la base dell'app attiva, con dati reali, utenti reali e configurazione definitiva quando decidi di acquistarla.</p>
       </section>
     </div>
   );

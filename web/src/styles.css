@@ -85,10 +85,10 @@ button:disabled {
 }
 
 .rail-logo {
-  width: 54px;
-  height: 42px;
+  width: 82px;
+  height: 56px;
   object-fit: contain;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .rail-button {
@@ -828,6 +828,14 @@ button:disabled {
   min-width: 0;
 }
 
+.orchestrator-actions,
+.completed-project-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .task-card,
 .model-lock {
   min-width: 0;
@@ -872,6 +880,59 @@ button:disabled {
   background: linear-gradient(135deg, #fff7f5, #fff);
 }
 
+.completed-workspace {
+  flex: 1;
+  min-height: 0;
+  padding: 18px;
+  display: grid;
+  align-content: start;
+}
+
+.completed-project-row {
+  width: min(980px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(49, 87, 255, 0.08), rgba(223, 44, 181, 0.08)),
+    var(--surface);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.completed-project-row > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.completed-project-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.completed-project-row strong {
+  min-width: 0;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.completed-project-row em {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 850;
+}
+
 .secondary-action,
 .primary {
   border: 1px solid var(--line);
@@ -888,6 +949,13 @@ button:disabled {
   background: var(--brand-gradient);
   color: white;
   box-shadow: 0 12px 28px rgba(49, 87, 255, 0.22);
+}
+
+.primary.compact {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 14px;
+  font-size: 15px;
 }
 
 .primary span,
