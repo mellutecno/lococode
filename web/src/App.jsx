@@ -510,6 +510,8 @@ function NavButton({ active, icon: Icon, label, onClick, title }) {
 }
 
 function AuthModal({ email, setEmail, token, setToken, step, setStep, message, busy, onRequestToken, onVerifyToken, onClose }) {
+  const enteringToken = step === "token";
+
   return (
     <section className="auth-overlay" role="dialog" aria-modal="true" aria-label="Accesso LocoCode">
       <div className="auth-card">
@@ -517,10 +519,14 @@ function AuthModal({ email, setEmail, token, setToken, step, setStep, message, b
           <X size={20} />
         </button>
         <div className="auth-icon">
-          {step === "email" ? <Mail size={28} /> : <KeyRound size={28} />}
+          {enteringToken ? <KeyRound size={28} /> : <Mail size={28} />}
         </div>
         <h2>Accedi ai tuoi progetti</h2>
-        <p>Inserisci la tua email: ti mandiamo un token temporaneo. Da quel momento lavorerai solo nella tua cartella utente.</p>
+        <p>
+          {enteringToken
+            ? "Inserisci email e token gia ricevuto. Non ne genero uno nuovo."
+            : "Inserisci la tua email: ti mandiamo un token temporaneo. Da quel momento lavorerai solo nella tua cartella utente."}
+        </p>
 
         <label>
           Email
@@ -533,7 +539,7 @@ function AuthModal({ email, setEmail, token, setToken, step, setStep, message, b
           />
         </label>
 
-        {step === "token" && (
+        {enteringToken && (
           <label>
             Token
             <input
@@ -549,18 +555,22 @@ function AuthModal({ email, setEmail, token, setToken, step, setStep, message, b
         {message && <p className="auth-message">{message}</p>}
 
         <div className="auth-actions">
-          {step === "token" && (
+          {enteringToken ? (
             <button className="secondary-action" type="button" onClick={() => setStep("email")}>
               Cambia email
+            </button>
+          ) : (
+            <button className="secondary-action" type="button" onClick={() => setStep("token")}>
+              Ho gia un token
             </button>
           )}
           <button
             className="primary"
             type="button"
-            disabled={busy || !email.trim() || (step === "token" && !token.trim())}
-            onClick={step === "email" ? onRequestToken : onVerifyToken}
+            disabled={busy || !email.trim() || (enteringToken && !token.trim())}
+            onClick={enteringToken ? onVerifyToken : onRequestToken}
           >
-            {step === "email" ? "Invia token" : "Entra"}
+            {enteringToken ? "Entra" : "Invia token"}
           </button>
         </div>
       </div>
