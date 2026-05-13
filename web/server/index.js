@@ -272,8 +272,8 @@ app.get("/api/apps", async (req, res) => {
 
   const apps = await loadApps(user);
   for (const target of apps) {
-    if (!target.demoToken) target.demoToken = crypto.randomUUID();
-    if (!target.lifecycle) target.lifecycle = "demo";
+    if (!target.appToken) target.appToken = target.demoToken || crypto.randomUUID();
+    if (!target.lifecycle) target.lifecycle = "trial";
     await refreshProjectState(target);
     if (target.autopilot?.running && !runningJobs.has(jobKey(user.id, target.id))) {
       recoverStaleAutopilot(target);
@@ -385,8 +385,8 @@ app.post("/api/generate", async (req, res) => {
   if (!target) {
     target = {
       id: `app-${Date.now()}`,
-      demoToken: crypto.randomUUID(),
-      lifecycle: "demo",
+      appToken: crypto.randomUUID(),
+      lifecycle: "trial",
       ownerId: user.id,
       name: requestedProjectName,
       createdAt: now,
@@ -575,8 +575,8 @@ app.get("/api/apps/:id/preview", async (req, res) => {
 
 app.get("/api/apps/:id/live-preview", livePreviewRequest);
 app.get("/api/apps/:id/live-preview/*splat", livePreviewRequest);
-app.get("/demo/:id/:token", publicDemoRequest);
-app.get("/demo/:id/:token/*splat", publicDemoRequest);
+app.get("/apps/:id/:token", publicAppRequest);
+app.get("/apps/:id/:token/*splat", publicAppRequest);
 
 async function livePreviewRequest(req, res) {
   const user = await requireUser(req, res);
@@ -615,10 +615,10 @@ async function livePreviewRequest(req, res) {
   res.type("html").send(html);
 }
 
-async function publicDemoRequest(req, res) {
-  const found = await findPublicDemoApp(req.params.id, req.params.token);
+async function publicAppRequest(req, res) {
+  const found = await findPublicApp(req.params.id, req.params.token);
   if (!found) {
-    res.status(404).type("html").send(previewPendingHtml("Demo non trovata", "Il link demo non e valido o non e piu attivo."));
+    res.status(404).type("html").send(previewPendingHtml("App non trovata", "Il link dell'app non e valido o non e piu attivo."));
     return;
   }
 
@@ -811,14 +811,14 @@ async function finishAutopilot(target, apps, user) {
   const steps = target.sdd?.steps || [];
   const doneCount = steps.filter((step) => step.done).length;
   const now = new Date().toISOString();
-  if (!target.demoToken) target.demoToken = crypto.randomUUID();
-  if (!target.lifecycle) target.lifecycle = "demo";
-  const demoUrl = demoUrlForApp(target);
+  if (!target.appToken) target.appToken = target.demoToken || crypto.randomUUID();
+  if (!target.lifecycle) target.lifecycle = "trial";
+  const appUrl = appUrlForApp(target);
   appendOperationalLog(
     target,
     target.sdd?.currentStep
       ? `In pausa. Prossimo task: ${target.sdd.currentStep.label}.`
-      : `Demo pronta: ${demoUrl}`,
+      : `App pronta: ${appUrl}`,
   );
   target.status = target.sdd?.currentStep ? "paused" : "ready";
   target.updatedAt = now;
@@ -836,7 +836,7 @@ async function finishAutopilot(target, apps, user) {
     target,
     target.sdd?.currentStep
       ? `In pausa. Prossimo task: ${target.sdd.currentStep.label}.`
-      : `Piano completato. Demo pronta: ${demoUrl}`,
+      : `Piano completato. App pronta: ${appUrl}`,
   );
   await saveApps(apps, user);
 }
@@ -1120,7 +1120,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   }
 
   return {
-    summary: `Piano creato e prima demo generata. ${summarizeTouchedFiles([...new Set(touched)])}.`,
+    summary: `Piano creato e prima versione generata. ${summarizeTouchedFiles([...new Set(touched)])}.`,
     touched: [...new Set(touched)],
     changedFiles: new Set(touched).size,
   };
@@ -1142,7 +1142,7 @@ function appendModelNarration(target, aiText, phaseLabel = "") {
 function operationProgressMessage(phaseLabel = "", aiText = "") {
   const phase = String(phaseLabel || "").toLowerCase();
   if (phase.includes("specific")) return "Sto preparando il piano del progetto.";
-  if (phase.includes("server") || phase.includes("backend") || phase.includes("deploy")) return "Sto preparando la parte server della demo.";
+  if (phase.includes("server") || phase.includes("backend") || phase.includes("deploy")) return "Sto preparando la parte server dell'app.";
   if (phase.includes("interfaccia") || phase.includes("frontend") || phase.includes("anteprima")) return "Sto preparando interfaccia e anteprima reale.";
 
   const narration = extractModelNarration(aiText);
@@ -1187,12 +1187,12 @@ function buildOrchestratorSystemPrompt() {
     "- Non fare domande bloccanti quando puoi scegliere una soluzione ragionevole.",
     "- Non inserire API key o segreti nei file.",
     "- Ogni progetto generato deve tendere a un prodotto testabile: frontend, backend, database/config e istruzioni di avvio coerenti.",
-    "- Ogni progetto deve avere un flusso demo -> abbonamento: demo con chiave provvisoria, pulsante/testo 'Richiedi chiave di attivazione' o 'Abbonati', e stato pronto per chiave reale mensile.",
-    "- Non proporre Render, Netlify, Vercel, Firebase o servizi esterni: il prodotto demo deve girare sul server LocoCode.",
+    "- Ogni progetto deve avere un flusso versione di prova -> abbonamento: chiave provvisoria, pulsante/testo 'Richiedi chiave di attivazione' o 'Abbonati', e stato pronto per chiave reale mensile.",
+    "- Non proporre Render, Netlify, Vercel, Firebase o servizi esterni: il prodotto deve girare sul server LocoCode, dentro la cartella del progetto dell'utente.",
     "- Il backend deve esporre API avviabili sul server e il frontend deve poter usare una URL API configurabile con VITE_API_URL.",
-    "- Il database iniziale deve stare nella cartella del progetto, preferibilmente SQLite per la demo.",
-    "- Se l'app prevede accesso utenti, crea credenziali demo fittizie documentate nel README, mai credenziali reali.",
-    "- Se l'app richiede API esterne, non bloccare la demo e non mostrare errori tecnici: crea una schermata Impostazioni/Chiavi API per inserirle, usa dati fittizi finche mancano, e documenta le chiavi richieste in deploy/lococode.json.",
+    "- Il database iniziale deve stare nella cartella del progetto, preferibilmente SQLite per la versione di prova.",
+    "- Se l'app prevede accesso utenti, crea credenziali di prova fittizie documentate nel README, mai credenziali reali.",
+    "- Se l'app richiede API esterne, non bloccare la versione di prova e non mostrare errori tecnici: crea una schermata Impostazioni/Chiavi API per inserirle, usa dati fittizi finche mancano, e documenta le chiavi richieste in deploy/lococode.json.",
     "- Non inserire istruzioni da terminale, comandi bash, pip, npm o placeholder tipo OMDB_API_KEY nel testo visibile al cliente finale.",
     "- Ogni modifica deve restituire file completi, non patch parziali.",
     "- Usa solo percorsi relativi alla root progetto.",
@@ -1229,8 +1229,8 @@ function buildInitialSpecsPrompt(initialPrompt) {
     "- deploy/lococode.json",
     "",
     "Il file .lc/spec/tasks.md deve contenere checkbox markdown con task piccoli e verificabili.",
-    "Il piano deve includere: link demo finale, chiave demo provvisoria, richiesta chiave di attivazione, abbonamento mensile, gestione scadenza chiave.",
-    "Se servono API esterne, pianifica una schermata interna per inserire le chiavi senza bloccare la demo.",
+    "Il piano deve includere: link finale dell'app, chiave provvisoria, richiesta chiave di attivazione, abbonamento mensile, gestione scadenza chiave.",
+    "Se servono API esterne, pianifica una schermata interna per inserire le chiavi senza bloccare la versione di prova.",
     "Marca completati solo i task di specifica realmente coperti in questa fase.",
     "Se il dominio e medico/dentistico, il prodotto deve gestire processi amministrativi e clinici registrati dallo studio, ma non deve dare diagnosi o consigli medici automatici.",
     "Restituisci solo blocchi file.",
@@ -1258,9 +1258,9 @@ function buildInitialBackendPrompt(initialPrompt, projectMemory) {
     "- .lc/memory/project_context.md",
     "",
     "backend/app/main.py deve includere FastAPI, CORS, health check, modelli Pydantic, inizializzazione SQLite e API CRUD minime coerenti con il progetto.",
-    "deploy/lococode.json deve descrivere nome servizio, porta suggerita, comando backend, comando build frontend, percorso SQLite, credenziali demo, chiave demo, chiave di attivazione mensile e API esterne richieste.",
-    "Il backend deve accettare una chiave demo provvisoria e predisporre una chiave reale con scadenza mensile, anche se il pagamento reale verra collegato dopo.",
-    "Se sono necessarie API esterne, crea endpoint/config SQLite per salvare le chiavi fornite dall'utente nella demo; se mancano, restituisci dati fittizi e messaggi gentili, non errori bloccanti.",
+    "deploy/lococode.json deve descrivere nome servizio, porta suggerita, comando backend, comando build frontend, percorso SQLite, credenziali di prova, chiave provvisoria, chiave di attivazione mensile e API esterne richieste.",
+    "Il backend deve accettare una chiave provvisoria e predisporre una chiave reale con scadenza mensile, anche se il pagamento reale verra collegato dopo.",
+    "Se sono necessarie API esterne, crea endpoint/config SQLite per salvare le chiavi fornite dall'utente nella versione di prova; se mancano, restituisci dati fittizi e messaggi gentili, non errori bloccanti.",
     "Non usare render.yaml, Netlify, Vercel o altri deploy esterni.",
     "Non inserire dati sanitari reali, API key o segreti.",
     "Aggiorna il piano dei task completati in questa fase.",
@@ -1288,10 +1288,10 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "- .lc/spec/tasks.md",
     "- .lc/memory/project_context.md",
     "",
-    "Il frontend deve essere in italiano, gestionale, responsive, navigabile e con dati demo realistici ma fittizi.",
+    "Il frontend deve essere in italiano, gestionale, responsive, navigabile e con dati di prova realistici ma fittizi.",
     "L'utente deve poter provare l'MVP come prodotto: pagine principali, pulsanti, form e routing devono funzionare nella preview reale.",
-    "Il frontend deve mostrare nella demo un'area 'Attivazione' o 'Abbonamento' con richiesta chiave di attivazione, stato demo e call to action per abbonarsi.",
-    "Se l'app usa API esterne, il frontend deve avere una schermata Impostazioni/Chiavi API dove inserire la chiave; senza chiave deve funzionare con dati demo, non fermarsi.",
+    "Il frontend deve mostrare un'area 'Attivazione' o 'Abbonamento' con richiesta chiave di attivazione, stato di prova e call to action per abbonarsi.",
+    "Se l'app usa API esterne, il frontend deve avere una schermata Impostazioni/Chiavi API dove inserire la chiave; senza chiave deve funzionare con dati di prova, non fermarsi.",
     "Il frontend deve leggere l'API da import.meta.env.VITE_API_URL e funzionare quando viene servito sotto un path pubblico del server LocoCode.",
     "preview/index.html serve solo da fallback statico se il frontend vero non e ancora pronto.",
     "Aggiorna il piano dei task completati in questa fase.",
@@ -1318,8 +1318,8 @@ function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, 
     "- Aggiorna sempre .lc/memory/project_context.md con una nota breve.",
     "- Se esiste frontend/, aggiorna il frontend reale quando cambia comportamento o UI.",
     "- Aggiorna preview/index.html solo come fallback statico quando il frontend reale non e ancora pronto.",
-    "- Mantieni sempre funzionante il link demo: se una chiave API esterna manca, mostra impostazioni e dati demo invece di un errore tecnico.",
-    "- Mantieni il flusso demo -> richiesta chiave di attivazione -> abbonamento mensile.",
+    "- Mantieni sempre funzionante il link finale dell'app: se una chiave API esterna manca, mostra impostazioni e dati di prova invece di un errore tecnico.",
+    "- Mantieni il flusso versione di prova -> richiesta chiave di attivazione -> abbonamento mensile.",
     "- Non creare mai .venv, venv, node_modules, dist o build.",
     "- Restituisci solo blocchi file nel formato richiesto.",
   ].join("\n");
@@ -2126,7 +2126,7 @@ async function saveApps(apps, user = null) {
   await fs.writeFile(targetPath, JSON.stringify({ apps }, null, 2), "utf8");
 }
 
-async function findPublicDemoApp(appId, token) {
+async function findPublicApp(appId, token) {
   const cleanId = String(appId || "").trim();
   const cleanToken = String(token || "").trim();
   if (!cleanId || !cleanToken) return null;
@@ -2134,7 +2134,7 @@ async function findPublicDemoApp(appId, token) {
   const store = await loadUsersStore();
   for (const user of store.users || []) {
     const apps = await loadApps(user);
-    const target = apps.find((item) => item.id === cleanId && item.demoToken === cleanToken);
+    const target = apps.find((item) => item.id === cleanId && (item.appToken || item.demoToken) === cleanToken);
     if (target) return { user, apps, target };
   }
 
@@ -2150,17 +2150,20 @@ async function readJson(filePath) {
 }
 
 function publicApp(appData) {
+  const appToken = appData.appToken || appData.demoToken || "";
+  const appUrl = appUrlForApp({ ...appData, appToken });
   const safe = {
     ...appData,
+    appToken,
   };
   delete safe.ownerId;
-  const demoToken = appData.demoToken || "";
-  const demoUrl = demoUrlForApp(appData);
+  delete safe.demoToken;
+  delete safe.appToken;
 
   return {
     ...safe,
-    lifecycle: appData.lifecycle || "demo",
-    demoUrl,
+    lifecycle: appData.lifecycle || "trial",
+    appUrl,
     autopilot: sanitizeAutopilotForClient(appData.autopilot),
     html: appData.html || "",
     preview: appData.preview || {
@@ -2178,8 +2181,9 @@ function publicApp(appData) {
   };
 }
 
-function demoUrlForApp(appData) {
-  return appData?.demoToken ? `${publicBaseUrl}/demo/${appData.id}/${appData.demoToken}/` : "";
+function appUrlForApp(appData) {
+  const token = appData?.appToken || appData?.demoToken;
+  return token ? `${publicBaseUrl}/apps/${appData.id}/${token}/` : "";
 }
 
 function sanitizeAutopilotForClient(autopilot = {}) {

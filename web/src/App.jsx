@@ -859,9 +859,9 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
             <em>{taskState.header}</em>
           </div>
           <div className="completed-project-actions">
-            {app.demoUrl && (
-              <a className="secondary-action compact" href={app.demoUrl} target="_blank" rel="noreferrer">
-                Apri demo
+            {app.appUrl && (
+              <a className="secondary-action compact" href={app.appUrl} target="_blank" rel="noreferrer">
+                Apri app
               </a>
             )}
             <button className="secondary-action compact" onClick={onBackToProjects}>
@@ -1613,8 +1613,8 @@ function HelpView() {
     },
     {
       icon: LayoutDashboard,
-      title: "3. Prova la demo",
-      text: "Quando la web app e pronta, provi la demo. Se ti piace, puoi acquistarla e continuare da quella base.",
+      title: "3. Prova l'app",
+      text: "Quando la web app e pronta, la provi online. Se ti piace, puoi attivarla e continuare da quella base.",
     },
   ];
 
@@ -1622,7 +1622,7 @@ function HelpView() {
     <div className="help-view">
       <section className="help-hero">
         <h1>Crea una web app</h1>
-        <p>Avrai una versione demo testabile sul server. Se ti piace, puoi acquistarla e usarla partendo dal lavoro gia fatto.</p>
+        <p>Avrai una versione di prova testabile sul server. Se ti piace, puoi attivarla e usarla partendo dal lavoro gia fatto.</p>
       </section>
 
       <section className="help-grid">
@@ -1639,8 +1639,8 @@ function HelpView() {
       </section>
 
       <section className="architecture-card help-simple-card">
-        <h2>Dalla demo al prodotto</h2>
-        <p>La demo non viene buttata: diventa la base dell'app attiva, con dati reali, utenti reali e configurazione definitiva quando decidi di acquistarla.</p>
+        <h2>Dalla prova al prodotto</h2>
+        <p>La versione di prova non viene buttata: diventa la base dell'app attiva, con dati reali, utenti reali e configurazione definitiva quando decidi di acquistarla.</p>
       </section>
     </div>
   );
