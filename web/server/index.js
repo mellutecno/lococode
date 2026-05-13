@@ -29,6 +29,7 @@ const authSecret = process.env.LOCOCODE_AUTH_SECRET || "lococode-local-auth-secr
 const loginTokenTtlMs = Number(process.env.LOCOCODE_LOGIN_TOKEN_TTL_MS || 24 * 60 * 60 * 1000);
 const sessionTtlMs = Number(process.env.LOCOCODE_SESSION_TTL_MS || 30 * 24 * 60 * 60 * 1000);
 const heartbeatTimeoutMs = Number(process.env.LOCOCODE_HEARTBEAT_TIMEOUT_MS || 2 * 60 * 1000);
+const publicBaseUrl = String(process.env.LOCOCODE_PUBLIC_URL || "https://lococode.mellutecno.it").replace(/\/$/, "");
 const runningJobs = new Map();
 const frontendBuilds = new Map();
 
@@ -42,7 +43,7 @@ app.use((req, res, next) => {
   const allowedOrigin = process.env.LOCOCODE_ALLOWED_ORIGIN || req.headers.origin || "*";
   res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
@@ -271,6 +272,8 @@ app.get("/api/apps", async (req, res) => {
 
   const apps = await loadApps(user);
   for (const target of apps) {
+    if (!target.demoToken) target.demoToken = crypto.randomUUID();
+    if (!target.lifecycle) target.lifecycle = "demo";
     await refreshProjectState(target);
     if (target.autopilot?.running && !runningJobs.has(jobKey(user.id, target.id))) {
       recoverStaleAutopilot(target);
@@ -382,6 +385,8 @@ app.post("/api/generate", async (req, res) => {
   if (!target) {
     target = {
       id: `app-${Date.now()}`,
+      demoToken: crypto.randomUUID(),
+      lifecycle: "demo",
       ownerId: user.id,
       name: requestedProjectName,
       createdAt: now,
@@ -561,7 +566,7 @@ app.get("/api/apps/:id/preview", async (req, res) => {
 
   const html = await readPreviewHtml(target);
   if (!html) {
-    res.status(404).send("Preview non disponibile: LocoCode non ha ancora creato preview/index.html.");
+    res.type("html").send(previewPendingHtml());
     return;
   }
 
@@ -570,6 +575,8 @@ app.get("/api/apps/:id/preview", async (req, res) => {
 
 app.get("/api/apps/:id/live-preview", livePreviewRequest);
 app.get("/api/apps/:id/live-preview/*splat", livePreviewRequest);
+app.get("/demo/:id/:token", publicDemoRequest);
+app.get("/demo/:id/:token/*splat", publicDemoRequest);
 
 async function livePreviewRequest(req, res) {
   const user = await requireUser(req, res);
@@ -601,11 +608,32 @@ async function livePreviewRequest(req, res) {
 
   const html = await readPreviewHtml(target);
   if (!html) {
-    res.status(404).send("Preview non disponibile.");
+    res.type("html").send(previewPendingHtml());
     return;
   }
 
   res.type("html").send(html);
+}
+
+async function publicDemoRequest(req, res) {
+  const found = await findPublicDemoApp(req.params.id, req.params.token);
+  if (!found) {
+    res.status(404).type("html").send(previewPendingHtml("Demo non trovata", "Il link demo non e valido o non e piu attivo."));
+    return;
+  }
+
+  const { user, apps, target } = found;
+  await refreshProjectState(target);
+  const builtFrontend = await ensureFrontendPreviewBuild(target);
+  if (builtFrontend) target.preview = await resolvePreviewState(target, target.files || []);
+  await saveApps(apps, user);
+
+  const staticPath = previewStaticPath(req.params.splat);
+  const served = await serveFrontendBuildFile(target, staticPath, res);
+  if (served) return;
+
+  const html = await readPreviewHtml(target);
+  res.type("html").send(html || previewPendingHtml());
 }
 
 const distDir = path.join(rootDir, "dist");
@@ -783,11 +811,14 @@ async function finishAutopilot(target, apps, user) {
   const steps = target.sdd?.steps || [];
   const doneCount = steps.filter((step) => step.done).length;
   const now = new Date().toISOString();
+  if (!target.demoToken) target.demoToken = crypto.randomUUID();
+  if (!target.lifecycle) target.lifecycle = "demo";
+  const demoUrl = demoUrlForApp(target);
   appendOperationalLog(
     target,
     target.sdd?.currentStep
       ? `In pausa. Prossimo task: ${target.sdd.currentStep.label}.`
-      : "Piano completato.",
+      : `Demo pronta: ${demoUrl}`,
   );
   target.status = target.sdd?.currentStep ? "paused" : "ready";
   target.updatedAt = now;
@@ -805,7 +836,7 @@ async function finishAutopilot(target, apps, user) {
     target,
     target.sdd?.currentStep
       ? `In pausa. Prossimo task: ${target.sdd.currentStep.label}.`
-      : "Piano completato. Preview aggiornata.",
+      : `Piano completato. Demo pronta: ${demoUrl}`,
   );
   await saveApps(apps, user);
 }
@@ -888,6 +919,7 @@ function buildOperationalError({ task, message, model }) {
 
 function appendOperationalLog(target, message) {
   if (!message) return;
+  if (/^\s*Nota operativa/i.test(message) || isTechnicalNarration(message)) return;
 
   const previous = Array.isArray(target.autopilot?.log) ? target.autopilot.log : [];
   target.autopilot = {
@@ -988,8 +1020,6 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
     maxTokens: 9000,
     timeoutMs: openRouterTimeoutMs,
   });
-  appendModelNarration(target, aiText);
-
   const operations = parseOperations(aiText);
   if (!operations.length) {
     throw new Error(
@@ -1024,17 +1054,17 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   const systemPrompt = buildOrchestratorSystemPrompt();
   const phases = [
     {
-      label: "specifiche SDD",
+      label: "specifiche progetto",
       maxTokens: 7000,
       getPrompt: async () => buildInitialSpecsPrompt(userPrompt),
     },
     {
-      label: "backend e deploy",
+      label: "parte server",
       maxTokens: 7500,
       getPrompt: async () => buildInitialBackendPrompt(userPrompt, await loadProjectMemory(target)),
     },
     {
-      label: "frontend e anteprima",
+      label: "interfaccia e anteprima",
       maxTokens: 9500,
       getPrompt: async () => buildInitialFrontendPrompt(userPrompt, await loadProjectMemory(target)),
     },
@@ -1061,8 +1091,6 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       maxTokens: phase.maxTokens,
       timeoutMs: openRouterTimeoutMs,
     });
-    appendModelNarration(target, aiText, phase.label);
-
     const operations = parseOperations(aiText);
     if (!operations.length) {
       throw new Error(
@@ -1092,7 +1120,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   }
 
   return {
-    summary: `SDD creato e MVP iniziale generato. ${summarizeTouchedFiles([...new Set(touched)])}.`,
+    summary: `Piano creato e prima demo generata. ${summarizeTouchedFiles([...new Set(touched)])}.`,
     touched: [...new Set(touched)],
     changedFiles: new Set(touched).size,
   };
@@ -1106,9 +1134,20 @@ function summarizeTouchedFiles(files) {
 }
 
 function appendModelNarration(target, aiText, phaseLabel = "") {
+  const message = operationProgressMessage(phaseLabel, aiText);
+  if (!message) return;
+  appendOperationalLog(target, message);
+}
+
+function operationProgressMessage(phaseLabel = "", aiText = "") {
+  const phase = String(phaseLabel || "").toLowerCase();
+  if (phase.includes("specific")) return "Sto preparando il piano del progetto.";
+  if (phase.includes("server") || phase.includes("backend") || phase.includes("deploy")) return "Sto preparando la parte server della demo.";
+  if (phase.includes("interfaccia") || phase.includes("frontend") || phase.includes("anteprima")) return "Sto preparando interfaccia e anteprima reale.";
+
   const narration = extractModelNarration(aiText);
-  if (!narration) return;
-  appendOperationalLog(target, phaseLabel ? `Nota operativa (${phaseLabel}): ${narration}` : `Nota operativa: ${narration}`);
+  if (!narration) return "Sto salvando le modifiche del progetto.";
+  return narration;
 }
 
 function extractModelNarration(aiText) {
@@ -1120,8 +1159,15 @@ function extractModelNarration(aiText) {
     .trim();
 
   if (!text || text.length < 8) return "";
+  if (isTechnicalNarration(text)) return "";
   if (/^(ok|fatto|done)$/i.test(text)) return "";
   return text.length > 260 ? `${text.slice(0, 260).trim()}...` : text;
+}
+
+function isTechnicalNarration(text) {
+  return /\[Browser\]|<--|-->|OMDB_API_KEY|API_KEY|bash\b|python\s+-|pip\s+install|cd\s+backend|FastAPI|SQLite|Vite|\.env|localhost|curl\b|npm\s+/i.test(
+    text,
+  );
 }
 
 function buildOrchestratorSystemPrompt() {
@@ -1141,10 +1187,13 @@ function buildOrchestratorSystemPrompt() {
     "- Non fare domande bloccanti quando puoi scegliere una soluzione ragionevole.",
     "- Non inserire API key o segreti nei file.",
     "- Ogni progetto generato deve tendere a un prodotto testabile: frontend, backend, database/config e istruzioni di avvio coerenti.",
+    "- Ogni progetto deve avere un flusso demo -> abbonamento: demo con chiave provvisoria, pulsante/testo 'Richiedi chiave di attivazione' o 'Abbonati', e stato pronto per chiave reale mensile.",
     "- Non proporre Render, Netlify, Vercel, Firebase o servizi esterni: il prodotto demo deve girare sul server LocoCode.",
     "- Il backend deve esporre API avviabili sul server e il frontend deve poter usare una URL API configurabile con VITE_API_URL.",
     "- Il database iniziale deve stare nella cartella del progetto, preferibilmente SQLite per la demo.",
     "- Se l'app prevede accesso utenti, crea credenziali demo fittizie documentate nel README, mai credenziali reali.",
+    "- Se l'app richiede API esterne, non bloccare la demo e non mostrare errori tecnici: crea una schermata Impostazioni/Chiavi API per inserirle, usa dati fittizi finche mancano, e documenta le chiavi richieste in deploy/lococode.json.",
+    "- Non inserire istruzioni da terminale, comandi bash, pip, npm o placeholder tipo OMDB_API_KEY nel testo visibile al cliente finale.",
     "- Ogni modifica deve restituire file completi, non patch parziali.",
     "- Usa solo percorsi relativi alla root progetto.",
     "- Non creare mai .venv, venv, node_modules, dist o build: l'ambiente verra installato dal server LocoCode.",
@@ -1180,6 +1229,8 @@ function buildInitialSpecsPrompt(initialPrompt) {
     "- deploy/lococode.json",
     "",
     "Il file .lc/spec/tasks.md deve contenere checkbox markdown con task piccoli e verificabili.",
+    "Il piano deve includere: link demo finale, chiave demo provvisoria, richiesta chiave di attivazione, abbonamento mensile, gestione scadenza chiave.",
+    "Se servono API esterne, pianifica una schermata interna per inserire le chiavi senza bloccare la demo.",
     "Marca completati solo i task di specifica realmente coperti in questa fase.",
     "Se il dominio e medico/dentistico, il prodotto deve gestire processi amministrativi e clinici registrati dallo studio, ma non deve dare diagnosi o consigli medici automatici.",
     "Restituisci solo blocchi file.",
@@ -1207,7 +1258,9 @@ function buildInitialBackendPrompt(initialPrompt, projectMemory) {
     "- .lc/memory/project_context.md",
     "",
     "backend/app/main.py deve includere FastAPI, CORS, health check, modelli Pydantic, inizializzazione SQLite e API CRUD minime coerenti con il progetto.",
-    "deploy/lococode.json deve descrivere nome servizio, porta suggerita, comando backend, comando build frontend, percorso SQLite e credenziali demo.",
+    "deploy/lococode.json deve descrivere nome servizio, porta suggerita, comando backend, comando build frontend, percorso SQLite, credenziali demo, chiave demo, chiave di attivazione mensile e API esterne richieste.",
+    "Il backend deve accettare una chiave demo provvisoria e predisporre una chiave reale con scadenza mensile, anche se il pagamento reale verra collegato dopo.",
+    "Se sono necessarie API esterne, crea endpoint/config SQLite per salvare le chiavi fornite dall'utente nella demo; se mancano, restituisci dati fittizi e messaggi gentili, non errori bloccanti.",
     "Non usare render.yaml, Netlify, Vercel o altri deploy esterni.",
     "Non inserire dati sanitari reali, API key o segreti.",
     "Aggiorna il piano dei task completati in questa fase.",
@@ -1237,6 +1290,8 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "",
     "Il frontend deve essere in italiano, gestionale, responsive, navigabile e con dati demo realistici ma fittizi.",
     "L'utente deve poter provare l'MVP come prodotto: pagine principali, pulsanti, form e routing devono funzionare nella preview reale.",
+    "Il frontend deve mostrare nella demo un'area 'Attivazione' o 'Abbonamento' con richiesta chiave di attivazione, stato demo e call to action per abbonarsi.",
+    "Se l'app usa API esterne, il frontend deve avere una schermata Impostazioni/Chiavi API dove inserire la chiave; senza chiave deve funzionare con dati demo, non fermarsi.",
     "Il frontend deve leggere l'API da import.meta.env.VITE_API_URL e funzionare quando viene servito sotto un path pubblico del server LocoCode.",
     "preview/index.html serve solo da fallback statico se il frontend vero non e ancora pronto.",
     "Aggiorna il piano dei task completati in questa fase.",
@@ -1263,6 +1318,8 @@ function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, 
     "- Aggiorna sempre .lc/memory/project_context.md con una nota breve.",
     "- Se esiste frontend/, aggiorna il frontend reale quando cambia comportamento o UI.",
     "- Aggiorna preview/index.html solo come fallback statico quando il frontend reale non e ancora pronto.",
+    "- Mantieni sempre funzionante il link demo: se una chiave API esterna manca, mostra impostazioni e dati demo invece di un errore tecnico.",
+    "- Mantieni il flusso demo -> richiesta chiave di attivazione -> abbonamento mensile.",
     "- Non creare mai .venv, venv, node_modules, dist o build.",
     "- Restituisci solo blocchi file nel formato richiesto.",
   ].join("\n");
@@ -1365,7 +1422,8 @@ async function ensureFrontendPreviewBuild(target) {
 
   const buildJob = buildFrontendPreview(target)
     .catch((err) => {
-      appendOperationalLog(target, `Preview reale non pronta: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn(`Preview build non pronta per ${target.id}: ${err instanceof Error ? err.message : String(err)}`);
+      appendOperationalLog(target, "Anteprima reale in preparazione. LocoCode la aggiornera appena il frontend sara completo.");
       return false;
     })
     .finally(() => {
@@ -2068,6 +2126,21 @@ async function saveApps(apps, user = null) {
   await fs.writeFile(targetPath, JSON.stringify({ apps }, null, 2), "utf8");
 }
 
+async function findPublicDemoApp(appId, token) {
+  const cleanId = String(appId || "").trim();
+  const cleanToken = String(token || "").trim();
+  if (!cleanId || !cleanToken) return null;
+
+  const store = await loadUsersStore();
+  for (const user of store.users || []) {
+    const apps = await loadApps(user);
+    const target = apps.find((item) => item.id === cleanId && item.demoToken === cleanToken);
+    if (target) return { user, apps, target };
+  }
+
+  return null;
+}
+
 async function readJson(filePath) {
   try {
     return JSON.parse(await fs.readFile(filePath, "utf8"));
@@ -2081,9 +2154,14 @@ function publicApp(appData) {
     ...appData,
   };
   delete safe.ownerId;
+  const demoToken = appData.demoToken || "";
+  const demoUrl = demoUrlForApp(appData);
 
   return {
     ...safe,
+    lifecycle: appData.lifecycle || "demo",
+    demoUrl,
+    autopilot: sanitizeAutopilotForClient(appData.autopilot),
     html: appData.html || "",
     preview: appData.preview || {
       mode: "fallback",
@@ -2098,6 +2176,23 @@ function publicApp(appData) {
     sdd: appData.sdd || emptySddState(),
     storagePath: appData.ownerId ? `users/${appData.ownerId}/projects/${appData.id}` : projectRoot(appData),
   };
+}
+
+function demoUrlForApp(appData) {
+  return appData?.demoToken ? `${publicBaseUrl}/demo/${appData.id}/${appData.demoToken}/` : "";
+}
+
+function sanitizeAutopilotForClient(autopilot = {}) {
+  const safe = {
+    ...(autopilot || {}),
+  };
+  safe.log = Array.isArray(autopilot?.log)
+    ? autopilot.log.filter((entry) => {
+        const message = String(entry?.message || "");
+        return message && !/^\s*Nota operativa/i.test(message) && !isTechnicalNarration(message);
+      })
+    : [];
+  return safe;
 }
 
 function emptySddState() {
@@ -2137,8 +2232,24 @@ async function readPreviewHtml(target) {
   return target.html || "";
 }
 
+function previewPendingHtml(
+  title = "Anteprima in preparazione",
+  message = "Sara disponibile appena LocoCode avra creato i primi file dell'app.",
+) {
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#f7f5ff;color:#343b4f}.box{text-align:center;padding:28px}.box h1{margin:0 0 10px;font-size:30px}.box p{margin:0;color:#697184;font-size:16px;line-height:1.5}</style></head><body><div class="box"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></div></body></html>`;
+}
+
 function looksLikeStandaloneHtml(value) {
   return /<!doctype html|<html[\s>]/i.test(value || "");
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 async function readProjectFile(target, relPath) {

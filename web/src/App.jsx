@@ -859,6 +859,11 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
             <em>{taskState.header}</em>
           </div>
           <div className="completed-project-actions">
+            {app.demoUrl && (
+              <a className="secondary-action compact" href={app.demoUrl} target="_blank" rel="noreferrer">
+                Apri demo
+              </a>
+            )}
             <button className="secondary-action compact" onClick={onBackToProjects}>
               Progetti
             </button>
@@ -976,7 +981,7 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
 function OperationLog({ app, status, error, compact = false }) {
   const lastAssistant = [...(app.messages || [])].reverse().find((message) => message.role === "assistant");
   const report = app.autopilot?.error;
-  const log = Array.isArray(app.autopilot?.log) ? app.autopilot.log.slice(compact ? -5 : -14) : [];
+  const log = Array.isArray(app.autopilot?.log) ? app.autopilot.log.filter((entry) => isUsefulOperation(entry.message)).slice(compact ? -5 : -14) : [];
   const hasError = Boolean(error || report) || app.status === "error" || /errore|timeout|interrott/i.test(lastAssistant?.content || "");
   const taskState = projectTaskState(app);
   const text = cleanOperationText(error || report?.cause || lastAssistant?.content || "Nessuna operazione registrata per ora.");
@@ -1178,6 +1183,16 @@ function cleanOperationText(value, maxChars = 360) {
 
   if (text.length <= maxChars) return text;
   return `${text.slice(0, maxChars).trim()}...`;
+}
+
+function isUsefulOperation(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/^Nota operativa/i.test(text)) return false;
+  if (/\[Browser\]|<--|-->|OMDB_API_KEY|API_KEY|bash\b|python\s+-|pip\s+install|cd\s+backend|FastAPI|SQLite|Vite|\.env|localhost|curl\b|npm\s+/i.test(text)) {
+    return false;
+  }
+  return true;
 }
 
 function findLastIndex(list, predicate) {
@@ -1666,7 +1681,7 @@ function livePreviewUrl(app) {
 }
 
 function emptyPreviewHtml() {
-  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#f7f5ff;color:#343b4f}.box{text-align:center}.box h1{margin:0 0 10px;font-size:34px}.box p{margin:0;color:#697184}</style></head><body><div class="box"><h1>Anteprima in preparazione</h1><p>LocoCode aggiornera questo pannello dopo la generazione.</p></div></body></html>`;
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#f7f5ff;color:#343b4f}.box{text-align:center;padding:28px}.box h1{margin:0 0 10px;font-size:30px}.box p{margin:0;color:#697184;font-size:16px;line-height:1.5}</style></head><body><div class="box"><h1>Anteprima in preparazione</h1><p>Sara disponibile appena LocoCode avra creato i primi file dell'app.</p></div></body></html>`;
 }
 
 function modelLabel(model) {
