@@ -14,8 +14,6 @@ import {
   LogOut,
   Mail,
   Maximize2,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Search,
   Send,
@@ -50,7 +48,7 @@ const quickPrompts = [
 ];
 
 export default function App() {
-  const [activeView, setActiveView] = useState("apps");
+  const [activeView, setActiveView] = useState("projects");
   const [apps, setApps] = useState([]);
   const [selectedAppId, setSelectedAppId] = useState("");
   const [projectName, setProjectName] = useState("");
@@ -69,10 +67,6 @@ export default function App() {
   const [authToken, setAuthToken] = useState("");
   const [authStep, setAuthStep] = useState("email");
   const [authMessage, setAuthMessage] = useState("");
-  const [theme, setTheme] = useState(() => localStorage.getItem("lococode-theme") || "light");
-  const [projectsPanelOpen, setProjectsPanelOpen] = useState(
-    () => localStorage.getItem("lococode-projects-panel-open") !== "false",
-  );
 
   const selectedApp = useMemo(
     () => apps.find((app) => app.id === selectedAppId) || apps[0] || null,
@@ -88,14 +82,6 @@ export default function App() {
   useEffect(() => {
     void bootstrap();
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem("lococode-theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
-    localStorage.setItem("lococode-projects-panel-open", projectsPanelOpen ? "true" : "false");
-  }, [projectsPanelOpen]);
 
   useEffect(() => {
     if (!currentUser) return undefined;
@@ -234,7 +220,7 @@ export default function App() {
     setCurrentUser(null);
     setApps([]);
     setSelectedAppId("");
-    setActiveView("apps");
+    setActiveView("projects");
     setAuthOpen(true);
     setStatus("Accesso richiesto");
   }
@@ -254,7 +240,7 @@ export default function App() {
       setApiKey(data.openrouterApiKey || "");
       setModel(data.defaultModel || COMMON_MODELS[0]);
       setStatus("Impostazioni salvate");
-      setActiveView(selectedAppId ? "chat" : "apps");
+      setActiveView(selectedAppId ? "chat" : "projects");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus("Errore impostazioni");
@@ -304,7 +290,7 @@ export default function App() {
       setPrompt("");
       setChatPrompt("");
       setActiveView("chat");
-      setStatus(`Autopilota avviato con ${modelLabel(chosenModel)}`);
+      setStatus(`Avanzamento avviato con ${modelLabel(chosenModel)}`);
       if (data.error) setError(data.error);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -330,7 +316,7 @@ export default function App() {
 
     setBusy(true);
     setError("");
-    setStatus(`Riavvio autopilota con ${modelLabel(projectModel)}`);
+    setStatus(`Riavvio avanzamento con ${modelLabel(projectModel)}`);
 
     try {
       const response = await apiFetch(`/api/apps/${selectedApp.id}/autopilot`, {
@@ -345,7 +331,7 @@ export default function App() {
       }
       await refreshApps(data.app.id);
       setActiveView("chat");
-      setStatus(`Autopilota attivo con ${modelLabel(projectModel)}`);
+      setStatus(`Avanzamento attivo con ${modelLabel(projectModel)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus("Errore");
@@ -359,7 +345,7 @@ export default function App() {
     if (!selectedApp || busy) return;
     setBusy(true);
     setError("");
-    setStatus("Richiedo stop autopilota...");
+    setStatus("Richiedo pausa avanzamento...");
 
     try {
       const response = await apiFetch(`/api/apps/${selectedApp.id}/stop`, {
@@ -370,7 +356,7 @@ export default function App() {
       if (!response.ok) throw new Error(data.error || "Stop non riuscito.");
       await refreshApps(data.app.id);
       setActiveView("chat");
-      setStatus("Autopilota in pausa");
+      setStatus("Avanzamento in pausa");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus("Errore");
@@ -403,30 +389,14 @@ export default function App() {
   }
 
   return (
-    <main className={`app-shell ${theme === "dark" ? "theme-dark" : ""} ${projectsPanelOpen ? "" : "projects-collapsed"}`}>
+    <main className="app-shell">
       <Rail activeView={activeView} setActiveView={(view) => {
-        if (!currentUser && !["apps", "help"].includes(view)) {
+        if (!currentUser && !["projects", "apps", "help"].includes(view)) {
           setAuthOpen(true);
           return;
         }
         setActiveView(view);
       }} />
-
-      <ProjectsSidebar
-        apps={filteredApps}
-        selectedApp={selectedApp}
-        currentUser={currentUser}
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        setActiveView={(view) => {
-          if (!currentUser && view !== "apps") setAuthOpen(true);
-          else setActiveView(view);
-        }}
-        setSelectedAppId={setSelectedAppId}
-        open={projectsPanelOpen}
-        onToggle={() => setProjectsPanelOpen((value) => !value)}
-        onAuth={() => setAuthOpen(true)}
-      />
 
       <section className="main-stage">
         <AppHeader
@@ -436,8 +406,23 @@ export default function App() {
           currentUser={currentUser}
           onAuth={() => setAuthOpen(true)}
           onLogout={logout}
-          onSettings={() => setActiveView("settings")}
         />
+
+        {activeView === "projects" && (
+          <ProjectsView
+            apps={filteredApps}
+            selectedApp={selectedApp}
+            currentUser={currentUser}
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            setActiveView={(view) => {
+              if (!currentUser && view !== "apps") setAuthOpen(true);
+              else setActiveView(view);
+            }}
+            setSelectedAppId={setSelectedAppId}
+            onAuth={() => setAuthOpen(true)}
+          />
+        )}
 
         {activeView === "apps" && (
           <HomeView
@@ -477,8 +462,6 @@ export default function App() {
             setApiKey={setApiKey}
             model={model}
             setModel={setModel}
-            theme={theme}
-            setTheme={setTheme}
             onSave={saveSettings}
             onTest={testApiConnection}
             apiCheck={apiCheck}
@@ -517,13 +500,14 @@ function Rail({ activeView, setActiveView }) {
   return (
     <nav className="rail">
       <img className="rail-logo" src="/lococode_logo.png" alt="LocoCode" />
-      <NavButton icon={FolderKanban} label="Progetti" active={activeView === "apps"} onClick={() => setActiveView("apps")} />
+      <NavButton icon={FolderKanban} label="Progetti" active={activeView === "projects"} onClick={() => setActiveView("projects")} />
       <NavButton icon={Workflow} label="Orch." active={activeView === "chat"} onClick={() => setActiveView("chat")} title="Orchestrator" />
       <NavButton icon={ClipboardList} label="Task" active={activeView === "tasks"} onClick={() => setActiveView("tasks")} />
       <NavButton icon={FileStack} label="SDD" active={activeView === "sdd"} onClick={() => setActiveView("sdd")} />
       <NavButton icon={Code2} label="File" active={activeView === "files"} onClick={() => setActiveView("files")} />
       <NavButton icon={Activity} label="Log" active={activeView === "log"} onClick={() => setActiveView("log")} title="Registro operativo" />
       <div className="rail-spacer" />
+      <NavButton icon={SlidersHorizontal} label="Imp." active={activeView === "settings"} onClick={() => setActiveView("settings")} title="Impostazioni" />
       <NavButton icon={CircleHelp} label="Aiuto" active={activeView === "help"} onClick={() => setActiveView("help")} />
     </nav>
   );
@@ -611,43 +595,28 @@ function AuthModal({ email, setEmail, token, setToken, step, setStep, message, b
   );
 }
 
-function ProjectsSidebar({ apps, selectedApp, currentUser, searchTerm, setSearchTerm, setActiveView, setSelectedAppId, open, onToggle, onAuth }) {
-  if (!open) {
-    return (
-      <aside className="projects-panel collapsed-panel">
-        <button className="panel-toggle vertical" onClick={onToggle} aria-label="Apri pannello progetti" title="Apri progetti">
-          <PanelLeftOpen size={20} />
-          <span>Progetti</span>
-        </button>
-      </aside>
-    );
-  }
-
+function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTerm, setActiveView, setSelectedAppId, onAuth }) {
   return (
-    <aside className="projects-panel">
-      <div className="panel-brand-row">
-        <div className="panel-brand">
-          <strong>LocoCode</strong>
-          <span>Orchestrator Web</span>
+    <div className="projects-view">
+      <section className="projects-card">
+        <div className="projects-head">
+          <div>
+            <span>Area lavoro</span>
+            <h1>Progetti</h1>
+          </div>
+          <button className="primary" onClick={() => setActiveView("apps")}>
+            <Plus size={20} />
+            <span>Nuovo progetto</span>
+          </button>
         </div>
-        <button className="panel-toggle" onClick={onToggle} aria-label="Chiudi pannello progetti" title="Chiudi pannello progetti">
-          <PanelLeftClose size={20} />
-        </button>
-      </div>
-      <button className="sidebar-command" onClick={() => setActiveView("apps")}>
-        <Plus size={22} />
-        <span>Nuovo progetto</span>
-      </button>
-      <label className="sidebar-search">
-        <Search size={22} />
-        <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Cerca progetti" />
-      </label>
+        <label className="project-search">
+          <Search size={22} />
+          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Cerca progetti" />
+        </label>
 
-      <section className="project-section">
-        <h3>Progetti recenti</h3>
-        <div className="app-list">
+        <div className="project-grid">
           {!currentUser && (
-            <button className="app-item auth-item" onClick={onAuth}>
+            <button className="project-tile auth-item" onClick={onAuth}>
               <strong>Accedi con token</strong>
               <span>Inserisci email e token per vedere i tuoi progetti.</span>
             </button>
@@ -655,7 +624,7 @@ function ProjectsSidebar({ apps, selectedApp, currentUser, searchTerm, setSearch
           {apps.map((app) => (
             <button
               key={app.id}
-              className={`app-item ${selectedApp?.id === app.id ? "selected" : ""}`}
+              className={`project-tile ${selectedApp?.id === app.id ? "selected" : ""}`}
               onClick={() => {
                 setSelectedAppId(app.id);
                 setActiveView("chat");
@@ -663,16 +632,17 @@ function ProjectsSidebar({ apps, selectedApp, currentUser, searchTerm, setSearch
             >
               <strong>{app.name}</strong>
               <span>{formatDate(app.updatedAt)}</span>
+              <em>{projectTaskState(app).short}</em>
             </button>
           ))}
           {currentUser && !apps.length && <p className="empty">Nessun progetto ancora.</p>}
         </div>
       </section>
-    </aside>
+    </div>
   );
 }
 
-function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLogout, onSettings }) {
+function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLogout }) {
   const label =
     ["chat", "tasks", "sdd", "files", "log"].includes(activeView) && selectedApp
       ? selectedApp.name
@@ -680,9 +650,12 @@ function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLog
         ? "Impostazioni"
         : activeView === "help"
           ? "Aiuto"
-          : "Nuovo progetto";
+          : activeView === "projects"
+            ? "I tuoi progetti"
+            : "Nuovo progetto";
 
   const viewLabel = {
+    projects: "Progetti",
     apps: "Nuovo progetto",
     chat: "Orchestrator SDD",
     tasks: "Task progetto",
@@ -717,12 +690,6 @@ function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLog
         <button className="user-button" aria-label="Accedi" onClick={onAuth}>
           <KeyRound size={20} />
           <span>Accedi</span>
-        </button>
-      )}
-      {activeView !== "settings" && (
-        <button className="settings-button" aria-label="Impostazioni" onClick={currentUser ? onSettings : onAuth}>
-          <SlidersHorizontal size={20} />
-          <span>Impostazioni</span>
         </button>
       )}
     </header>
@@ -765,13 +732,6 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
         })}
       </div>
 
-      <section className="orchestrator-note">
-        <Code2 size={28} />
-        <div>
-          <strong>Flusso automatico SDD</strong>
-          <span>Il primo prompt genera specifiche, task, file progetto e anteprima.</span>
-        </div>
-      </section>
     </div>
   );
 }
@@ -1031,7 +991,7 @@ function projectTaskState(app) {
   const phase = formatPhaseLabel(currentStep?.phase || app?.sdd?.phase || "");
   const shortPhase = compactPhaseLabel(phase);
   const meta = total ? `${phase} - Task ${taskProgress} - ${modelLabel(app?.model)}` : modelLabel(app?.model);
-  const headerMeta = total ? `${phase} - Task ${taskProgress}` : "Piano SDD in preparazione";
+  const headerMeta = total ? `${phase} - Task ${taskProgress}` : "Piano in preparazione";
   const task = app?.autopilot?.currentTask || currentStep?.label || "";
 
   if (!app) {
@@ -1056,7 +1016,7 @@ function projectTaskState(app) {
 
   if (app.autopilot?.running || app.status === "building") {
     return {
-      header: `Autopilota attivo - ${headerMeta}`,
+      header: `Avanzamento attivo - ${headerMeta}`,
       kicker: "Task corrente",
       label: task || "Preparazione SDD",
       meta,
@@ -1075,10 +1035,10 @@ function projectTaskState(app) {
   }
 
   return {
-    header: total ? `Piano SDD completato - ${progress}` : "In attesa del piano SDD",
+    header: total ? `Piano completato - ${progress}` : "In attesa del piano",
     kicker: total ? "Piano completato" : "Piano in preparazione",
-    label: total ? "Tutti i task SDD risultano completati" : "In attesa del primo prompt",
-    meta: `${progress} - ${model}`,
+    label: total ? "Tutti i task risultano completati" : "In attesa del primo prompt",
+    meta: `${progress} - ${modelLabel(app?.model)}`,
     short: total ? "Completato" : "Pronto",
   };
 }
@@ -1111,8 +1071,8 @@ function chatMessageContent(message) {
   if (message.role !== "assistant") return text;
 
   return cleanOperationText(text, 700)
-    .replace(/Prossimo task SDD applicato con\s+[\w./:-]+\.?\s*/i, "Task SDD applicato. ")
-    .replace(/Task SDD applicato con\s+[\w./:-]+\.?\s*/i, "Task SDD applicato. ")
+    .replace(/Prossimo task SDD applicato con\s+[\w./:-]+\.?\s*/i, "Task applicato. ")
+    .replace(/Task SDD applicato con\s+[\w./:-]+\.?\s*/i, "Task applicato. ")
     .replace(/SDD creato e MVP iniziale generato con\s+[\w./:-]+\.?\s*/i, "SDD creato e MVP iniziale generato. ")
     .replace(/Modifica applicata seguendo SDD con\s+[\w./:-]+\.?\s*/i, "Modifica applicata. ")
     .replace(/File aggiornati:\s*[\s\S]*$/i, "File aggiornati salvati nel progetto.")
@@ -1122,6 +1082,12 @@ function chatMessageContent(message) {
 function cleanOperationText(value, maxChars = 360) {
   const text = String(value || "")
     .replace(/\s+/g, " ")
+    .replace(/\bAutopilota\b/g, "Avanzamento automatico")
+    .replace(/\bautopilota\b/g, "avanzamento automatico")
+    .replace(/\bTask SDD\b/g, "Task")
+    .replace(/\btask SDD\b/g, "task")
+    .replace(/\bPiano SDD\b/g, "Piano progetto")
+    .replace(/\bpiano SDD\b/g, "piano progetto")
     .replace(/\s+con\s+deepseek\/deepseek-v4-pro/gi, "")
     .replace(/\s+con\s+moonshotai\/kimi-k2\.6/gi, "")
     .replace(/File aggiornati:\s*.+$/i, "File aggiornati salvati nel progetto.")
@@ -1511,7 +1477,7 @@ function SddPanel({ app }) {
   );
 }
 
-function SettingsView({ apiKey, setApiKey, model, setModel, theme, setTheme, onSave, onTest, apiCheck }) {
+function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiCheck }) {
   return (
     <div className="settings-view">
       <section className="settings-card">
@@ -1530,17 +1496,6 @@ function SettingsView({ apiKey, setApiKey, model, setModel, theme, setTheme, onS
             <option value="it">Italiano</option>
           </select>
         </label>
-        <div className="settings-row">
-          <span>Aspetto</span>
-          <div className="segmented-control" role="group" aria-label="Aspetto interfaccia">
-            <button className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")} type="button">
-              Chiaro
-            </button>
-            <button className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")} type="button">
-              Scuro
-            </button>
-          </div>
-        </div>
         <div className="settings-actions">
           <button className="secondary-action" onClick={onTest}>Test API</button>
           <button className="primary" onClick={onSave}>Salva impostazioni</button>

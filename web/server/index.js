@@ -157,6 +157,7 @@ app.post("/api/auth/verify-token", async (req, res) => {
 
   const sessionToken = crypto.randomBytes(32).toString("hex");
   const now = new Date().toISOString();
+  addUserSession(user, sessionToken);
   user.sessionHash = hashSecret(sessionToken);
   user.sessionExpiresAt = new Date(Date.now() + sessionTtlMs).toISOString();
   user.lastLoginAt = now;
@@ -168,14 +169,20 @@ app.post("/api/auth/verify-token", async (req, res) => {
 });
 
 app.post("/api/auth/logout", async (req, res) => {
+  const sessionHash = getRequestSessionHash(req);
   const user = await getSessionUser(req);
   if (user) {
-    await requestStopRunningJobsForUser(user, "Autopilota in pausa: l'utente e uscito dalla sessione.");
+    await requestStopRunningJobsForUser(user, "Avanzamento in pausa: l'utente e uscito dalla sessione.");
     const store = await loadUsersStore();
     const stored = store.users.find((item) => item.id === user.id);
     if (stored) {
-      stored.sessionHash = "";
-      stored.sessionExpiresAt = "";
+      stored.sessions = Array.isArray(stored.sessions)
+        ? stored.sessions.filter((session) => session.hash !== sessionHash)
+        : [];
+      if (stored.sessionHash === sessionHash) {
+        stored.sessionHash = "";
+        stored.sessionExpiresAt = "";
+      }
       stored.updatedAt = new Date().toISOString();
       await saveUsersStore(store);
     }
@@ -271,7 +278,7 @@ app.get("/api/apps", async (req, res) => {
       if (!target.messages.some((message) => message.content?.includes("Generazione interrotta"))) {
         target.messages.push({
           role: "assistant",
-          content: "Generazione interrotta o chiusa prima del completamento. Ho recuperato i file gia creati: puoi leggere SDD e File; l'autopilota puo riprendere dal prossimo task.",
+          content: "Generazione interrotta o chiusa prima del completamento. Ho recuperato i file gia creati: puoi leggere SDD e File; l'avanzamento automatico puo riprendere dal prossimo task.",
           at: new Date().toISOString(),
         });
       }
@@ -285,7 +292,7 @@ function recoverStaleAutopilot(target) {
   const now = new Date().toISOString();
   const steps = target.sdd?.steps || [];
   const currentTask = target.sdd?.currentStep?.label || target.autopilot?.currentTask || "Progetto in pausa";
-  const message = "Autopilota interrotto da riavvio server. Puoi riprendere dal prossimo task.";
+  const message = "Avanzamento automatico interrotto da riavvio server. Puoi riprendere dal prossimo task.";
 
   appendOperationalLog(target, message);
   target.status = target.sdd?.currentStep ? "paused" : "ready";
@@ -450,7 +457,7 @@ app.post("/api/apps/:id/stop", async (req, res) => {
     lastMessage: "Stop richiesto. Progetto in pausa.",
     error: null,
   };
-  pushAssistantMessage(target, "Ho messo in pausa l'autopilota. Puoi riprendere dal prossimo task quando vuoi.");
+  pushAssistantMessage(target, "Ho messo in pausa l'avanzamento automatico. Puoi riprendere dal prossimo task quando vuoi.");
   await saveApps(apps, user);
   res.json({ app: publicApp(target), stopped: true });
 });
@@ -489,18 +496,18 @@ async function startAutopilotRequest(req, res) {
   target.updatedAt = now;
   target.autopilot = {
     running: true,
-    currentTask: target.sdd?.currentStep?.label || "Ripresa dal prossimo task SDD",
+    currentTask: target.sdd?.currentStep?.label || "Ripresa dal prossimo task",
     completed: target.sdd?.steps?.filter((step) => step.done).length || 0,
     total: target.sdd?.steps?.length || 0,
     startedAt: now,
     updatedAt: now,
-    lastMessage: "Autopilota riavviato.",
+    lastMessage: "Avanzamento automatico riavviato.",
     error: null,
   };
   target.messages = Array.isArray(target.messages) ? target.messages : [];
   target.messages.push({
     role: "assistant",
-    content: "Riprendo dal prossimo task SDD.",
+    content: "Riprendo dal prossimo task.",
     at: now,
   });
   await saveApps(apps, user);
@@ -593,7 +600,7 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
   };
 
   try {
-    await saveProgress(mode === "initial" ? "Preparazione SDD e piano operativo" : target.sdd?.currentStep?.label || "Prossimo task SDD");
+    await saveProgress(mode === "initial" ? "Preparazione piano operativo" : target.sdd?.currentStep?.label || "Prossimo task");
 
     if (mode === "initial") {
       const result = await runOrchestratorTurn({
@@ -639,14 +646,14 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
       const beforeTask = getNextTaskLabel(target);
       const beforeDone = (target.sdd?.steps || []).filter((step) => step.done).length;
 
-      await saveProgress(beforeTask || "Prossimo task SDD");
+      await saveProgress(beforeTask || "Prossimo task");
       const result = await runOrchestratorTurn({
         target,
         apiKey,
         model,
         userPrompt: "",
         mode: "continue",
-        onProgress: async () => saveProgress(beforeTask || "Task SDD in corso"),
+        onProgress: async () => saveProgress(beforeTask || "Task in corso"),
       });
 
       pushAssistantMessage(target, result.summary);
@@ -670,7 +677,7 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
           );
           pushAssistantMessage(
             target,
-            `Task completato: "${beforeTask}". Piano SDD aggiornato.`,
+            `Task completato: "${beforeTask}". Piano aggiornato.`,
           );
           stallCount = 0;
         } else {
@@ -708,25 +715,25 @@ async function finishAutopilot(target, apps, user) {
     target,
     target.sdd?.currentStep
       ? `In pausa. Prossimo task: ${target.sdd.currentStep.label}.`
-      : "Piano SDD completato.",
+      : "Piano completato.",
   );
   target.status = target.sdd?.currentStep ? "paused" : "ready";
   target.updatedAt = now;
   target.autopilot = {
     ...(target.autopilot || {}),
     running: false,
-    currentTask: target.sdd?.currentStep?.label || "Piano SDD completato",
+    currentTask: target.sdd?.currentStep?.label || "Piano completato",
     completed: doneCount,
     total: steps.length,
     updatedAt: now,
-    lastMessage: target.sdd?.currentStep ? "Autopilota in pausa." : "Tutti i task SDD risultano completati.",
+    lastMessage: target.sdd?.currentStep ? "Avanzamento in pausa." : "Tutti i task risultano completati.",
     error: null,
   };
   pushAssistantMessage(
     target,
     target.sdd?.currentStep
       ? `In pausa. Prossimo task: ${target.sdd.currentStep.label}.`
-      : "Piano SDD completato. Preview aggiornata.",
+      : "Piano completato. Preview aggiornata.",
   );
   await saveApps(apps, user);
 }
@@ -737,7 +744,7 @@ async function shouldStopAutopilot(user, appId) {
 
   const apps = await loadApps(user);
   const latest = apps.find((item) => item.id === appId);
-  return latest?.autopilot?.stopRequested ? "Autopilota fermato su richiesta. Puoi riprendere quando vuoi." : "";
+  return latest?.autopilot?.stopRequested ? "Avanzamento automatico fermato su richiesta. Puoi riprendere quando vuoi." : "";
 }
 
 async function pauseAutopilot(target, apps, user, message) {
@@ -765,7 +772,7 @@ async function pauseAutopilot(target, apps, user, message) {
 async function stopAutopilotWithError(target, apps, user, err, model) {
   const message = formatOpenRouterError(err);
   await refreshProjectState(target);
-  const task = target.autopilot?.currentTask || getNextTaskLabel(target) || "Task SDD corrente";
+  const task = target.autopilot?.currentTask || getNextTaskLabel(target) || "Task corrente";
   const now = new Date().toISOString();
   appendOperationalLog(target, `Errore nel task "${task}": ${message}`);
   target.status = "error";
@@ -867,7 +874,7 @@ async function markCurrentTaskCompleted(target, taskLabel, note = "") {
   await writeProjectFile(
     target,
     memoryPath,
-    `${memory.trim()}\n\n---\n\n## Avanzamento automatico ${stamp}\n\nTask completato: ${taskLabel || "prossimo task SDD"}.\n${cleanNote ? `\nNota: ${cleanNote}\n` : ""}`,
+    `${memory.trim()}\n\n---\n\n## Avanzamento automatico ${stamp}\n\nTask completato: ${taskLabel || "prossimo task"}.\n${cleanNote ? `\nNota: ${cleanNote}\n` : ""}`,
   );
 
   return true;
@@ -931,7 +938,7 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
     mode === "initial"
       ? "SDD creato e primo MVP generato"
       : mode === "continue"
-        ? "Task SDD applicato"
+        ? "Task applicato"
         : "Modifica applicata";
 
   return {
@@ -1122,7 +1129,7 @@ function buildInitialBackendPrompt(initialPrompt, projectMemory) {
     "",
     "backend/app/main.py deve includere FastAPI, CORS, health check, modelli Pydantic, inizializzazione SQLite e API CRUD minime coerenti con il progetto.",
     "Non inserire dati sanitari reali, API key o segreti.",
-    "Aggiorna i task SDD completati in questa fase.",
+    "Aggiorna il piano dei task completati in questa fase.",
     "Restituisci solo blocchi file.",
   ].join("\n");
 }
@@ -1149,7 +1156,7 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "",
     "Il frontend deve essere in italiano, gestionale, responsive, con dati demo realistici ma fittizi.",
     "preview/index.html deve essere un HTML singolo con CSS e JS inline, senza CDN e senza asset remoti, cosi la preview funziona subito nell'iframe.",
-    "Aggiorna i task SDD completati in questa fase.",
+    "Aggiorna il piano dei task completati in questa fase.",
     "Restituisci solo blocchi file.",
   ].join("\n");
 }
@@ -1157,7 +1164,7 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
 function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, mode }) {
   const instruction =
     mode === "continue"
-      ? `Continua automaticamente dal prossimo task SDD: ${nextTask || "completa il prossimo passo tecnico utile"}.`
+      ? `Continua automaticamente dal prossimo task: ${nextTask || "completa il prossimo passo tecnico utile"}.`
       : `Applica questa richiesta utente seguendo la memoria SDD: ${userPrompt}`;
 
   return [
@@ -1540,17 +1547,45 @@ async function saveUsersStore(store) {
 }
 
 async function getSessionUser(req) {
-  const header = String(req.headers.authorization || "");
-  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
-  if (!token) return null;
+  const tokenHash = getRequestSessionHash(req);
+  if (!tokenHash) return null;
 
   const store = await loadUsersStore();
-  const tokenHash = hashSecret(token);
-  const user = store.users.find((item) => item.sessionHash === tokenHash);
-  if (!user || !user.sessionExpiresAt || new Date(user.sessionExpiresAt).getTime() < Date.now()) return null;
+  const now = Date.now();
+  let changed = false;
+  let user = null;
+
+  for (const item of store.users) {
+    if (Array.isArray(item.sessions)) {
+      const validSessions = item.sessions.filter((session) => new Date(session.expiresAt || "").getTime() > now);
+      if (validSessions.length !== item.sessions.length) {
+        item.sessions = validSessions;
+        changed = true;
+      }
+      if (validSessions.some((session) => session.hash === tokenHash)) user = item;
+    }
+
+    if (
+      !user &&
+      item.sessionHash === tokenHash &&
+      item.sessionExpiresAt &&
+      new Date(item.sessionExpiresAt).getTime() > now
+    ) {
+      user = item;
+    }
+  }
+
+  if (changed) await saveUsersStore(store);
+  if (!user) return null;
 
   await ensureUserStorage(user);
   return user;
+}
+
+function getRequestSessionHash(req) {
+  const header = String(req.headers.authorization || "");
+  const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
+  return token ? hashSecret(token) : "";
 }
 
 async function requireUser(req, res) {
@@ -1583,7 +1618,7 @@ async function getHeartbeatStopReason(user) {
   const age = Date.now() - new Date(heartbeatAt).getTime();
   if (!Number.isFinite(age) || age <= heartbeatTimeoutMs) return "";
 
-  return "Autopilota in pausa: la pagina non risulta piu aperta. Puoi riprendere quando torni.";
+  return "Avanzamento in pausa: la pagina non risulta piu aperta. Puoi riprendere quando torni.";
 }
 
 async function requestStopRunningJobsForUser(user, message) {
@@ -1637,11 +1672,22 @@ function findOrCreateUser(store, email) {
     },
     pendingTokenHash: "",
     pendingTokenExpiresAt: "",
+    sessions: [],
     sessionHash: "",
     sessionExpiresAt: "",
   };
   store.users.unshift(user);
   return user;
+}
+
+function addUserSession(user, sessionToken) {
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + sessionTtlMs).toISOString();
+  const sessions = Array.isArray(user.sessions) ? user.sessions : [];
+  user.sessions = [
+    { hash: hashSecret(sessionToken), createdAt: now, expiresAt },
+    ...sessions.filter((session) => new Date(session.expiresAt || "").getTime() > Date.now()),
+  ].slice(0, 12);
 }
 
 async function ensureUserStorage(user) {
