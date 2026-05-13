@@ -1390,7 +1390,7 @@ async function ensureFrontendDependencies(frontendDirPath) {
   const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
   await execFileAsync(
     npmCommand,
-    ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--package-lock=false"],
+    ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--package-lock=false", "--legacy-peer-deps"],
     {
       cwd: frontendDirPath,
       timeout: 5 * 60 * 1000,
