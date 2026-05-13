@@ -1,17 +1,21 @@
 :root {
-  --bg: #f4f2fb;
-  --stage: #fbfaff;
+  --bg: #f5f6fb;
+  --stage: #f8f9fd;
   --surface: #ffffff;
-  --surface-soft: #f7f6fc;
-  --ink: #101522;
-  --muted: #697184;
-  --line: #e1deea;
-  --line-strong: #cec7e6;
-  --accent: #775be8;
-  --accent-soft: #ded6ff;
-  --accent-ink: #332277;
-  --success: #118561;
-  --shadow: 0 12px 32px rgba(32, 26, 61, 0.08);
+  --surface-soft: #f2f4f9;
+  --ink: #111827;
+  --muted: #667085;
+  --line: #dfe4ee;
+  --line-strong: #c9d1df;
+  --accent: #6852e8;
+  --accent-hover: #5842d8;
+  --accent-soft: #eeeaff;
+  --accent-ink: #3a2a83;
+  --success: #087f5b;
+  --danger: #b42318;
+  --warning-soft: #fff3f0;
+  --shadow: 0 14px 40px rgba(17, 24, 39, 0.07);
+  --shadow-soft: 0 8px 24px rgba(17, 24, 39, 0.05);
 }
 
 * {
@@ -25,7 +29,9 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   color: var(--ink);
-  background: var(--bg);
+  background:
+    linear-gradient(135deg, rgba(104, 82, 232, 0.08), rgba(255, 255, 255, 0) 38%),
+    linear-gradient(180deg, #fafbff, var(--bg));
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -55,46 +61,59 @@ button:disabled {
   max-width: 100vw;
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  background: var(--bg);
+  grid-template-columns: 104px minmax(0, 1fr);
+  background: transparent;
   overflow-x: hidden;
 }
 
 .rail {
-  padding: 18px 10px;
+  position: relative;
+  padding: 18px 12px;
   border-right: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(18px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .rail-logo {
-  width: 58px;
-  height: 46px;
+  width: 54px;
+  height: 42px;
   object-fit: contain;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .rail-button {
-  width: 70px;
-  min-height: 72px;
+  width: 78px;
+  min-height: 62px;
   border: 0;
-  border-radius: 18px;
+  border-radius: 14px;
   background: transparent;
-  color: var(--ink);
+  color: var(--muted);
   display: grid;
   place-items: center;
-  gap: 5px;
+  gap: 4px;
   padding: 8px 4px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 800;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
 .rail-button:hover,
 .rail-button.active {
-  background: var(--accent-soft);
-  color: var(--accent-ink);
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-soft);
+}
+
+.rail-button:hover {
+  transform: translateY(-1px);
+}
+
+.rail-button.active {
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow-soft);
 }
 
 .rail-button span {
@@ -269,21 +288,25 @@ button:disabled {
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  background: var(--stage);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(248, 249, 253, 0.92)),
+    var(--stage);
   display: flex;
   flex-direction: column;
 }
 
 .app-header {
-  height: 70px;
+  height: 76px;
   flex: 0 0 auto;
   border-bottom: 1px solid var(--line);
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto auto auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, auto) auto;
   align-items: center;
-  gap: 18px;
-  padding: 0 28px;
+  gap: 20px;
+  padding: 0 30px;
   min-width: 0;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(18px);
 }
 
 .header-title {
@@ -295,8 +318,9 @@ button:disabled {
 .header-title span {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 800;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .header-title strong {
@@ -304,18 +328,19 @@ button:disabled {
   color: var(--ink);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 18px;
+  font-size: 20px;
+  font-weight: 850;
 }
 
 .app-header p {
   margin: 0;
-  max-width: min(620px, 42vw);
+  max-width: min(680px, 48vw);
   overflow: hidden;
   color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 750;
 }
 
 .app-header p.status-error {
@@ -333,16 +358,18 @@ button:disabled {
 .user-button,
 .user-pill,
 .logout-button {
-  height: 42px;
+  height: 40px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--surface);
   color: var(--ink);
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  padding: 0 14px;
-  font-weight: 900;
+  padding: 0 13px;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgba(17, 24, 39, 0.04);
 }
 
 .user-pill {
@@ -357,6 +384,7 @@ button:disabled {
 .logout-button:hover {
   color: var(--ink);
   border-color: var(--line-strong);
+  background: var(--surface-soft);
 }
 
 .user-button {
@@ -373,40 +401,47 @@ button:disabled {
 .home-view {
   flex: 1;
   overflow: auto;
-  padding: 56px 44px 64px;
+  padding: 44px 44px 58px;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
 .hero-block {
-  width: min(980px, 100%);
+  width: min(920px, 100%);
   display: grid;
-  gap: 30px;
+  gap: 22px;
   justify-items: center;
 }
 
 .hero-block h1 {
   margin: 0;
   text-align: center;
-  font-size: 68px;
-  line-height: 1;
+  font-size: 56px;
+  line-height: 1.04;
   letter-spacing: 0;
+  font-weight: 850;
 }
 
 .composer {
   position: relative;
   width: 100%;
-  min-height: 146px;
-  border: 1px solid var(--line-strong);
-  border-radius: 24px;
+  min-height: 138px;
+  border: 1px solid rgba(201, 209, 223, 0.9);
+  border-radius: 22px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  padding: 22px 74px 68px 22px;
+  padding: 20px 74px 64px 22px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.composer:focus-within {
+  border-color: rgba(104, 82, 232, 0.48);
+  box-shadow: 0 18px 52px rgba(104, 82, 232, 0.11);
 }
 
 .project-name-field {
-  width: min(980px, 100%);
+  width: min(920px, 100%);
   display: grid;
   gap: 8px;
 }
@@ -414,20 +449,22 @@ button:disabled {
 .project-name-field span {
   color: var(--muted);
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 800;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .project-name-field input {
-  height: 58px;
-  border: 1px solid var(--line-strong);
-  border-radius: 18px;
+  height: 54px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
   background: var(--surface);
   color: var(--ink);
   outline: 0;
   padding: 0 18px;
-  font-size: 20px;
-  font-weight: 850;
+  font-size: 18px;
+  font-weight: 760;
+  box-shadow: 0 4px 16px rgba(17, 24, 39, 0.035);
 }
 
 .composer textarea {
@@ -439,7 +476,7 @@ button:disabled {
   resize: vertical;
   background: transparent;
   color: var(--ink);
-  font-size: 23px;
+  font-size: 20px;
   line-height: 1.35;
 }
 
@@ -451,18 +488,19 @@ button:disabled {
   position: absolute;
   top: 18px;
   right: 18px;
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   border: 0;
   border-radius: 999px;
-  background: var(--surface-soft);
-  color: var(--accent);
+  background: var(--accent);
+  color: white;
   display: grid;
   place-items: center;
+  box-shadow: 0 10px 22px rgba(104, 82, 232, 0.24);
 }
 
 .send-button:not(:disabled):hover {
-  background: var(--accent);
+  background: var(--accent-hover);
   color: white;
 }
 
@@ -478,8 +516,9 @@ button:disabled {
 }
 
 .agent-chip {
-  min-height: 42px;
-  border-radius: 14px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
   background: var(--surface-soft);
   color: var(--ink);
   display: inline-flex;
@@ -487,19 +526,19 @@ button:disabled {
   gap: 9px;
   padding: 0 14px;
   font-size: 15px;
-  font-weight: 900;
+  font-weight: 800;
 }
 
 .model-input {
   min-width: 280px;
-  height: 44px;
+  height: 40px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--surface);
   color: var(--ink);
   outline: 0;
   padding: 0 12px;
-  font-weight: 850;
+  font-weight: 800;
 }
 
 .model-input.compact {
@@ -509,17 +548,17 @@ button:disabled {
 }
 
 .quick-row {
-  width: min(980px, 100%);
-  margin-top: 28px;
+  width: min(920px, 100%);
+  margin-top: 22px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
 .quick-row button {
-  min-height: 58px;
+  min-height: 54px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--surface);
   color: var(--ink);
   display: inline-flex;
@@ -528,7 +567,8 @@ button:disabled {
   gap: 10px;
   padding: 0 16px;
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 800;
+  box-shadow: 0 4px 16px rgba(17, 24, 39, 0.035);
 }
 
 .quick-row button:hover {
@@ -1408,18 +1448,101 @@ button:disabled {
   right: 14px;
 }
 
-.preview-panel iframe {
+.phone-preview {
   flex: 1;
   min-height: 360px;
   min-width: 0;
   width: 100%;
   max-width: 100%;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(104, 82, 232, 0.14), transparent 34%),
+    linear-gradient(180deg, #f8f9fd, #eef2f8);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  overflow: hidden;
+}
+
+.phone-device {
+  position: relative;
+  width: min(370px, 100%);
+  max-height: 100%;
+  aspect-ratio: 9 / 19.5;
+  border-radius: 44px;
+  background:
+    linear-gradient(145deg, #242834, #05070d 64%),
+    #10131b;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.08),
+    inset 0 0 0 7px #11141c,
+    0 24px 70px rgba(17, 24, 39, 0.22);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.phone-device::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.phone-speaker {
+  position: absolute;
+  z-index: 2;
+  top: 18px;
+  left: 50%;
+  width: 76px;
+  height: 20px;
+  border-radius: 999px;
+  background: #0a0d14;
+  transform: translateX(-50%);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.phone-screen {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 31px;
+  background: white;
+  box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.08);
+}
+
+.phone-screen iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
   background: white;
 }
 
-.preview-panel > iframe,
+.phone-home-indicator {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  width: 108px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  transform: translateX(-50%);
+}
+
+.phone-preview-fullscreen {
+  min-height: 0;
+  padding: 22px;
+}
+
+.phone-preview-fullscreen .phone-device {
+  width: min(460px, 100%);
+}
+
+.preview-panel > .phone-preview,
 .preview-panel > .sdd-documents,
 .preview-panel > .file-browser,
 .preview-panel > .data-panel {
@@ -1617,6 +1740,11 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 14px;
   background: white;
+}
+
+.fullscreen-card > .phone-preview {
+  flex: 1;
+  min-height: 0;
 }
 
 .sdd-reader {
@@ -2183,13 +2311,15 @@ button:disabled {
   }
 
   .rail {
-    min-height: 58px;
-    padding: 8px;
+    min-height: 76px;
+    padding: 8px 10px;
     border-right: 0;
     border-bottom: 1px solid var(--line);
     flex-direction: row;
     align-items: center;
+    gap: 8px;
     overflow-x: auto;
+    scroll-snap-type: x proximity;
   }
 
   .rail-logo,
@@ -2198,14 +2328,36 @@ button:disabled {
   }
 
   .rail-button {
-    width: auto;
-    min-width: 58px;
-    min-height: 42px;
-    border-radius: 12px;
-    grid-auto-flow: column;
-    grid-template-columns: auto auto;
-    padding: 0 10px;
+    flex: 0 0 auto;
+    width: 76px;
+    min-width: 76px;
+    min-height: 58px;
+    border-radius: 16px;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 8px;
+    gap: 4px;
     font-size: 11px;
+    scroll-snap-align: start;
+  }
+
+  .rail-button.active {
+    box-shadow: inset 0 -3px 0 var(--accent), var(--shadow-soft);
+  }
+
+  .rail-button svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .rail-button span {
+    max-width: 100%;
+    overflow: hidden;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .main-stage {
@@ -2335,8 +2487,13 @@ button:disabled {
     justify-content: space-between;
   }
 
-  .preview-panel iframe {
-    min-height: 340px;
+  .phone-preview {
+    min-height: 520px;
+    padding: 12px;
+  }
+
+  .phone-device {
+    width: min(310px, 100%);
   }
 
   .chat-panel .composer {

@@ -501,13 +501,13 @@ function Rail({ activeView, setActiveView }) {
     <nav className="rail">
       <img className="rail-logo" src="/lococode_logo.png" alt="LocoCode" />
       <NavButton icon={FolderKanban} label="Progetti" active={activeView === "projects"} onClick={() => setActiveView("projects")} />
-      <NavButton icon={Workflow} label="Orch." active={activeView === "chat"} onClick={() => setActiveView("chat")} title="Orchestrator" />
+      <NavButton icon={Workflow} label="Lavoro" active={activeView === "chat"} onClick={() => setActiveView("chat")} title="Orchestrator" />
       <NavButton icon={ClipboardList} label="Task" active={activeView === "tasks"} onClick={() => setActiveView("tasks")} />
       <NavButton icon={FileStack} label="SDD" active={activeView === "sdd"} onClick={() => setActiveView("sdd")} />
       <NavButton icon={Code2} label="File" active={activeView === "files"} onClick={() => setActiveView("files")} />
       <NavButton icon={Activity} label="Log" active={activeView === "log"} onClick={() => setActiveView("log")} title="Registro operativo" />
       <div className="rail-spacer" />
-      <NavButton icon={SlidersHorizontal} label="Imp." active={activeView === "settings"} onClick={() => setActiveView("settings")} title="Impostazioni" />
+      <NavButton icon={SlidersHorizontal} label="Setup" active={activeView === "settings"} onClick={() => setActiveView("settings")} title="Impostazioni" />
       <NavButton icon={CircleHelp} label="Aiuto" active={activeView === "help"} onClick={() => setActiveView("help")} />
     </nav>
   );
@@ -966,7 +966,17 @@ function OperationLog({ app, status, error, compact = false }) {
 
 function ProjectPanelContent({ projectPanel, app, fullscreen = false }) {
   if (projectPanel === "preview") {
-    return <iframe className={fullscreen ? "fullscreen-iframe" : ""} title="Anteprima LocoCode" srcDoc={app.html || emptyPreviewHtml()} />;
+    return (
+      <div className={`phone-preview ${fullscreen ? "phone-preview-fullscreen" : ""}`}>
+        <div className="phone-device" aria-label="Anteprima applicazione in formato smartphone">
+          <div className="phone-speaker" />
+          <div className="phone-screen">
+            <iframe className={fullscreen ? "fullscreen-iframe" : ""} title="Anteprima LocoCode" srcDoc={app.html || emptyPreviewHtml()} />
+          </div>
+          <div className="phone-home-indicator" />
+        </div>
+      </div>
+    );
   }
 
   if (projectPanel === "sdd") return <SddDocumentsPanel app={app} fullscreen={fullscreen} />;
