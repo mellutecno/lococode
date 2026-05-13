@@ -97,6 +97,26 @@ export default function App() {
   }, [projectsPanelOpen]);
 
   useEffect(() => {
+    if (!currentUser) return undefined;
+
+    const sendHeartbeat = () => {
+      void apiFetch("/api/heartbeat", { method: "POST" }).catch(() => {});
+    };
+
+    sendHeartbeat();
+    const timer = window.setInterval(sendHeartbeat, 30000);
+    const onVisibility = () => {
+      if (!document.hidden) sendHeartbeat();
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
     const shouldPoll = selectedApp && (selectedApp.status === "building" || selectedApp.autopilot?.running);
     if (!shouldPoll) return undefined;
 
@@ -221,15 +241,23 @@ export default function App() {
   async function saveSettings() {
     if (!requireAuth()) return;
     setStatus("Salvataggio impostazioni...");
-    const response = await apiFetch("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ openrouterApiKey: apiKey, defaultModel: model }),
-    });
-    const data = await readApiJson(response);
-    setApiKey(data.openrouterApiKey || "");
-    setModel(data.defaultModel || COMMON_MODELS[0]);
-    setStatus("Impostazioni salvate");
+    setError("");
+    try {
+      const response = await apiFetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ openrouterApiKey: apiKey, defaultModel: model }),
+      });
+      const data = await readApiJson(response);
+      if (!response.ok) throw new Error(data.error || "Salvataggio impostazioni non riuscito.");
+      setApiKey(data.openrouterApiKey || "");
+      setModel(data.defaultModel || COMMON_MODELS[0]);
+      setStatus("Impostazioni salvate");
+      setActiveView(selectedAppId ? "chat" : "apps");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStatus("Errore impostazioni");
+    }
   }
 
   async function generateApp({ text, appId = "", overrideModel = "", name = "" }) {
@@ -670,10 +698,16 @@ function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLog
       </div>
       <p className={activeView === "chat" && selectedApp?.status === "error" ? "status-error" : ""}>{taskText}</p>
       {currentUser ? (
-        <button className="user-button" aria-label="Esci" onClick={onLogout} title={currentUser.email}>
-          <LogOut size={20} />
-          <span>{currentUser.email}</span>
-        </button>
+        <div className="account-actions">
+          <span className="user-pill" title={currentUser.email}>
+            <KeyRound size={18} />
+            <span>{currentUser.email}</span>
+          </span>
+          <button className="logout-button" aria-label="Esci dall'account" onClick={onLogout} title="Esci dall'account">
+            <LogOut size={18} />
+            <span>Esci</span>
+          </button>
+        </div>
       ) : (
         <button className="user-button" aria-label="Accedi" onClick={onAuth}>
           <KeyRound size={20} />

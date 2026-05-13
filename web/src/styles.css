@@ -342,8 +342,18 @@ button:disabled {
   color: #a23636;
 }
 
+.account-actions {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .settings-button,
-.user-button {
+.user-button,
+.user-pill,
+.logout-button {
   height: 42px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -356,11 +366,26 @@ button:disabled {
   font-weight: 900;
 }
 
+.user-pill {
+  max-width: 240px;
+  cursor: default;
+}
+
+.logout-button {
+  color: var(--muted);
+}
+
+.logout-button:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
 .user-button {
   max-width: 240px;
 }
 
-.user-button span {
+.user-button span,
+.user-pill span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1742,6 +1767,11 @@ button:disabled {
 
 .settings-card {
   width: min(760px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
   padding: 28px;
   display: grid;
   gap: 18px;
@@ -1749,6 +1779,7 @@ button:disabled {
 
 .settings-card h1 {
   margin: 0;
+  color: var(--ink);
   font-size: 42px;
 }
 
@@ -1766,6 +1797,33 @@ button:disabled {
   background: var(--surface);
   color: var(--ink);
   padding: 14px 16px;
+}
+
+.theme-dark .settings-card input:not(.model-input),
+.theme-dark .settings-card .model-input,
+.theme-dark .settings-card select,
+.theme-dark .model-input {
+  background: var(--surface-soft);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.theme-dark .settings-card option,
+.theme-dark .model-input option {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.theme-dark .workspace-head,
+.theme-dark .orchestrator-panel,
+.theme-dark .chat-panel,
+.theme-dark .preview-panel,
+.theme-dark .sdd-documents,
+.theme-dark .file-browser,
+.theme-dark .data-panel,
+.theme-dark .fullscreen-card,
+.theme-dark .sdd-reader {
+  color: var(--ink);
 }
 
 .settings-actions {

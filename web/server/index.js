@@ -18,11 +18,12 @@ const legacyConfigPath = path.join(repoDir, "user_data", "config.json");
 await loadEnvFile(path.join(rootDir, ".env"));
 
 const port = Number(process.env.LOCOCODE_API_PORT || 8787);
-const openRouterTimeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS || 0);
+const openRouterTimeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS || 5 * 60 * 1000);
 const usersPath = path.join(dataDir, "users.json");
 const authSecret = process.env.LOCOCODE_AUTH_SECRET || "lococode-local-auth-secret";
-const loginTokenTtlMs = Number(process.env.LOCOCODE_LOGIN_TOKEN_TTL_MS || 15 * 60 * 1000);
+const loginTokenTtlMs = Number(process.env.LOCOCODE_LOGIN_TOKEN_TTL_MS || 24 * 60 * 60 * 1000);
 const sessionTtlMs = Number(process.env.LOCOCODE_SESSION_TTL_MS || 30 * 24 * 60 * 60 * 1000);
+const heartbeatTimeoutMs = Number(process.env.LOCOCODE_HEARTBEAT_TIMEOUT_MS || 2 * 60 * 1000);
 const runningJobs = new Map();
 
 const commonModels = [
@@ -156,8 +157,6 @@ app.post("/api/auth/verify-token", async (req, res) => {
 
   const sessionToken = crypto.randomBytes(32).toString("hex");
   const now = new Date().toISOString();
-  user.pendingTokenHash = "";
-  user.pendingTokenExpiresAt = "";
   user.sessionHash = hashSecret(sessionToken);
   user.sessionExpiresAt = new Date(Date.now() + sessionTtlMs).toISOString();
   user.lastLoginAt = now;
@@ -171,6 +170,7 @@ app.post("/api/auth/verify-token", async (req, res) => {
 app.post("/api/auth/logout", async (req, res) => {
   const user = await getSessionUser(req);
   if (user) {
+    await requestStopRunningJobsForUser(user, "Autopilota in pausa: l'utente e uscito dalla sessione.");
     const store = await loadUsersStore();
     const stored = store.users.find((item) => item.id === user.id);
     if (stored) {
@@ -181,6 +181,14 @@ app.post("/api/auth/logout", async (req, res) => {
     }
   }
   res.json({ ok: true });
+});
+
+app.post("/api/heartbeat", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  await touchUserHeartbeat(user.id);
+  res.json({ ok: true, timeoutMs: heartbeatTimeoutMs });
 });
 
 app.get("/api/settings", async (req, res) => {
@@ -595,7 +603,12 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
         userPrompt,
         mode: "initial",
         onProgress: async (phaseLabel) => saveProgress(`Completata fase: ${phaseLabel}`),
+        shouldStop: async () => shouldStopAutopilot(user, appId),
       });
+      if (result.stopped) {
+        await pauseAutopilot(target, apps, user, result.summary);
+        return;
+      }
       pushAssistantMessage(target, result.summary);
     } else if (mode === "change") {
       await saveProgress("Applicazione modifica richiesta");
@@ -617,8 +630,9 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
     let stallCount = 0;
 
     while (target.sdd?.currentStep && turns < maxTurns) {
-      if (await shouldStopAutopilot(user, appId)) {
-        await pauseAutopilot(target, apps, user, "Autopilota fermato su richiesta. Puoi riprendere quando vuoi.");
+      const stopReasonBefore = await shouldStopAutopilot(user, appId);
+      if (stopReasonBefore) {
+        await pauseAutopilot(target, apps, user, stopReasonBefore);
         return;
       }
 
@@ -638,8 +652,9 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
       pushAssistantMessage(target, result.summary);
       await refreshProjectState(target);
 
-      if (await shouldStopAutopilot(user, appId)) {
-        await pauseAutopilot(target, apps, user, "Autopilota fermato su richiesta dopo l'ultimo task completato.");
+      const stopReasonAfter = await shouldStopAutopilot(user, appId);
+      if (stopReasonAfter) {
+        await pauseAutopilot(target, apps, user, stopReasonAfter);
         return;
       }
 
@@ -717,9 +732,12 @@ async function finishAutopilot(target, apps, user) {
 }
 
 async function shouldStopAutopilot(user, appId) {
+  const timeoutReason = await getHeartbeatStopReason(user);
+  if (timeoutReason) return timeoutReason;
+
   const apps = await loadApps(user);
   const latest = apps.find((item) => item.id === appId);
-  return Boolean(latest?.autopilot?.stopRequested);
+  return latest?.autopilot?.stopRequested ? "Autopilota fermato su richiesta. Puoi riprendere quando vuoi." : "";
 }
 
 async function pauseAutopilot(target, apps, user, message) {
@@ -873,9 +891,9 @@ function pushAssistantMessage(target, content) {
   });
 }
 
-async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, onProgress }) {
+async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, onProgress, shouldStop }) {
   if (mode === "initial") {
-    return runInitialOrchestration({ target, apiKey, model, userPrompt, onProgress });
+    return runInitialOrchestration({ target, apiKey, model, userPrompt, onProgress, shouldStop });
   }
 
   const projectMemory = await loadProjectMemory(target);
@@ -923,7 +941,7 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
   };
 }
 
-async function runInitialOrchestration({ target, apiKey, model, userPrompt, onProgress }) {
+async function runInitialOrchestration({ target, apiKey, model, userPrompt, onProgress, shouldStop }) {
   const systemPrompt = buildOrchestratorSystemPrompt();
   const phases = [
     {
@@ -946,6 +964,16 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   const touched = [];
 
   for (const phase of phases) {
+    const stopReasonBefore = await shouldStop?.();
+    if (stopReasonBefore) {
+      return {
+        summary: stopReasonBefore,
+        touched: [...new Set(touched)],
+        changedFiles: new Set(touched).size,
+        stopped: true,
+      };
+    }
+
     const aiText = await callOpenRouter({
       apiKey,
       model,
@@ -972,6 +1000,16 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
     await refreshProjectState(target);
     target.updatedAt = new Date().toISOString();
     await onProgress?.(phase.label);
+
+    const stopReasonAfter = await shouldStop?.();
+    if (stopReasonAfter) {
+      return {
+        summary: stopReasonAfter,
+        touched: [...new Set(touched)],
+        changedFiles: new Set(touched).size,
+        stopped: true,
+      };
+    }
   }
 
   return {
@@ -1522,6 +1560,57 @@ async function requireUser(req, res) {
     return null;
   }
   return user;
+}
+
+async function touchUserHeartbeat(userId) {
+  const store = await loadUsersStore();
+  const stored = store.users.find((item) => item.id === userId);
+  if (!stored) return null;
+
+  const now = new Date().toISOString();
+  stored.lastHeartbeatAt = now;
+  stored.updatedAt = now;
+  await saveUsersStore(store);
+  return stored;
+}
+
+async function getHeartbeatStopReason(user) {
+  const store = await loadUsersStore();
+  const fresh = store.users.find((item) => item.id === user.id);
+  const heartbeatAt = fresh?.lastHeartbeatAt || fresh?.lastLoginAt || user.lastHeartbeatAt || user.lastLoginAt;
+  if (!heartbeatAt) return "";
+
+  const age = Date.now() - new Date(heartbeatAt).getTime();
+  if (!Number.isFinite(age) || age <= heartbeatTimeoutMs) return "";
+
+  return "Autopilota in pausa: la pagina non risulta piu aperta. Puoi riprendere quando torni.";
+}
+
+async function requestStopRunningJobsForUser(user, message) {
+  const apps = await loadApps(user);
+  let changed = false;
+  for (const appData of apps) {
+    const liveJob = runningJobs.has(jobKey(user.id, appData.id));
+    const isActive = appData.autopilot?.running || appData.status === "building";
+    if (!isActive) continue;
+
+    appData.autopilot = {
+      ...(appData.autopilot || {}),
+      stopRequested: true,
+      lastMessage: message,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (!liveJob) {
+      appData.status = "paused";
+      appData.autopilot.running = false;
+    }
+
+    appendOperationalLog(appData, message);
+    changed = true;
+  }
+
+  if (changed) await saveApps(apps, user);
 }
 
 async function loadUserById(userId) {
