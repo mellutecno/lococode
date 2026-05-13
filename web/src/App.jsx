@@ -28,6 +28,7 @@ import { COMMON_MODELS, MODEL_LABELS } from "./models.js";
 
 const API_BASE = (import.meta.env.VITE_LOCOCODE_API_URL || "").replace(/\/$/, "");
 const SESSION_KEY = "lococode-session-token";
+const PREVIEW_WIDTH_KEY = "lococode-preview-width";
 
 const quickPrompts = [
   {
@@ -537,6 +538,10 @@ function NavButton({ active, icon: Icon, label, onClick, title }) {
   );
 }
 
+function clampPreviewWidth(value) {
+  return Math.min(72, Math.max(34, Number(value) || 54));
+}
+
 function AuthModal({ email, setEmail, token, setToken, step, setStep, message, busy, onRequestToken, onVerifyToken, onClose }) {
   const enteringToken = step === "token";
 
@@ -791,6 +796,10 @@ function Composer({ value, onChange, model, setModel, busy, placeholder, onSubmi
 
 function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume, onStop }) {
   const [expandedPanel, setExpandedPanel] = useState(false);
+  const [previewWidth, setPreviewWidth] = useState(() => {
+    const saved = Number(localStorage.getItem(PREVIEW_WIDTH_KEY));
+    return Number.isFinite(saved) ? clampPreviewWidth(saved) : 54;
+  });
   const visibleMessages = conversationMessages(app?.messages || []);
   const taskState = app ? projectTaskState(app) : null;
   const canResume =
@@ -808,6 +817,40 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
     };
   }, [expandedPanel]);
 
+  useEffect(() => {
+    localStorage.setItem(PREVIEW_WIDTH_KEY, String(previewWidth));
+  }, [previewWidth]);
+
+  function startPreviewResize(event) {
+    if (window.matchMedia("(max-width: 980px)").matches) return;
+
+    const layout = event.currentTarget.closest(".chat-layout");
+    if (!layout) return;
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const rect = layout.getBoundingClientRect();
+
+    const onMove = (moveEvent) => {
+      const next = ((rect.right - moveEvent.clientX) / rect.width) * 100;
+      setPreviewWidth(clampPreviewWidth(next));
+    };
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+  }
+
+  function resizePreviewFromKeyboard(event) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    setPreviewWidth((value) => clampPreviewWidth(value + (event.key === "ArrowLeft" ? 4 : -4)));
+  }
+
   if (!app) {
     return (
       <div className="empty-state">
@@ -818,7 +861,7 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
   }
 
   return (
-    <div className="chat-layout">
+    <div className="chat-layout" style={{ "--preview-width": `${previewWidth}%` }}>
       <section className="chat-panel orchestrator-panel">
         <div className="orchestrator-strip">
           <div className={`task-card ${app.status === "error" ? "has-error" : ""}`}>
@@ -860,6 +903,16 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
           showModel={false}
         />
       </section>
+
+      <div
+        className="preview-resizer"
+        role="separator"
+        aria-label="Ridimensiona anteprima"
+        aria-orientation="vertical"
+        tabIndex={0}
+        onPointerDown={startPreviewResize}
+        onKeyDown={resizePreviewFromKeyboard}
+      />
 
       <section className="preview-panel">
         <div className="panel-title">
