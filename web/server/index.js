@@ -2162,7 +2162,13 @@ async function ensureFrontendDependencies(frontendDirPath) {
   // Ricalcola packageMtime dopo eventuali patch (pkgPatched invalida il marker)
   const packageMtime = await fileMtimeMs(packageJsonPath);
   const marker = await readJson(markerPath);
-  const needsInstall = pkgPatched || !(await exists(nodeModulesPath)) || marker?.packageMtime !== packageMtime;
+  // Verifica anche che tailwindcss sia davvero installato (il marker potrebbe essere stale)
+  const tailwindInstalled = await exists(path.join(nodeModulesPath, "tailwindcss", "lib", "index.js"));
+  const needsInstall =
+    pkgPatched ||
+    !(await exists(nodeModulesPath)) ||
+    marker?.packageMtime !== packageMtime ||
+    !tailwindInstalled;
 
   if (!needsInstall) return;
 
