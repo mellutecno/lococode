@@ -802,6 +802,7 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
   return (
     <div className="home-view">
       <section className="hero-block">
+        <div className="hero-badge"><Sparkles size={12} /> AI App Builder</div>
         <h1>Crea la tua web app</h1>
         <p className="hero-sub">Descrivi cosa vuoi costruire — LocoCode genera backend, frontend e database pronti all'uso.</p>
         <label className="project-name-field">
