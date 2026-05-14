@@ -391,6 +391,7 @@ app.post("/api/generate", async (req, res) => {
       id: `app-${Date.now()}`,
       appToken: crypto.randomUUID(),
       lifecycle: "trial",
+      trialExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       ownerId: user.id,
       name: requestedProjectName,
       createdAt: now,
@@ -539,6 +540,64 @@ app.delete("/api/apps/:id", async (req, res) => {
   res.json({ deleted: true, id: target.id });
 });
 
+app.post("/api/apps/:id/request-license", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const apps = await loadApps(user);
+  const target = apps.find((item) => item.id === req.params.id);
+  if (!target) { res.status(404).json({ error: "App non trovata." }); return; }
+
+  const appUrl = appUrlForApp(target);
+  const daysLeft = target.trialExpiresAt
+    ? Math.max(0, Math.ceil((new Date(target.trialExpiresAt) - new Date()) / 86400000))
+    : "N/A";
+
+  const subject = `[LocoCode] Richiesta licenza: ${target.name}`;
+  const body = [
+    `Utente: ${user.email}`,
+    `App: ${target.name} (${target.id})`,
+    `URL: ${appUrl}`,
+    `Giorni trial rimanenti: ${daysLeft}`,
+    ``,
+    `Per attivare la licenza permanente imposta lifecycle="active" in:`,
+    `  data/users/${user.id}/apps.json`,
+  ].join("\n");
+
+  await sendAdminEmail(subject, body);
+
+  target.licenseRequested = true;
+  target.licenseRequestedAt = new Date().toISOString();
+  await saveApps(apps, user);
+
+  res.json({ ok: true, message: "Richiesta inviata. Sarai contattato a breve per l'attivazione della licenza permanente." });
+});
+
+async function sendAdminEmail(subject, text) {
+  const adminEmail = process.env.LOCOCODE_ADMIN_EMAIL || "mellucciantonio@gmail.com";
+  const smtpHost = process.env.SMTP_HOST;
+  if (!smtpHost) {
+    console.log(`[license] ${subject}\n${text}`);
+    return;
+  }
+  const portValue = Number(process.env.SMTP_PORT || 587);
+  const smtpUser = process.env.SMTP_USER || "";
+  const smtpPass = process.env.SMTP_PASS || "";
+  const from = process.env.SMTP_FROM || smtpUser || "noreply@lococode.local";
+  const transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: portValue,
+    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true" || portValue === 465,
+    auth: smtpUser && smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
+  });
+  await transporter.sendMail({ from, to: adminEmail, subject, text });
+}
+
+function trialExpiredHtml(appName = "") {
+  const name = escapeHtml(appName || "Questa app");
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trial scaduto · LocoCode</title><style>*{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;display:grid;place-items:center;font-family:Inter,system-ui,sans-serif;background:#0d1117;color:#e2e8f0}.card{background:#161b27;border:1px solid rgba(91,62,232,.25);border-radius:20px;padding:40px 36px;text-align:center;max-width:380px;box-shadow:0 0 0 1px rgba(91,62,232,.1),0 24px 64px rgba(0,0,0,.5)}.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(220,38,38,.12);color:#f87171;border:1px solid rgba(220,38,38,.2);border-radius:99px;padding:4px 12px;font-size:12px;font-weight:600;margin-bottom:20px;letter-spacing:.5px}h1{font-size:20px;font-weight:700;margin-bottom:10px;color:#f1f5f9}p{font-size:14px;color:#94a3b8;line-height:1.65;margin-bottom:24px}.btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,#5b3ee8,#7c5af0);color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;transition:opacity .2s}.btn:hover{opacity:.85}.footer{margin-top:16px;font-size:12px;color:#4b5563}</style></head><body><div class="card"><div class="badge">⏱ Trial scaduto</div><h1>${name}</h1><p>Il periodo di prova gratuito di questa app è terminato. Per continuare ad usarla richiedi una licenza permanente.</p><a class="btn" href="mailto:mellucciantonio@gmail.com?subject=Richiesta licenza LocoCode&body=Ciao, vorrei attivare la licenza permanente per l'app: ${name}">✉ Richiedi licenza</a><p class="footer">Generato con LocoCode · lococode.mellutecno.it</p></div></body></html>`;
+}
+
 async function startAutopilotRequest(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -644,13 +703,18 @@ async function livePreviewRequest(req, res) {
     // Backend attivo: il frontend puo girare con le API reali — servi il build compilato
     const builtFrontend = await ensureFrontendPreviewBuild(target);
     if (builtFrontend) {
+      // Aggiorna preview state in modo che il polling del client rilevi il cambio
+      const newPreview = await resolvePreviewState(target, target.files || []);
+      if (!target.preview?.hasLiveBuild) {
+        target.preview = newPreview;
+        await saveApps(apps, user);
+      }
       const staticPath = previewStaticPath(req.params.splat);
       const served = await serveFrontendBuildFile(target, staticPath, res);
       if (served) return;
     }
   } else {
-    // Progetto ancora in costruzione: il React app non funziona senza backend (routing rotto).
-    // Avvia il build in background cosi e pronto quando lo status diventa "ready".
+    // Progetto ancora in costruzione — avvia build in background cosi e pronto al completamento.
     ensureFrontendPreviewBuild(target).catch(() => {});
   }
 
@@ -679,6 +743,13 @@ async function publicAppRequest(req, res) {
 
   const { user, apps, target } = found;
   await refreshProjectState(target);
+
+  // Trial check — blocca accesso se scaduto e non attivo
+  if (target.trialExpiresAt && target.lifecycle !== "active" && new Date(target.trialExpiresAt) < new Date()) {
+    res.type("html").send(trialExpiredHtml(target.name));
+    return;
+  }
+
   const builtFrontend = await ensureFrontendPreviewBuild(target);
   if (builtFrontend) target.preview = await resolvePreviewState(target, target.files || []);
   await saveApps(apps, user);
@@ -995,6 +1066,19 @@ async function finishAutopilot(target, apps, user) {
       : `Piano completato. App pronta: ${appUrl}`,
   );
   await saveApps(apps, user);
+
+  // Avvia build del frontend in background: quando il polling rileva preview.hasLiveBuild=true
+  // il client ricarica l'iframe mostrando la vera app React invece del wireframe.
+  if (!target.sdd?.currentStep) {
+    ensureFrontendPreviewBuild(target)
+      .then(async (built) => {
+        if (built) {
+          target.preview = await resolvePreviewState(target, target.files || []);
+          await saveApps(apps, user).catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 async function shouldStopAutopilot(user, appId) {
@@ -2570,9 +2654,18 @@ function publicApp(appData) {
   delete safe.demoToken;
   delete safe.appToken;
 
+  const trialExpiresAt = appData.trialExpiresAt || null;
+  const isActive = appData.lifecycle === "active";
+  const trialDaysLeft = trialExpiresAt && !isActive
+    ? Math.max(0, Math.ceil((new Date(trialExpiresAt) - new Date()) / 86400000))
+    : null;
+
   return {
     ...safe,
     lifecycle: appData.lifecycle || "trial",
+    trialExpiresAt,
+    trialDaysLeft,
+    licenseRequested: appData.licenseRequested || false,
     appUrl,
     autopilot: sanitizeAutopilotForClient(appData.autopilot),
     html: appData.html || "",

@@ -1,11 +1,11 @@
 /* ─── Design tokens ─────────────────────────────────────────── */
 :root {
-  --bg:              #f0f2f8;
-  --stage:           #f4f6fb;
-  --surface:         #ffffff;
-  --surface-2:       #f8f9fc;
-  --surface-3:       #f0f3f9;
-  --surface-hover:   #edf0fb;
+  --bg:              #d8dff2;
+  --stage:           #dce3f3;
+  --surface:         #edf0fb;
+  --surface-2:       #e4e9f8;
+  --surface-3:       #dde3f2;
+  --surface-hover:   #e0e6f8;
   --ink:             #0c0f1e;
   --ink-2:           #2d3554;
   --muted:           #6b7a99;
@@ -778,7 +778,25 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .task-card.has-error { border-color: rgba(220,38,38,0.2); background: rgba(220,38,38,0.04); }
 
 /* ─── Completed workspace ────────────────────────────────────── */
-.completed-workspace { flex: 1; min-height: 0; padding: 16px; display: grid; align-content: start; }
+.completed-workspace { flex: 1; min-height: 0; padding: 16px; display: grid; align-content: start; gap: 12px; }
+
+.trial-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  background: rgba(91,62,232,0.08);
+  border: 1px solid rgba(91,62,232,0.22);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+.trial-banner.expired {
+  background: rgba(220,38,38,0.07);
+  border-color: rgba(220,38,38,0.22);
+}
+.trial-banner-text { flex: 1; color: var(--ink-2); line-height: 1.5; }
+.trial-banner-text strong { color: var(--ink); }
+.trial-requested { font-size: 12px; color: var(--success); font-weight: 600; white-space: nowrap; }
 
 .completed-project-row {
   width: min(960px,100%);

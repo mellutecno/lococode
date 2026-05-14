@@ -235,6 +235,18 @@ Questa azione è irreversibile.`)) return;
     }
   }
 
+  async function requestLicense(appId) {
+    try {
+      const response = await apiFetch(`/api/apps/${appId}/request-license`, { method: "POST" });
+      const data = await readApiJson(response);
+      if (!response.ok) throw new Error(data.error || "Errore invio richiesta.");
+      setStatus(data.message || "Richiesta licenza inviata.");
+      await refreshApps(appId);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function logout() {
     await apiFetch("/api/auth/logout", { method: "POST" });
     localStorage.removeItem(SESSION_KEY);
@@ -501,6 +513,7 @@ Questa azione è irreversibile.`)) return;
             onResume={resumeAutopilot}
             onStop={stopAutopilot}
             onBackToProjects={() => setActiveView("projects")}
+            onRequestLicense={requestLicense}
           />
         )}
 
@@ -836,7 +849,7 @@ function Composer({ value, onChange, model, setModel, busy, placeholder, onSubmi
   );
 }
 
-function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume, onStop, onBackToProjects }) {
+function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume, onStop, onBackToProjects, onRequestLicense }) {
   const [expandedPanel, setExpandedPanel] = useState(false);
   const [completedDetailsOpen, setCompletedDetailsOpen] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(true);
@@ -910,6 +923,10 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
   }
 
   if (projectComplete && !completedDetailsOpen) {
+    const trialDaysLeft = app.trialDaysLeft;
+    const trialExpired = trialDaysLeft !== null && trialDaysLeft === 0;
+    const showTrialBanner = app.lifecycle === "trial" && trialDaysLeft !== null;
+
     return (
       <div className="completed-workspace">
         <article className="completed-project-row">
@@ -932,6 +949,23 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
             </button>
           </div>
         </article>
+        {showTrialBanner && (
+          <div className={`trial-banner ${trialExpired ? "expired" : ""}`}>
+            <div className="trial-banner-text">
+              {trialExpired
+                ? <><strong>Trial scaduto.</strong> L'app non è più accessibile pubblicamente.</>
+                : <><strong>Trial attivo</strong> — {trialDaysLeft} {trialDaysLeft === 1 ? "giorno rimanente" : "giorni rimanenti"}. Dopo la scadenza l'accesso pubblico verrà bloccato.</>
+              }
+            </div>
+            {!app.licenseRequested ? (
+              <button className="primary compact" onClick={() => onRequestLicense(app.id)}>
+                Richiedi licenza permanente
+              </button>
+            ) : (
+              <span className="trial-requested">✓ Richiesta inviata</span>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -1130,7 +1164,7 @@ function ProjectPanelContent({ projectPanel, app, fullscreen = false }) {
           <div className="phone-screen">
             {previewUrl ? (
               <iframe
-                key={`${app.id}-${app.preview?.updatedAt || app.updatedAt || ""}`}
+                key={`${app.id}-${app.status}-${app.preview?.hasLiveBuild ? "live" : "fallback"}`}
                 className={fullscreen ? "fullscreen-iframe" : ""}
                 title="App"
                 src={previewUrl}
