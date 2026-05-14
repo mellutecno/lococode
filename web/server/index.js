@@ -639,16 +639,31 @@ async function livePreviewRequest(req, res) {
   }
 
   await refreshProjectState(target);
-  const builtFrontend = await ensureFrontendPreviewBuild(target);
-  if (builtFrontend) target.preview = await resolvePreviewState(target, target.files || []);
-  await saveApps(apps, user);
-  const staticPath = previewStaticPath(req.params.splat);
-  const served = await serveFrontendBuildFile(target, staticPath, res);
-  if (served) return;
 
+  if (target.status === "ready") {
+    // Backend attivo: il frontend puo girare con le API reali — servi il build compilato
+    const builtFrontend = await ensureFrontendPreviewBuild(target);
+    if (builtFrontend) {
+      const staticPath = previewStaticPath(req.params.splat);
+      const served = await serveFrontendBuildFile(target, staticPath, res);
+      if (served) return;
+    }
+  } else {
+    // Progetto ancora in costruzione: il React app non funziona senza backend (routing rotto).
+    // Avvia il build in background cosi e pronto quando lo status diventa "ready".
+    ensureFrontendPreviewBuild(target).catch(() => {});
+  }
+
+  // Fallback: wireframe statico generato dall'orchestrator, oppure pending card
   const html = await readPreviewHtml(target);
   if (!html) {
-    res.type("html").send(previewPendingHtml());
+    const isActive = target?.autopilot?.running || target.status === "building";
+    res.type("html").send(previewPendingHtml(
+      target.name || "App in costruzione",
+      isActive
+        ? "LocoCode sta costruendo la tua app. L'anteprima live sara disponibile a completamento."
+        : "Avvia o riprendi il progetto per continuare la generazione."
+    ));
     return;
   }
 
@@ -1160,6 +1175,55 @@ function pushAssistantMessage(target, content) {
   });
 }
 
+async function generateWireframePreview({ target, apiKey, model, userPrompt }) {
+  try {
+    const sdd = (await readProjectFile(target, ".lc/spec/sdd.md")).slice(0, 2000);
+    const arch = (await readProjectFile(target, ".lc/spec/architecture.md")).slice(0, 1500);
+    const wireframePrompt = `Genera una pagina HTML statica (preview/index.html) che mostri un'anteprima visiva realistica dell'app descritta qui sotto. È un mockup/wireframe da mostrare mentre l'app viene costruita.
+
+Requisiti HTML:
+- Pagina completa con CSS inline (niente file esterni)
+- Design moderno, sfondo chiaro (#f8f9fa o bianco), testo scuro
+- Mostra l'interfaccia principale dell'app con dati fittizi ma realistici (nomi, date, numeri inventati)
+- Includi una barra di navigazione o header con il nome dell'app
+- Mostra almeno una schermata significativa (lista, form, dashboard) con 3-5 elementi di esempio
+- In basso: un badge discreto "🔨 In costruzione..." con sfondo giallo chiaro
+- NO JavaScript complesso — solo HTML+CSS statici
+- Ottimizzato per visualizzazione in iframe 400×600px
+
+Specifiche app:
+${sdd}
+
+Architettura:
+${arch}
+
+Prompt originale: ${userPrompt}
+
+Restituisci SOLO il blocco file nel formato:
+<<<preview/index.html
+<!doctype html>
+...
+>>>`;
+
+    const aiText = await callOpenRouter({
+      apiKey,
+      model,
+      systemPrompt: "Sei un designer UI. Genera solo il blocco file richiesto, senza spiegazioni.",
+      userPrompt: wireframePrompt,
+      maxTokens: 2500,
+      timeoutMs: openRouterTimeoutMs,
+    });
+
+    const ops = parseOperations(aiText);
+    if (ops.length) {
+      await applyOperations(target, ops);
+    }
+  } catch (err) {
+    // Il wireframe è opzionale — non bloccare il build se fallisce
+    appendOperationalLog(target, `Wireframe preview non generato: ${err?.message || err}`);
+  }
+}
+
 async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, onProgress, shouldStop }) {
   if (mode === "initial") {
     return runInitialOrchestration({ target, apiKey, model, userPrompt, onProgress, shouldStop });
@@ -1168,7 +1232,12 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
   const projectMemory = await loadProjectMemory(target);
   const nextTask = getNextTaskLabel(target);
   const systemPrompt = buildOrchestratorSystemPrompt();
-  const prompt = buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, mode });
+  const steps = target.sdd?.steps || [];
+  const completedCount = steps.filter((s) => s.done).length;
+  const totalCount = steps.length;
+  const root = projectRoot(target);
+  const files = await listProjectFiles(root);
+  const prompt = buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, mode, completedCount, totalCount, files });
 
   const aiText = await callOpenRouter({
     apiKey,
@@ -1181,7 +1250,7 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
   const operations = parseOperations(aiText);
   if (!operations.length) {
     throw new Error(
-      "Il modello ha risposto, ma non ha restituito blocchi file applicabili. LocoCode richiede blocchi ```file path=\"...\".",
+      enrichedErrorMessage(`Turn autopilot (task: ${nextTask || "sconosciuto"})`, aiText),
     );
   }
 
@@ -1213,18 +1282,24 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   const phases = [
     {
       label: "specifiche progetto",
+      phaseNum: 1,
       maxTokens: 10000,
       getPrompt: async () => buildInitialSpecsPrompt(userPrompt),
+      expectedFiles: [".lc/spec/sdd.md", ".lc/spec/architecture.md", ".lc/spec/tasks.md", "README.md"],
     },
     {
       label: "parte server",
+      phaseNum: 2,
       maxTokens: 12000,
       getPrompt: async () => buildInitialBackendPrompt(userPrompt, await loadProjectMemory(target)),
+      expectedFiles: ["backend/app/main.py", "backend/requirements.txt", "backend/.env.example"],
     },
     {
       label: "interfaccia utente",
+      phaseNum: 3,
       maxTokens: 14000,
       getPrompt: async () => buildInitialFrontendPrompt(userPrompt, await loadProjectMemory(target)),
+      expectedFiles: ["frontend/src/App.jsx", "frontend/package.json", "preview/index.html"],
     },
   ];
 
@@ -1252,19 +1327,67 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
     const operations = parseOperations(aiText);
     if (!operations.length) {
       throw new Error(
-        `Fase ${phase.label}: il modello ha risposto, ma non ha restituito blocchi file applicabili.`,
+        enrichedErrorMessage(`Fase ${phase.phaseNum}/3 (${phase.label})`, aiText, phase.expectedFiles),
       );
     }
 
     const result = await applyOperations(target, operations);
     if (result.errors.length) {
-      throw new Error(`Fase ${phase.label}: operazioni file non valide: ${result.errors.join("; ")}`);
+      throw new Error(`Fase ${phase.phaseNum}/3 (${phase.label}): operazioni file non valide: ${result.errors.join("; ")}`);
     }
 
     touched.push(...result.created, ...result.updated);
     await refreshProjectState(target);
     target.updatedAt = new Date().toISOString();
     await onProgress?.(phase.label);
+
+    // — Validazione output per fase (3.1) —
+    if (phase.phaseNum === 1) {
+      const tasksContent = await readProjectFile(target, ".lc/spec/tasks.md");
+      const pendingCount = (tasksContent.match(/^\s*-\s*\[\s*\]/gm) || []).length;
+      const archContent = (await readProjectFile(target, ".lc/spec/architecture.md")).trim();
+      if (pendingCount < 3 || !archContent) {
+        throw new Error(
+          `Fase 1 incompleta: tasks.md contiene ${pendingCount} task aperti (minimo 3)${!archContent ? " e architecture.md è vuoto" : ""}. Riavvia il progetto o verifica il prompt.`,
+        );
+      }
+      // Genera subito un wireframe visivo e lo mostra nell'anteprima
+      appendOperationalLog(target, "Genero anteprima visiva dell'app...");
+      await generateWireframePreview({ target, apiKey, model, userPrompt });
+      await refreshProjectState(target);
+      await onProgress?.(phase.label);
+    }
+
+    if (phase.phaseNum === 2) {
+      const mainPy = await readProjectFile(target, "backend/app/main.py");
+      if (mainPy.length < 500) {
+        appendOperationalLog(
+          target,
+          `Attenzione: backend/app/main.py è corto (${mainPy.length} chars). Il backend potrebbe essere incompleto.`,
+        );
+      }
+    }
+
+    if (phase.phaseNum === 3) {
+      const previewHtml = await readProjectFile(target, "preview/index.html");
+      if (!previewHtml.toLowerCase().includes("<!doctype")) {
+        appendOperationalLog(target, "preview/index.html mancante o non valido — tentativo recovery...");
+        const recoveryText = await callOpenRouter({
+          apiKey,
+          model,
+          systemPrompt,
+          userPrompt: `La fase 3 non ha prodotto preview/index.html valido. Restituisci SOLO il file preview/index.html con una pagina HTML completa funzionante che mostri l'interfaccia dell'app.\n\nMemoria:\n${await loadProjectMemory(target)}`,
+          maxTokens: 3000,
+          timeoutMs: openRouterTimeoutMs,
+        });
+        const recoveryOps = parseOperations(recoveryText);
+        if (recoveryOps.length) {
+          const recoveryResult = await applyOperations(target, recoveryOps);
+          touched.push(...recoveryResult.created, ...recoveryResult.updated);
+          await refreshProjectState(target);
+        }
+      }
+    }
 
     const stopReasonAfter = await shouldStop?.();
     if (stopReasonAfter) {
@@ -1326,6 +1449,13 @@ function isTechnicalNarration(text) {
   return /\[Browser\]|<--|-->|OMDB_API_KEY|API_KEY|bash\b|python\s+-|pip\s+install|cd\s+backend|FastAPI|SQLite|Vite|\.env|localhost|curl\b|npm\s+/i.test(
     text,
   );
+}
+
+function enrichedErrorMessage(label, aiText, expectedFiles = []) {
+  const len = (aiText || "").length;
+  const preview = (aiText || "").slice(0, 300).replace(/\n/g, " ").trim();
+  const expected = expectedFiles.length ? `\nAttesi: ${expectedFiles.join(", ")}.` : "";
+  return `${label}: il modello ha risposto con ${len} caratteri ma senza blocchi file applicabili.${expected}\nRisposta (inizio): "${preview || "(vuota)"}"`;
 }
 
 function buildOrchestratorSystemPrompt() {
@@ -1409,7 +1539,15 @@ function buildInitialSpecsPrompt(initialPrompt) {
     "- README.md",
     "- deploy/lococode.json",
     "",
-    "REQUISITI STRUTTURA: .lc/spec/tasks.md deve avere tra 12 e 20 task [ ] divisi in 3-4 sezioni (es: ## Fase 1 - Setup, ## Fase 2 - Backend, ## Fase 3 - Frontend, ## Fase 4 - Polish).",
+    "REQUISITI STRUTTURA: .lc/spec/tasks.md deve avere tra 12 e 20 task [ ] divisi in 3-4 sezioni.",
+    "Formato OBBLIGATORIO per i task — usa numerazione gerarchica senza prefissi T/Task:",
+    "## Fase 1 - Setup e Configurazione",
+    "- [ ] 1.1 Descrizione del task",
+    "- [ ] 1.2 Descrizione del task",
+    "## Fase 2 - Backend e Database",
+    "- [ ] 2.1 Descrizione del task",
+    "...",
+    "NON usare: T1/T2/T19, Task-1, #1, bullet senza numero. Solo numerazione 1.1/1.2/2.1/2.2 etc.",
     "- .lc/spec/sdd.md: 1) Descrizione progetto, 2) Utenti e ruoli, 3) Funzionalita principali, 4) Vincoli tecnici, 5) Flusso principale utente.",
     "- .lc/spec/architecture.md: tabelle SQLite con colonne e tipi, endpoint FastAPI con metodo/path/payload, componenti React principali.",
     "Il piano deve includere: link finale dell'app, chiave di avvio iniziale, flusso abbonamento mensile, gestione scadenza chiave.",
@@ -1478,6 +1616,19 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "FONDAMENTALE - Chiamate API: usa SEMPRE const API = import.meta.env.VITE_API_URL || ''; poi chiama fetch(API + '/endpoint'). Non scrivere mai localhost, 127.0.0.1 o porte hardcoded. VITE_API_URL viene iniettato da LocoCode al build e punta al backend reale.",
     "preview/index.html serve solo da fallback statico se il frontend vero non e ancora pronto.",
     "",
+    "QUALITA' VISIVA OBBLIGATORIA — il frontend DEVE avere un design professionale e curato, stile Vercel/Linear/Notion:",
+    "- Definisci CSS variables in :root: --primary:#4F46E5; --primary-dark:#3730A3; --accent:#7C3AED; --bg:#F8FAFC; --surface:#FFFFFF; --text:#0F172A; --text-muted:#64748B; --border:#E2E8F0; --radius:10px; --shadow:0 2px 12px rgba(0,0,0,.08);",
+    "- Sfondo pagina: var(--bg) chiaro. Contenuto su card bianche: background var(--surface), border-radius var(--radius), box-shadow var(--shadow), padding 20-24px.",
+    "- Layout con sidebar di navigazione sinistra (220-240px) con logo, nome app e voci menu con icone SVG inline. Contenuto principale a destra in colonna.",
+    "- Tipografia: font-family: 'Inter', system-ui, sans-serif. Titoli sezione 20-24px 700. Sottotitoli 14-15px 500 color var(--text-muted). Corpo 14px.",
+    "- Tabelle: thead background var(--primary) color white, righe tbody alternate (#F8FAFC / white), hover background #EEF2FF, bordi sottili.",
+    "- Pulsanti primari: background var(--primary), color white, border-radius 8px, padding 9px 18px, font-weight 600, hover background var(--primary-dark), transition 0.15s.",
+    "- Input e select: border 1px solid var(--border), border-radius 8px, padding 9px 12px, focus outline 2px solid var(--primary), focus border-color transparent.",
+    "- Badge di stato: verde #DCFCE7 testo #15803D, arancione #FEF9C3 testo #92400E, rosso #FEE2E2 testo #991B1B, grigi #F1F5F9 testo #475569. Border-radius 6px, padding 3px 10px, font-size 12px font-weight 600.",
+    "- Almeno 5 sezioni navigabili (sidebar menu) con contenuto realistico per ogni sezione: lista con dati fittizi ma plausibili, non placeholder generici.",
+    "- KPI o statistiche in evidenza nella dashboard principale: 3-4 numeri grandi in card colorate in cima.",
+    "- Microinterazioni: hover su righe tabella, pulsanti con cursor:pointer, link sottolineati al hover, transizioni 0.15s ease.",
+    "",
     "DIPENDENZE OBBLIGATORIE - frontend/package.json deve contenere ESATTAMENTE queste dipendenze (niente di piu):",
     "  dependencies: react ^18, react-dom ^18",
     "  devDependencies: @vitejs/plugin-react ^4, vite ^5",
@@ -1504,14 +1655,24 @@ function groupFilesByPrefix(files) {
     .join("\n");
 }
 
-function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, mode }) {
+function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, mode, completedCount, totalCount, files }) {
   const taskSection =
     mode === "continue"
       ? "## Task corrente\n" + (nextTask || "completa il prossimo passo tecnico utile dal piano tasks.md")
       : "## Richiesta utente\n" + userPrompt;
 
+  const avanzamentoSection =
+    mode === "continue" && typeof completedCount === "number" && typeof totalCount === "number"
+      ? `\n\n## Avanzamento\n${completedCount} completati su ${totalCount} — ${totalCount - completedCount} rimanenti`
+      : "";
+
+  const fileSection =
+    files && files.length
+      ? `\n\n## File già presenti nel progetto (non ricreare, modifica se necessario)\n${groupFilesByPrefix(files)}`
+      : "";
+
   return [
-    taskSection,
+    taskSection + avanzamentoSection + fileSection,
     "",
     "## Contesto del progetto",
     projectMemory,
@@ -1524,6 +1685,7 @@ function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, 
     "- Se il task richiede backend, aggiorna backend/app/main.py e requirements.txt.",
     "- Se il task cambia la UI, aggiorna frontend/src/ e i file coinvolti.",
     "- Aggiorna preview/index.html solo come fallback statico se il frontend reale non e ancora pronto.",
+    "- QUALITA' VISIVA: se il task riguarda la UI o il frontend, mantieni il design professionale gia stabilito (CSS variables, card bianche, sidebar navigazione, badge colorati, tabelle stilizzate). Non degradare mai il livello visivo.",
     "- Mantieni sempre funzionante il link finale: se una chiave API esterna manca, usa dati di prova, non errori.",
     "- Mantieni il flusso attivazione -> abbonamento mensile.",
     "- Non creare mai .venv, venv, node_modules, dist o build.",
@@ -2485,10 +2647,10 @@ async function readPreviewHtml(target) {
 }
 
 function previewPendingHtml(
-  title = "Anteprima in preparazione",
-  message = "Sara disponibile appena LocoCode avra creato i primi file dell'app.",
+  title = "App in costruzione",
+  message = "LocoCode sta generando backend, database e interfaccia.",
 ) {
-  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#f7f5ff;color:#343b4f}.box{text-align:center;padding:28px}.box h1{margin:0 0 10px;font-size:30px}.box p{margin:0;color:#697184;font-size:16px;line-height:1.5}</style></head><body><div class="box"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></div></body></html>`;
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>*{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;display:grid;place-items:center;font-family:Inter,system-ui,sans-serif;background:#f8f9fb;color:#1e293b}.card{background:#fff;border:1px solid #e8eaf0;border-radius:16px;padding:32px 28px;text-align:center;max-width:320px;box-shadow:0 2px 16px rgba(15,23,42,.07)}.icon{width:48px;height:48px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:12px;display:grid;place-items:center;margin:0 auto 18px}.icon svg{width:24px;height:24px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round}h1{font-size:17px;font-weight:700;margin-bottom:8px;color:#0f172a}p{font-size:13px;color:#64748b;line-height:1.6;margin-bottom:20px}.dots{display:inline-flex;gap:6px}.dots span{width:7px;height:7px;border-radius:50%;background:#6366f1;animation:p 1.2s ease-in-out infinite}.dots span:nth-child(2){animation-delay:.2s}.dots span:nth-child(3){animation-delay:.4s}@keyframes p{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}</style></head><body><div class="card"><div class="icon"><svg viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p><div class="dots"><span></span><span></span><span></span></div></div></body></html>`;
 }
 
 function looksLikeStandaloneHtml(value) {

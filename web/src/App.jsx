@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Bot,
@@ -7,6 +7,8 @@ import {
   ClipboardList,
   Database,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileStack,
   FolderKanban,
   KeyRound,
@@ -702,6 +704,16 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
 }
 
 function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLogout }) {
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!userMenuOpen) return undefined;
+    const close = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setUserMenuOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [userMenuOpen]);
+
   const label =
     ["chat", "tasks", "sdd", "files", "log"].includes(activeView) && selectedApp
       ? selectedApp.name
@@ -735,15 +747,25 @@ function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLog
       </div>
       <p className={activeView === "chat" && selectedApp?.status === "error" ? "status-error" : ""}>{taskText}</p>
       {currentUser ? (
-        <div className="account-actions">
-          <span className="user-pill" title={currentUser.email}>
-            <KeyRound size={18} />
-            <span>{currentUser.email}</span>
-          </span>
-          <button className="logout-button" aria-label="Esci dall'account" onClick={onLogout} title="Esci dall'account">
-            <LogOut size={18} />
-            <span>Esci</span>
+        <div className="user-menu-container" ref={menuRef}>
+          <button
+            className="user-avatar-btn"
+            onClick={() => setUserMenuOpen((o) => !o)}
+            title={currentUser.email}
+            aria-label="Account"
+            aria-expanded={userMenuOpen}
+          >
+            {currentUser.email[0].toUpperCase()}
           </button>
+          {userMenuOpen && (
+            <div className="user-menu-dropdown" role="menu">
+              <span className="user-menu-email">{currentUser.email}</span>
+              <button className="user-menu-logout" onClick={() => { onLogout(); setUserMenuOpen(false); }}>
+                <LogOut size={15} />
+                Esci dall&apos;account
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <button className="user-button" aria-label="Accedi" onClick={onAuth}>
@@ -759,7 +781,8 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
   return (
     <div className="home-view">
       <section className="hero-block">
-        <h1>Crea una nuova app</h1>
+        <h1>Crea la tua web app</h1>
+        <p className="hero-sub">Descrivi cosa vuoi costruire — LocoCode genera backend, frontend e database pronti all'uso.</p>
         <label className="project-name-field">
           <span>Nome progetto</span>
           <input
@@ -816,6 +839,7 @@ function Composer({ value, onChange, model, setModel, busy, placeholder, onSubmi
 function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume, onStop, onBackToProjects }) {
   const [expandedPanel, setExpandedPanel] = useState(false);
   const [completedDetailsOpen, setCompletedDetailsOpen] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(true);
   const [previewWidth, setPreviewWidth] = useState(() => {
     const saved = Number(localStorage.getItem(PREVIEW_WIDTH_KEY));
     return Number.isFinite(saved) ? clampPreviewWidth(saved) : 54;
@@ -913,7 +937,7 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
   }
 
   return (
-    <div className="chat-layout" style={{ "--preview-width": `${previewWidth}%` }}>
+    <div className={`chat-layout${previewVisible ? "" : " preview-hidden"}`} style={{ "--preview-width": `${previewWidth}%` }}>
       <section className="chat-panel orchestrator-panel">
         <div className="orchestrator-strip">
           <div className={`task-card ${app.status === "error" ? "has-error" : ""}`}>
@@ -937,6 +961,14 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
                 Chiudi dettagli
               </button>
             )}
+            <button
+              className="icon-only preview-toggle-btn"
+              title={previewVisible ? "Nascondi anteprima" : "Mostra anteprima"}
+              aria-label={previewVisible ? "Nascondi anteprima" : "Mostra anteprima"}
+              onClick={() => setPreviewVisible((v) => !v)}
+            >
+              {previewVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
           </div>
         </div>
 
@@ -973,20 +1005,25 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
         onKeyDown={resizePreviewFromKeyboard}
       />
 
-      <section className="preview-panel">
-        <div className="panel-title">
-          <div>
-            <span>Progetto</span>
-            <h2>App</h2>
+      {previewVisible && (
+        <section className="preview-panel">
+          <div className="panel-title">
+            <div>
+              <span>Anteprima</span>
+              <h2 className="panel-title-name">{app.name || "App"}</h2>
+            </div>
+            <div className="panel-actions">
+              <button className="fullscreen-button icon-only" onClick={() => setExpandedPanel(true)} aria-label="Schermo intero" title="Schermo intero">
+                <Maximize2 size={18} />
+              </button>
+              <button className="fullscreen-button icon-only" onClick={() => setPreviewVisible(false)} aria-label="Chiudi anteprima" title="Chiudi anteprima">
+                <X size={18} />
+              </button>
+            </div>
           </div>
-          <div className="panel-actions">
-            <button className="fullscreen-button icon-only" onClick={() => setExpandedPanel(true)} aria-label="Schermo intero" title="Schermo intero">
-              <Maximize2 size={18} />
-            </button>
-          </div>
-        </div>
-        <ProjectPanelContent projectPanel="preview" app={app} />
-      </section>
+          <ProjectPanelContent projectPanel="preview" app={app} />
+        </section>
+      )}
 
       {expandedPanel && (
         <section
@@ -999,8 +1036,8 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
           <div className="fullscreen-card">
             <header>
               <div>
-                <span>Progetto</span>
-                <h2>App</h2>
+                <span>Anteprima</span>
+                <h2>{app.name || "App"}</h2>
               </div>
               <button onClick={() => setExpandedPanel(false)} aria-label="Chiudi schermo intero">
                 <X size={24} />
@@ -1017,20 +1054,42 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
 function OperationLog({ app, status, error, compact = false }) {
   const lastAssistant = [...(app.messages || [])].reverse().find((message) => message.role === "assistant");
   const report = app.autopilot?.error;
-  const log = Array.isArray(app.autopilot?.log) ? app.autopilot.log.filter((entry) => isUsefulOperation(entry.message)).slice(compact ? -5 : -14) : [];
+  const log = Array.isArray(app.autopilot?.log)
+    ? app.autopilot.log
+        .filter((entry) => isUsefulOperation(entry.message))
+        .filter((entry, i, arr) => i === 0 || cleanOperationText(entry.message) !== cleanOperationText(arr[i - 1].message))
+        .slice(compact ? -8 : -18)
+    : [];
   const hasError = Boolean(error || report) || app.status === "error" || /errore|timeout|interrott/i.test(lastAssistant?.content || "");
   const taskState = projectTaskState(app);
   const text = cleanOperationText(error || report?.cause || lastAssistant?.content || "Nessuna operazione registrata per ora.");
+
+  const ts = projectTaskState(app);
+  const doneCount = ts.doneCount ?? 0;
+  const remaining = ts.remaining ?? 0;
+  const totalCount = doneCount + remaining;
+  const fileCount = app?.fileCount || (Array.isArray(app?.files) ? app.files.length : 0);
+  const progressPct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+  const showProgress = totalCount > 0;
 
   return (
     <section className={`operation-log ${compact ? "compact-log" : ""} ${hasError ? "has-error" : ""}`}>
       <div className="operation-head">
         <div>
-          <strong>{compact ? "Ultime operazioni" : "Registro operativo"}</strong>
+          <strong>{compact ? "Avanzamento" : "Registro operativo"}</strong>
           <span>{taskState.short}</span>
         </div>
-        {app.autopilot?.running && <em>Live</em>}
+        <div className="operation-head-right">
+          {fileCount > 0 && <span className="file-count-badge">{fileCount} file</span>}
+          {app.autopilot?.running && <em className="live-badge">Live</em>}
+        </div>
       </div>
+      {showProgress && (
+        <div className="progress-track">
+          <div className="progress-bar" style={{ width: `${progressPct}%` }} />
+          <span>{doneCount} ✓ · {remaining} rimasti</span>
+        </div>
+      )}
       <div className="operation-body">
         {report ? (
           <>
@@ -1046,14 +1105,14 @@ function OperationLog({ app, status, error, compact = false }) {
                 {log.map((entry, index) => (
                   <li key={`${entry.at}-${index}`}>
                     <time>{formatShortTime(entry.at)}</time>
-                    <span>{cleanOperationText(entry.message, compact ? 180 : 420)}</span>
+                    <span>{cleanOperationText(entry.message, compact ? 200 : 420)}</span>
                   </li>
                 ))}
               </ul>
             ) : (
               <p>{text}</p>
             )}
-            {status && app.autopilot?.running && <p>{status}</p>}
+            {status && app.autopilot?.running && <p className="status-live">{status}</p>}
           </>
         )}
       </div>
@@ -1103,20 +1162,6 @@ function isProjectComplete(app) {
 }
 
 function projectTaskState(app) {
-  const steps = app?.sdd?.steps || [];
-  const doneCount = steps.filter((step) => step.done).length;
-  const total = steps.length;
-  const currentStep = app?.sdd?.currentStep || steps.find((step) => !step.done) || null;
-  const currentIndex = currentStep ? steps.findIndex((step) => step.id === currentStep.id || step.label === currentStep.label) : -1;
-  const progress = total ? `${doneCount}/${total}` : "In preparazione";
-  const taskProgress = total ? `${currentIndex >= 0 ? currentIndex + 1 : doneCount}/${total}` : "In preparazione";
-  const planCompleted = total > 0 && doneCount >= total;
-  const phase = planCompleted ? "Completato" : formatPhaseLabel(currentStep?.phase || app?.sdd?.phase || "");
-  const shortPhase = compactPhaseLabel(phase);
-  const meta = total ? `${phase} - Task ${taskProgress}` : "";
-  const headerMeta = total ? `${phase} - Task ${taskProgress}` : "Piano in preparazione";
-  const task = app?.autopilot?.currentTask || currentStep?.label || "";
-
   if (!app) {
     return {
       header: "Nessun progetto selezionato",
@@ -1124,26 +1169,62 @@ function projectTaskState(app) {
       label: "Nessun progetto selezionato",
       meta: "",
       short: "Pronto",
+      doneCount: 0,
+      remaining: 0,
     };
   }
 
+  const steps = app?.sdd?.steps || [];
+  const doneCount = steps.filter((step) => step.done).length;
+  const remaining = steps.filter((step) => !step.done).length;
+  const total = steps.length;
+  const currentStep = app?.sdd?.currentStep || steps.find((step) => !step.done) || null;
+  const planCompleted = total > 0 && remaining === 0;
+
+  // Fase completa (es. "Fase 4 - Polish e Deploy") senza accorciare
+  const phase = planCompleted ? "Completato" : formatPhaseLabel(currentStep?.phase || app?.sdd?.phase || "");
+  const shortPhase = compactPhaseLabel(phase);
+
+  // Contatore stabile: completati + rimanenti (non X/Y che oscilla)
+  const progressText = total
+    ? doneCount === total
+      ? `${total} task completati`
+      : `${doneCount} completati · ${remaining} rimanenti`
+    : "In preparazione";
+
+  // Strip numeric/letter prefixes like "4.4 - ", "T19: ", "2.3.", "1) " from task labels
+  const rawTask = app?.autopilot?.currentTask || currentStep?.label || "";
+  const task = rawTask.replace(/^\s*[A-Za-z]?\d+(\.\d+)*\s*[-.:)]\s*/, "").trim() || rawTask;
+  // meta: solo fase — mostrata nell'em del task-card (no contatori che confondono)
+  const meta = total ? phase : "";
+  // Header: fase + task corrente
+  const headerMeta = total
+    ? task
+      ? `${phase} · ${task}`
+      : phase
+    : "Piano in preparazione";
+
   if (app.status === "error") {
     return {
-      header: `Fermo per errore - ${headerMeta}`,
+      header: `Fermo — ${headerMeta}`,
       kicker: "Errore da correggere",
       label: task || "Task non completato",
       meta,
-      short: `${shortPhase} - Task ${taskProgress}`,
+      short: `${shortPhase} — errore`,
+      doneCount,
+      remaining,
     };
   }
 
   if (app.autopilot?.running || app.status === "building") {
     return {
-      header: `Avanzamento attivo - ${headerMeta}`,
+      header: `${headerMeta}`,
       kicker: "Task corrente",
       label: task || "Preparazione piano",
       meta,
-      short: `${shortPhase} - Task ${taskProgress}`,
+      short: `${shortPhase}`,
+      doneCount,
+      remaining,
     };
   }
 
@@ -1153,34 +1234,41 @@ function projectTaskState(app) {
       kicker: "Prossimo task",
       label: task,
       meta,
-      short: app.status === "partial" || app.status === "paused" ? `${shortPhase} - in pausa` : `${shortPhase} - pronto`,
+      short: app.status === "partial" || app.status === "paused" ? `${shortPhase} — in pausa` : `${shortPhase} — pronto`,
+      doneCount,
+      remaining,
     };
   }
 
   return {
-    header: total ? `Piano completato - ${progress}` : "In attesa del piano",
+    header: total ? `Piano completato — ${total} task` : "In attesa del piano",
     kicker: total ? "Piano completato" : "Piano in preparazione",
-    label: total ? "Tutti i task risultano completati" : "In attesa del primo prompt",
-    meta: progress,
+    label: total ? "Tutti i task completati" : "In attesa del primo prompt",
+    meta: progressText,
     short: total ? "Completato" : "Pronto",
+    doneCount,
+    remaining,
   };
 }
 
 function formatPhaseLabel(value) {
+  // Restituisce il nome completo della fase (es. "Fase 4 - Polish e Deploy")
   const text = String(value || "")
     .replace(/\*\*/g, "")
     .replace(/`/g, "")
-    .replace(/\s*(?:✓|✔|âœ“|âœ”)\s*$/g, "")
+    .replace(/[✓✔]/g, "")
+    .replace(/\s*[-–:]\s*$/, "")  // rimuove trattino/due punti finali
     .replace(/\s+/g, " ")
     .trim();
 
-  return text || "Fase non definita";
+  return text || "In preparazione";
 }
 
 function compactPhaseLabel(value) {
+  // Versione breve: solo "Fase N" per spazi ridotti
   const text = formatPhaseLabel(value);
   const match = text.match(/fase\s+\d+/i);
-  return match ? match[0].replace(/^fase/i, "Fase") : text;
+  return match ? match[0].replace(/^fase/i, "Fase") : (text.slice(0, 20) || "Fase");
 }
 
 function conversationMessages(messages) {
@@ -1206,6 +1294,10 @@ function chatMessageContent(message) {
 function cleanOperationText(value, maxChars = 360) {
   const text = String(value || "")
     .replace(/\s+/g, " ")
+    // Strip task prefixes like "T20: ", "4.4 - ", "T19." at start of message
+    .replace(/^[A-Za-z]?\d+(\.\d+)*\s*[-.:)]\s*/, "")
+    .replace(/^Fase in corso:\s*/i, "")
+    .replace(/^Avanzamento automatico:\s*/i, "")
     .replace(/\bAutopilota\b/g, "Avanzamento automatico")
     .replace(/\bautopilota\b/g, "avanzamento automatico")
     .replace(/\bTask SDD\b/g, "Task")
@@ -1214,7 +1306,8 @@ function cleanOperationText(value, maxChars = 360) {
     .replace(/\bpiano SDD\b/g, "piano progetto")
     .replace(/\s+con\s+deepseek\/deepseek-v4-pro/gi, "")
     .replace(/\s+con\s+moonshotai\/kimi-k2\.6/gi, "")
-    .replace(/File aggiornati:\s*.+$/i, "File aggiornati salvati nel progetto.")
+    .replace(/\s+con\s+[\w/-]+@[\w.-]+/gi, "")
+    .replace(/File aggiornati:\s*.+$/i, "File aggiornati.")
     .trim();
 
   if (text.length <= maxChars) return text;
@@ -1269,13 +1362,32 @@ function WorkspaceShell({ app, title, subtitle, children }) {
   );
 }
 
+function cleanTaskLabel(label) {
+  return String(label || "").replace(/^\s*[A-Za-z]?\d+(\.\d+)*\s*[-.:)]\s*/, "").trim() || String(label || "");
+}
+
+function enrichStepsWithPhase(steps) {
+  // Raggruppa per fase e calcola posizione relativa alla fase
+  const phaseMap = new Map();
+  for (const step of steps) {
+    const ph = step.phase || "";
+    if (!phaseMap.has(ph)) phaseMap.set(ph, []);
+    phaseMap.get(ph).push(step);
+  }
+  return steps.map((step) => {
+    const phaseSteps = phaseMap.get(step.phase || "") || [];
+    const phaseIndex = phaseSteps.findIndex((s) => s.id === step.id) + 1;
+    return { ...step, phaseIndex, phaseTotal: phaseSteps.length, cleanLabel: cleanTaskLabel(step.label) };
+  });
+}
+
 function TasksWorkspace({ app }) {
   const steps = app?.sdd?.steps || [];
   const [doneOpen, setDoneOpen] = useState(false);
   const [todoOpen, setTodoOpen] = useState(true);
-  const indexedSteps = steps.map((step, index) => ({ ...step, number: index + 1 }));
-  const doneSteps = indexedSteps.filter((step) => step.done);
-  const todoSteps = indexedSteps.filter((step) => !step.done);
+  const enriched = enrichStepsWithPhase(steps);
+  const doneSteps = enriched.filter((step) => step.done);
+  const todoSteps = enriched.filter((step) => !step.done);
   const currentTask = todoSteps[0] || null;
   const currentPhase = formatPhaseLabel(currentTask?.phase || app?.sdd?.phase || "");
 
@@ -1291,32 +1403,32 @@ function TasksWorkspace({ app }) {
             <span>Da fare</span>
             <strong>{todoSteps.length}</strong>
           </article>
-          <article>
+          <article className="wide">
             <span>Fase attuale</span>
             <strong>{currentPhase}</strong>
           </article>
           <article>
-            <span>Task</span>
-            <strong>{currentTask ? `${currentTask.number}/${steps.length}` : `${doneSteps.length}/${steps.length}`}</strong>
+            <span>Task nella fase</span>
+            <strong>{currentTask ? `${currentTask.phaseIndex} di ${currentTask.phaseTotal}` : `${doneSteps.length > 0 ? "✓ tutti" : "—"}`}</strong>
           </article>
         </div>
 
         {currentTask && (
           <article className="current-task-summary">
-            <span>Prossimo task</span>
-            <strong>{currentTask.label}</strong>
+            <span>Prossimo task · {currentPhase} · {currentTask.phaseIndex} di {currentTask.phaseTotal}</span>
+            <strong>{currentTask.cleanLabel}</strong>
           </article>
         )}
 
         <TaskGroup title="Da fare" count={todoSteps.length} open={todoOpen} onToggle={() => setTodoOpen((value) => !value)}>
           {todoSteps.map((step, index) => (
-            <TaskRow key={`${step.id}-${step.number}`} step={step} current={index === 0} />
+            <TaskRow key={step.id} step={step} current={index === 0} />
           ))}
         </TaskGroup>
 
         <TaskGroup title="Completati" count={doneSteps.length} open={doneOpen} onToggle={() => setDoneOpen((value) => !value)}>
           {doneSteps.map((step) => (
-            <TaskRow key={`${step.id}-${step.number}`} step={step} />
+            <TaskRow key={step.id} step={step} />
           ))}
         </TaskGroup>
 
@@ -1344,13 +1456,15 @@ function TaskGroup({ title, count, open, onToggle, children }) {
 }
 
 function TaskRow({ step, current = false }) {
+  const phaseShort = compactPhaseLabel(step.phase || "");
+  const posLabel = step.phaseIndex ? `${phaseShort} · ${step.phaseIndex}/${step.phaseTotal}` : (step.done ? "Completato" : "Da fare");
   return (
     <article className={`task-list-row ${step.done ? "done" : ""} ${current ? "current" : ""}`}>
-      <span>{step.number}</span>
+      <span>{step.phaseIndex ?? "–"}</span>
       <Check size={18} />
       <div>
-        <strong>{step.label}</strong>
-        <em>{current ? "Prossimo" : step.done ? "Completato" : "Da fare"}</em>
+        <strong>{step.cleanLabel || step.label}</strong>
+        <em>{current ? `Prossimo · ${posLabel}` : step.done ? `Completato · ${posLabel}` : posLabel}</em>
       </div>
     </article>
   );
@@ -1373,14 +1487,111 @@ function FilesWorkspace({ app }) {
 }
 
 function LogWorkspace({ app, status, error, onClearLogs, busy }) {
+  if (!app) {
+    return (
+      <WorkspaceShell app={null} title="Registro attività" subtitle="">
+        <div className="panel-empty"><strong>Nessun progetto selezionato</strong></div>
+      </WorkspaceShell>
+    );
+  }
+
+  const allLog = Array.isArray(app.autopilot?.log) ? app.autopilot.log : [];
+  const steps = app?.sdd?.steps || [];
+  const doneSteps = steps.filter((s) => s.done);
+  const pendingSteps = steps.filter((s) => !s.done);
+
+  // Raggruppa task completati per fase
+  const phaseMap = new Map();
+  for (const s of doneSteps) {
+    const ph = s.phase || "Generale";
+    if (!phaseMap.has(ph)) phaseMap.set(ph, []);
+    phaseMap.get(ph).push(s.label);
+  }
+
+  const fileCount = app?.fileCount || (Array.isArray(app?.files) ? app.files.length : 0);
+  const ts = projectTaskState(app);
+  const hasError = Boolean(error || app.autopilot?.error) || app.status === "error";
+
   return (
-    <WorkspaceShell app={app} title="Registro operativo" subtitle="Cronologia tecnica di quello che LocoCode sta facendo.">
+    <WorkspaceShell app={app} title="Registro attività" subtitle={`${fileCount} file generati · ${doneSteps.length} task completati · ${pendingSteps.length} rimanenti`}>
       <div className="log-actions">
         <button className="secondary-action compact danger" disabled={busy || !app} onClick={onClearLogs}>
           Pulisci log
         </button>
       </div>
-      <OperationLog app={app} status={status} error={error} />
+
+      {hasError && app.autopilot?.error && (
+        <div className="log-error-banner">
+          <strong>{app.autopilot.error.title || "Errore"}</strong>
+          <p>{cleanOperationText(app.autopilot.error.cause, 400)}</p>
+          {app.autopilot.error.suggestion && <p className="log-suggestion">{cleanOperationText(app.autopilot.error.suggestion, 300)}</p>}
+        </div>
+      )}
+
+      <div className="log-two-col">
+        {/* Colonna sinistra: timeline eventi */}
+        <section className="log-timeline-section">
+          <h3>Timeline eventi</h3>
+          {allLog.length === 0 ? (
+            <p className="log-empty">Nessun evento registrato ancora.</p>
+          ) : (
+            <ol className="log-timeline">
+              {allLog.map((entry, i) => {
+                const msg = cleanOperationText(entry.message, 300);
+                const isPhase = /complet|avanzamento|anteprima|wireframe/i.test(msg);
+                const isError = /errore|error|fallito|non valid/i.test(msg);
+                return (
+                  <li key={`${entry.at}-${i}`} className={`log-event${isPhase ? " log-event-phase" : ""}${isError ? " log-event-error" : ""}`}>
+                    <time>{formatShortTime(entry.at)}</time>
+                    <span>{msg}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </section>
+
+        {/* Colonna destra: task per fase */}
+        <section className="log-tasks-section">
+          <h3>Task completati {doneSteps.length > 0 && <em>{doneSteps.length}/{steps.length}</em>}</h3>
+          {phaseMap.size === 0 ? (
+            <p className="log-empty">Nessun task completato ancora.</p>
+          ) : (
+            <div className="log-phase-list">
+              {[...phaseMap.entries()].map(([phase, labels]) => (
+                <div key={phase} className="log-phase-group">
+                  <strong>{formatPhaseLabel(phase)}</strong>
+                  <ul>
+                    {labels.map((label, i) => (
+                      <li key={i}><Check size={12} /><span>{label}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              {pendingSteps.length > 0 && (
+                <div className="log-phase-group log-phase-pending">
+                  <strong>Da completare</strong>
+                  <ul>
+                    {pendingSteps.map((s, i) => (
+                      <li key={i}><span className="pending-dot" /><span>{s.label}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          {Array.isArray(app?.files) && app.files.length > 0 && (
+            <div className="log-files-section">
+              <h3>File nel progetto <em>{app.files.length}</em></h3>
+              <ul className="log-file-list">
+                {app.files.map((f) => (
+                  <li key={f}><FileStack size={11} /><span>{f}</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      </div>
     </WorkspaceShell>
   );
 }
@@ -1708,16 +1919,16 @@ function formatDate(value) {
 }
 
 function livePreviewUrl(app) {
-  const base = app?.preview?.url || `/api/apps/${app?.id}/live-preview/`;
+  // Usa sempre live-preview: costruisce il frontend se disponibile,
+  // altrimenti serve il wireframe statico, altrimenti pending.
+  const base = `/api/apps/${app?.id}/live-preview/`;
   const token = localStorage.getItem(SESSION_KEY) || "";
-  if (!token) return `${API_BASE}${app?.preview?.fallbackUrl || base}`;
-
-  const separator = base.includes("?") ? "&" : "?";
-  return `${API_BASE}${base}${separator}preview_token=${encodeURIComponent(token)}`;
+  if (!token) return `${API_BASE}${base}`;
+  return `${API_BASE}${base}?preview_token=${encodeURIComponent(token)}`;
 }
 
 function emptyPreviewHtml() {
-  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#f7f5ff;color:#343b4f}.box{text-align:center;padding:28px}.box h1{margin:0 0 10px;font-size:30px}.box p{margin:0;color:#697184;font-size:16px;line-height:1.5}</style></head><body><div class="box"><h1>App in costruzione</h1><p>Il pannello si aggiorna automaticamente man mano che LocoCode costruisce la tua app.</p></div></body></html>`;
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#09091a;color:#b0b8d8}.box{text-align:center;padding:28px}.box h1{margin:0 0 10px;font-size:26px;font-weight:700;color:#eaecf8}.box p{margin:0;color:#5c6585;font-size:15px;line-height:1.6}.dot{display:inline-flex;gap:6px;margin-top:18px}.dot span{width:7px;height:7px;border-radius:50%;background:#6366f1;animation:b 1.2s ease-in-out infinite}.dot span:nth-child(2){animation-delay:.2s}.dot span:nth-child(3){animation-delay:.4s}@keyframes b{0%,80%,100%{opacity:.2}40%{opacity:1}}</style></head><body><div class="box"><h1>App in costruzione</h1><p>LocoCode sta generando la tua app in tempo reale.</p><div class="dot"><span></span><span></span><span></span></div></div></body></html>`;
 }
 
 function modelLabel(model) {
