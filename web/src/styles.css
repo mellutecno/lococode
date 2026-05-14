@@ -1662,6 +1662,21 @@ a.primary { display: inline-flex; align-items: center; justify-content: center; 
 }
 
 .settings-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.settings-optional { font-weight: 400; color: var(--muted); font-size: 11px; }
+
+.shared-key-banner {
+  padding: 13px 16px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.55;
+  border: 1px solid;
+}
+.shared-key-banner.active { background: rgba(91,62,232,0.08); border-color: rgba(91,62,232,0.22); color: var(--ink-2); }
+.shared-key-banner.active strong { color: var(--accent); }
+.shared-key-banner.subscribed { background: var(--success-soft); border-color: rgba(5,150,105,0.22); color: var(--ink-2); }
+.shared-key-banner.subscribed strong { color: var(--success); }
+.shared-key-banner.expired { background: var(--danger-soft); border-color: rgba(220,38,38,0.22); color: var(--ink-2); }
+.shared-key-banner.expired strong { color: var(--danger); }
 
 .api-check {
   margin: 0;

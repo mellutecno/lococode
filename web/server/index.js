@@ -34,6 +34,18 @@ const loginTokenTtlMs = Number(process.env.LOCOCODE_LOGIN_TOKEN_TTL_MS || 24 * 6
 const sessionTtlMs = Number(process.env.LOCOCODE_SESSION_TTL_MS || 30 * 24 * 60 * 60 * 1000);
 const heartbeatTimeoutMs = Number(process.env.LOCOCODE_HEARTBEAT_TIMEOUT_MS || 2 * 60 * 1000);
 const publicBaseUrl = String(process.env.LOCOCODE_PUBLIC_URL || "https://lococode.mellutecno.it").replace(/\/$/, "");
+const sharedOpenRouterKey = String(process.env.LOCOCODE_OPENROUTER_KEY || "").trim();
+
+// Restituisce la chiave OpenRouter da usare: personale dell'utente oppure quella condivisa del server.
+// La chiave condivisa è disponibile durante il trial (30gg dall'iscrizione) o se l'utente è abbonato.
+function resolveApiKey(user, requestedKey = "") {
+  const personal = String(requestedKey || user?.settings?.openrouterApiKey || "").trim();
+  if (personal) return personal;
+  if (!sharedOpenRouterKey) return "";
+  const trialExpiresAt = user?.trialExpiresAt;
+  const inTrial = !trialExpiresAt || new Date(trialExpiresAt) > new Date();
+  return (inTrial || user?.subscribed === true) ? sharedOpenRouterKey : "";
+}
 const runningJobs = new Map();
 const frontendBuilds = new Map();
 
@@ -212,7 +224,22 @@ app.post("/api/heartbeat", async (req, res) => {
 app.get("/api/settings", async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
-  res.json(await loadSettings(user));
+  const settings = await loadSettings(user);
+  const trialExpiresAt = user.trialExpiresAt || null;
+  const isSubscribed = user.subscribed === true;
+  const trialDaysLeft = trialExpiresAt && !isSubscribed
+    ? Math.max(0, Math.ceil((new Date(trialExpiresAt) - new Date()) / 86400000))
+    : null;
+  const hasPersonalKey = !!settings.openrouterApiKey;
+  const sharedAvailable = !!sharedOpenRouterKey;
+  const usingSharedKey = !hasPersonalKey && sharedAvailable && (isSubscribed || (trialDaysLeft === null ? false : trialDaysLeft > 0));
+  res.json({
+    ...settings,
+    sharedKeyAvailable: sharedAvailable,
+    usingSharedKey,
+    trialDaysLeft,
+    isSubscribed,
+  });
 });
 
 app.post("/api/settings", async (req, res) => {
@@ -241,11 +268,11 @@ app.post("/api/check-openrouter", async (req, res) => {
   if (!user) return;
 
   const settings = await loadSettings(user);
-  const apiKey = String(req.body.openrouterApiKey || settings.openrouterApiKey || "").trim();
+  const apiKey = resolveApiKey(user, req.body.openrouterApiKey || settings.openrouterApiKey);
   const model = normalizeModelId(req.body.model || settings.defaultModel || commonModels[0]);
 
   if (!apiKey) {
-    res.status(400).json({ ok: false, error: "API key mancante." });
+    res.status(400).json({ ok: false, error: "API key non disponibile. Inseriscila nelle impostazioni o abbonati." });
     return;
   }
 
@@ -367,11 +394,14 @@ app.post("/api/generate", async (req, res) => {
 
   const settings = await loadSettings(user);
   const model = requestedModel || settings.defaultModel || commonModels[0];
-  const apiKey = String(req.body.openrouterApiKey || settings.openrouterApiKey || "").trim();
+  const apiKey = resolveApiKey(user, req.body.openrouterApiKey || settings.openrouterApiKey);
 
   if (!apiKey) {
+    const trialExpired = user.trialExpiresAt && new Date(user.trialExpiresAt) < new Date();
     res.status(400).json({
-      error: "API key OpenRouter mancante. Salvala nelle impostazioni prima di generare.",
+      error: trialExpired
+        ? "Il tuo trial di 30 giorni è scaduto. Abbonati per continuare a usare la chiave condivisa, oppure inserisci la tua API key OpenRouter nelle impostazioni."
+        : "API key OpenRouter non disponibile. Inseriscila nelle impostazioni o riprova più tardi.",
     });
     return;
   }
@@ -612,11 +642,14 @@ async function startAutopilotRequest(req, res) {
   }
 
   const model = normalizeModelId(req.body.model || target.model || settings.defaultModel || commonModels[0]);
-  const apiKey = String(req.body.openrouterApiKey || settings.openrouterApiKey || "").trim();
+  const apiKey = resolveApiKey(user, req.body.openrouterApiKey || settings.openrouterApiKey);
 
   if (!apiKey) {
+    const trialExpired = user.trialExpiresAt && new Date(user.trialExpiresAt) < new Date();
     res.status(400).json({
-      error: "API key OpenRouter mancante. Salvala nelle impostazioni prima di continuare.",
+      error: trialExpired
+        ? "Il tuo trial è scaduto. Abbonati per continuare a usare la chiave condivisa, oppure inserisci la tua API key OpenRouter."
+        : "API key OpenRouter non disponibile. Inseriscila nelle impostazioni.",
     });
     return;
   }
@@ -2526,6 +2559,8 @@ function findOrCreateUser(store, email) {
     email,
     createdAt: now,
     updatedAt: now,
+    trialExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    subscribed: false,
     settings: {
       openrouterApiKey: "",
       defaultModel: commonModels[0],

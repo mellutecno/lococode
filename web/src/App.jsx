@@ -59,6 +59,7 @@ export default function App() {
   const [chatPrompt, setChatPrompt] = useState("");
   const [model, setModel] = useState(COMMON_MODELS[0]);
   const [apiKey, setApiKey] = useState("");
+  const [sharedKeyInfo, setSharedKeyInfo] = useState({ available: false, using: false, trialDaysLeft: null, isSubscribed: false });
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Pronto");
   const [error, setError] = useState("");
@@ -168,6 +169,12 @@ Questa azione è irreversibile.`)) return;
     const appData = await readApiJson(appsResponse);
     setApiKey(settings.openrouterApiKey || "");
     setModel(settings.defaultModel || COMMON_MODELS[0]);
+    setSharedKeyInfo({
+      available: settings.sharedKeyAvailable || false,
+      using: settings.usingSharedKey || false,
+      trialDaysLeft: settings.trialDaysLeft ?? null,
+      isSubscribed: settings.isSubscribed || false,
+    });
     setApps(appData.apps || []);
     if (nextSelectedId) setSelectedAppId(nextSelectedId);
     else if (appData.apps?.[0]) setSelectedAppId(appData.apps[0].id);
@@ -526,6 +533,7 @@ Questa azione è irreversibile.`)) return;
             onSave={saveSettings}
             onTest={testApiConnection}
             apiCheck={apiCheck}
+            sharedKeyInfo={sharedKeyInfo}
           />
         )}
 
@@ -1851,14 +1859,33 @@ function SddPanel({ app }) {
   );
 }
 
-function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiCheck }) {
+function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiCheck, sharedKeyInfo }) {
+  const { available, using, trialDaysLeft, isSubscribed } = sharedKeyInfo || {};
+  const trialExpired = trialDaysLeft !== null && trialDaysLeft === 0 && !isSubscribed;
+  const trialActive = available && using && trialDaysLeft > 0 && !isSubscribed;
+
   return (
     <div className="settings-view">
       <section className="settings-card">
         <h1>Impostazioni</h1>
+
+        {available && (
+          <div className={`shared-key-banner ${trialExpired ? "expired" : trialActive ? "active" : "subscribed"}`}>
+            {isSubscribed && <><strong>Abbonato</strong> — stai usando la chiave OpenRouter condivisa LocoCode.</>}
+            {trialActive && <><strong>Trial attivo</strong> — chiave condivisa disponibile per {trialDaysLeft} {trialDaysLeft === 1 ? "giorno" : "giorni"} ancora. Nessuna configurazione richiesta.</>}
+            {trialExpired && <><strong>Trial scaduto.</strong> Abbonati per continuare a usare la chiave condivisa, oppure inserisci la tua API key.</>}
+            {!trialActive && !trialExpired && !isSubscribed && <>Chiave condivisa disponibile.</>}
+          </div>
+        )}
+
         <label>
-          API key OpenRouter
-          <input value={apiKey} onChange={(event) => setApiKey(event.target.value)} type="password" />
+          API key personale OpenRouter <span className="settings-optional">(opzionale — sovrascrive la chiave condivisa)</span>
+          <input
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            type="password"
+            placeholder={using ? "Lascia vuoto per usare la chiave condivisa" : "sk-or-..."}
+          />
         </label>
         <label>
           Modello predefinito
