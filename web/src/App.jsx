@@ -692,6 +692,7 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
             <div
               key={app.id}
               className={`project-tile ${selectedApp?.id === app.id ? "selected" : ""}`}
+              data-status={app.status || "idle"}
               onClick={() => {
                 setSelectedAppId(app.id);
                 setActiveView("chat");
@@ -717,7 +718,13 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
               </div>
             </div>
           ))}
-          {currentUser && !apps.length && <p className="empty">Nessun progetto ancora.</p>}
+          {currentUser && !apps.length && (
+            <div className="projects-empty-state">
+              <div className="projects-empty-icon"><FolderKanban size={36} /></div>
+              <strong>Nessun progetto ancora</strong>
+              <span>Crea il tuo primo progetto con il pulsante "Nuovo progetto"</span>
+            </div>
+          )}
         </div>
       </section>
     </div>
@@ -1166,22 +1173,58 @@ function OperationLog({ app, status, error, compact = false }) {
 function ProjectPanelContent({ projectPanel, app, fullscreen = false }) {
   if (projectPanel === "preview") {
     const previewUrl = app ? livePreviewUrl(app) : "";
+    const isBuilding = app?.autopilot?.running || app?.status === "building";
+    const buildVersion = app?.preview?.buildVersion || 0;
 
     return (
       <div className={`phone-preview ${fullscreen ? "phone-preview-fullscreen" : ""}`}>
+        {isBuilding && (
+          <div className="preview-building-badge">
+            <span className="spin" style={{ display: "inline-block", width: 12, height: 12 }}>⟳</span>
+            {buildVersion > 0 ? `Preview v${buildVersion} — aggiornamento in corso…` : "Costruzione app in corso…"}
+          </div>
+        )}
         <div className="phone-device" aria-label="Applicazione">
+          {/* Status bar */}
+          <div className="phone-statusbar">
+            <span className="phone-status-time">9:41</span>
+            <div className="phone-dynamic-island" />
+            <div className="phone-status-icons">
+              {/* Signal */}
+              <svg width="17" height="12" viewBox="0 0 17 12" fill="#1c1c1e">
+                <rect x="0" y="7" width="3" height="5" rx="0.5" opacity="0.35"/>
+                <rect x="4.5" y="4.5" width="3" height="7.5" rx="0.5" opacity="0.55"/>
+                <rect x="9" y="2" width="3" height="10" rx="0.5" opacity="0.75"/>
+                <rect x="13.5" y="0" width="3" height="12" rx="0.5"/>
+              </svg>
+              {/* WiFi */}
+              <svg width="16" height="12" viewBox="0 0 16 12" fill="#1c1c1e">
+                <path d="M8 9.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>
+                <path d="M8 5.5C9.9 5.5 11.6 6.3 12.8 7.5l1.4-1.4C12.6 4.4 10.4 3.5 8 3.5s-4.6.9-6.2 2.6L3.2 7.5C4.4 6.3 6.1 5.5 8 5.5z" opacity="0.65"/>
+                <path d="M8 1.5C11 1.5 13.7 2.7 15.6 4.7L17 3.3C14.7 1 11.5 0 8 0S1.3 1 -1 3.3L.4 4.7C2.3 2.7 5 1.5 8 1.5z" opacity="0.35"/>
+              </svg>
+              {/* Battery */}
+              <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
+                <rect x="0.5" y="0.5" width="21" height="11" rx="2.5" stroke="#1c1c1e" strokeOpacity="0.35"/>
+                <rect x="22" y="3.5" width="2.5" height="5" rx="1.25" fill="#1c1c1e" fillOpacity="0.35"/>
+                <rect x="2" y="2" width="16" height="8" rx="1.5" fill="#1c1c1e"/>
+              </svg>
+            </div>
+          </div>
+          {/* Screen */}
           <div className="phone-screen">
             {previewUrl ? (
               <iframe
-                key={`${app.id}-${app.status}-${app.preview?.hasLiveBuild ? "live" : "fallback"}`}
-                className={fullscreen ? "fullscreen-iframe" : ""}
+                key={`${app.id}-v${buildVersion}-${app.preview?.hasLiveBuild ? "live" : "fallback"}`}
                 title="App"
                 src={previewUrl}
               />
             ) : (
-              <iframe className={fullscreen ? "fullscreen-iframe" : ""} title="App" srcDoc={emptyPreviewHtml()} />
+              <iframe title="App" srcDoc={emptyPreviewHtml()} />
             )}
           </div>
+          {/* Home indicator */}
+          <div className="phone-home-bar" />
         </div>
       </div>
     );

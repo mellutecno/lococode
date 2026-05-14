@@ -1,20 +1,20 @@
 /* ─── Design tokens ─────────────────────────────────────────── */
 :root {
-  --bg:              #e9ecf4;
-  --stage:           #edf0f8;
-  --surface:         #f8f9fd;
-  --surface-2:       #f1f3fa;
-  --surface-3:       #eaecf6;
-  --surface-hover:   #f0f2fb;
-  --ink:             #0a0d1c;
-  --ink-2:           #252d4a;
-  --muted:           #68748f;
-  --line:            rgba(10,18,60,0.08);
-  --line-strong:     rgba(10,18,60,0.14);
+  --bg:              #dfe3f2;
+  --stage:           #e8ecf6;
+  --surface:         #ffffff;
+  --surface-2:       #f4f6ff;
+  --surface-3:       #eceffe;
+  --surface-hover:   #f8f9ff;
+  --ink:             #080b1a;
+  --ink-2:           #1e2540;
+  --muted:           #60708a;
+  --line:            rgba(10,18,60,0.09);
+  --line-strong:     rgba(10,18,60,0.16);
   --accent:          #5b3ee8;
   --accent-2:        #7c5af0;
   --accent-hover:    #4a30cc;
-  --accent-soft:     rgba(91,62,232,0.08);
+  --accent-soft:     rgba(91,62,232,0.09);
   --accent-ink:      #3a1ea8;
   --brand-gradient:  linear-gradient(135deg, #5b3ee8 0%, #7c5af0 52%, #a855f7 100%);
   --success:         #059669;
@@ -22,10 +22,10 @@
   --danger:          #dc2626;
   --danger-soft:     rgba(220,38,38,0.07);
   --warning-soft:    rgba(217,119,6,0.08);
-  --shadow:          0 1px 3px rgba(10,14,40,0.08), 0 8px 28px rgba(10,14,40,0.07);
-  --shadow-soft:     0 1px 2px rgba(10,14,40,0.05), 0 3px 10px rgba(10,14,40,0.04);
-  --shadow-lg:       0 4px 8px rgba(10,14,40,0.06), 0 20px 56px rgba(10,14,40,0.12);
-  --shadow-accent:   0 4px 20px rgba(91,62,232,0.3);
+  --shadow:          0 2px 4px rgba(10,14,40,0.06), 0 12px 36px rgba(10,14,40,0.09);
+  --shadow-soft:     0 1px 3px rgba(10,14,40,0.05), 0 4px 14px rgba(10,14,40,0.05);
+  --shadow-lg:       0 6px 14px rgba(10,14,40,0.08), 0 28px 72px rgba(10,14,40,0.14);
+  --shadow-accent:   0 4px 20px rgba(91,62,232,0.32);
   --radius-lg:       18px;
   --radius-md:       12px;
   --radius-sm:       8px;
@@ -68,12 +68,13 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   top: 0;
   height: 100vh;
   padding: 16px 10px;
-  background: #0d1017;
+  background: linear-gradient(180deg, #100d22 0%, #0d1017 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
   z-index: 10;
+  border-right: 1px solid rgba(255,255,255,0.04);
 }
 
 .rail-logo {
@@ -124,9 +125,11 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  background: var(--stage);
   display: flex;
   flex-direction: column;
+  background:
+    linear-gradient(168deg, rgba(91,62,232,0.18) 0%, rgba(91,62,232,0.0) 340px),
+    var(--stage);
 }
 
 /* ─── App header ─────────────────────────────────────────────── */
@@ -134,9 +137,9 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   height: 62px;
   flex: 0 0 auto;
   border-bottom: 1px solid var(--line);
-  background: rgba(248,249,253,0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255,255,255,0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   display: grid;
   grid-template-columns: minmax(200px,1fr) minmax(180px,auto) auto;
   align-items: center;
@@ -285,9 +288,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  background:
-    radial-gradient(ellipse 90% 55% at 50% -5%, rgba(91,62,232,0.13) 0%, transparent 68%),
-    var(--stage);
+  background: transparent; /* inherits main-stage gradient */
 }
 
 .hero-block {
@@ -514,9 +515,10 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   width: min(1120px,100%);
   margin: 0 auto;
   border: 1px solid var(--line);
+  border-top: 4px solid var(--accent);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: var(--shadow);
+  box-shadow: 0 4px 6px rgba(10,14,40,0.04), 0 20px 60px rgba(10,14,40,0.1);
   padding: 28px;
   display: grid;
   gap: 20px;
@@ -542,8 +544,11 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   font-size: 34px;
   font-weight: 800;
   line-height: 1;
-  color: var(--ink);
   letter-spacing: -0.02em;
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .projects-head .primary { display: inline-flex; align-items: center; gap: 7px; }
@@ -589,51 +594,83 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 /* ─── Project tile ───────────────────────────────────────────── */
 .project-tile {
   position: relative;
-  min-height: 118px;
+  min-height: 120px;
   border: 1.5px solid var(--line);
+  border-left: 4px solid var(--line-strong);
   border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--ink);
   text-align: left;
-  padding: 16px;
+  padding: 16px 16px 14px 16px;
   display: grid;
   align-content: start;
   gap: 5px;
   cursor: pointer;
   overflow: hidden;
   box-shadow: var(--shadow-soft);
-  transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s, background 0.18s;
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.18s;
 }
-
-.project-tile::after {
-  content: "";
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: var(--brand-gradient);
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.project-tile:hover::after { opacity: 1; }
 
 .project-tile:hover {
   border-color: rgba(91,62,232,0.3);
-  box-shadow: 0 6px 24px rgba(91,62,232,0.1), 0 2px 6px rgba(12,15,40,0.06);
+  border-left-color: var(--accent);
+  box-shadow: 0 6px 28px rgba(91,62,232,0.12), 0 2px 6px rgba(12,15,40,0.06);
   transform: translateY(-3px);
-  background: var(--surface-hover);
 }
 
 .project-tile.selected {
-  border-color: rgba(91,62,232,0.5);
-  background: rgba(91,62,232,0.04);
+  border-color: rgba(91,62,232,0.4);
+  border-left-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(91,62,232,0.1);
 }
 
+/* Status-based left border colors */
+.project-tile[data-status="ready"] { border-left-color: var(--success); }
+.project-tile[data-status="running"],
+.project-tile[data-status="queued"] { border-left-color: var(--accent); }
+.project-tile[data-status="error"] { border-left-color: var(--danger); }
+
 .project-tile.auth-item {
   border: 1.5px dashed var(--line-strong);
+  border-left: 1.5px dashed var(--line-strong);
   background: var(--surface-2);
+}
+
+/* ─── Projects empty state ───────────────────────────────────── */
+.projects-empty-state {
+  grid-column: 1 / -1;
+  padding: 56px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.projects-empty-icon {
+  width: 76px;
+  height: 76px;
+  border-radius: 22px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 18px rgba(91,62,232,0.15);
+  margin-bottom: 4px;
+}
+
+.projects-empty-state strong {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.projects-empty-state span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  max-width: 280px;
+  line-height: 1.5;
 }
 
 .project-tile strong { font-size: 15px; font-weight: 700; line-height: 1.3; color: var(--ink); }
@@ -726,7 +763,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 }
 
 .chat-panel {
-  background: linear-gradient(180deg, var(--surface) 0%, rgba(248,249,253,0.96) 100%);
+  background: var(--surface);
 }
 
 .orchestrator-panel { gap: 8px; }
@@ -1059,53 +1096,148 @@ a.primary { display: inline-flex; align-items: center; justify-content: center; 
   flex: 1;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 12px;
+  gap: 8px;
   overflow: hidden;
 }
 
+.preview-building-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  background: rgba(91,62,232,0.1);
+  border: 1px solid rgba(91,62,232,0.2);
+  color: var(--accent-ink);
+  padding: 5px 13px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ── iPhone shell ──────────────────────────────── */
 .phone-device {
   position: relative;
-  width: 320px;
+  /* iPhone 15 Pro: 393×852 → 9:19.5, height-driven in containers */
+  height: calc(100% - 8px);
+  max-height: 680px;
+  width: auto;
+  aspect-ratio: 9 / 19.5;
   max-width: 100%;
-  height: 100%;
-  max-height: 620px;
-  border-radius: 36px;
-  border: 8px solid #1a1a2e;
-  background: white;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.25), inset 0 0 0 1px rgba(255,255,255,0.1);
-  overflow: hidden;
+  border-radius: 46px;
+  /* silver aluminum frame — matches reference mockup */
+  background: linear-gradient(160deg, #e8e8ee 0%, #d0d0da 40%, #bebec8 70%, #d4d4de 100%);
+  padding: 4px;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.85),
+    0 0 0 1.5px rgba(140,140,160,0.5),
+    0 24px 48px rgba(0,0,0,0.18),
+    0 6px 14px rgba(0,0,0,0.10),
+    inset 0 1.5px 0 rgba(255,255,255,1),
+    inset 0 -1px 0 rgba(160,160,180,0.6);
   display: flex;
   flex-direction: column;
 }
 
+/* Inner screen container — white with rounded corners */
+.phone-device > * { position: relative; z-index: 1; }
+
+.phone-statusbar,
+.phone-screen,
+.phone-home-bar { background: #fff; }
+
+.phone-statusbar:first-child {
+  border-radius: 42px 42px 0 0;
+  overflow: hidden;
+}
+.phone-home-bar:last-child {
+  border-radius: 0 0 42px 42px;
+  overflow: hidden;
+}
+
+/* ── Status bar (white bg, dark icons — like the reference) ── */
+.phone-statusbar {
+  flex-shrink: 0;
+  height: 50px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: flex-end;
+  padding: 0 22px 8px;
+}
+.phone-status-time {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1c1c1e;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+.phone-dynamic-island {
+  width: 88px;
+  height: 30px;
+  background: #000;
+  border-radius: 999px;
+  margin-bottom: 2px;
+}
+.phone-status-icons {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+/* Dark icons for light status bar */
+.phone-status-icons svg { fill: #1c1c1e; }
+.phone-status-icons svg path { fill: #1c1c1e; }
+
+/* ── Screen ─────────────────────────────────────── */
 .phone-screen {
   flex: 1;
   min-height: 0;
-  width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+.phone-screen iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* 20px wider than container → scrollbar pushed outside overflow:hidden */
+  width: calc(100% + 20px);
+  height: 100%;
   border: 0;
-  border-radius: 0;
-  background: white;
 }
 
-.phone-home-indicator {
-  height: 20px;
+/* ── Home bar ───────────────────────────────────── */
+.phone-home-bar {
+  flex-shrink: 0;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
 }
-.phone-home-indicator::after {
+.phone-home-bar::after {
   content: "";
-  width: 80px;
+  width: 112px;
   height: 4px;
   border-radius: 999px;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0,0,0,0.18);
 }
 
-.phone-preview-fullscreen { width: 100%; height: 100%; }
-.phone-preview-fullscreen .phone-device { width: 100%; max-width: 420px; max-height: 100%; border-radius: 0; border: 0; box-shadow: none; }
+.phone-preview-fullscreen {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+}
+.phone-preview-fullscreen .phone-device {
+  /* Height-driven: fills the panel, width calculated from aspect-ratio */
+  height: 100%;
+  width: auto;
+  max-width: none;
+  max-height: 100%;
+}
+.phone-preview-fullscreen .phone-device::before,
+.phone-preview-fullscreen .phone-device::after { display: none; }
 
 .preview-panel iframe {
   flex: 1;
@@ -1580,7 +1712,8 @@ a.primary { display: inline-flex; align-items: center; justify-content: center; 
 .fullscreen-card > iframe,
 .fullscreen-card > .sdd-documents,
 .fullscreen-card > .file-browser,
-.fullscreen-card > .data-panel { flex: 1; min-height: 0; }
+.fullscreen-card > .data-panel,
+.fullscreen-card > .phone-preview { flex: 1; min-height: 0; }
 
 .fullscreen-card > .sdd-documents { grid-template-columns: 260px minmax(0,1fr); overflow: hidden; }
 .fullscreen-card > iframe { width: 100%; border: 1px solid var(--line); border-radius: var(--radius-md); background: white; }

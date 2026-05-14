@@ -48,6 +48,7 @@ function resolveApiKey(user, requestedKey = "") {
 }
 const runningJobs = new Map();
 const frontendBuilds = new Map();
+const previewBuildTimers = new Map(); // debounce timer per incrementale live-preview
 
 const commonModels = [
   "deepseek/deepseek-v4-pro",
@@ -326,6 +327,29 @@ app.get("/api/apps", async (req, res) => {
   }
   await saveApps(apps, user);
   res.json({ apps: apps.map(publicApp) });
+
+  // Avvia in background la build del frontend per app completate o parziali che non hanno ancora
+  // il live build. Garantisce che dopo ogni riavvio del server le preview vengano ricostruite.
+  for (const target of apps) {
+    if (
+      (target.status === "ready" || target.status === "partial") &&
+      !target.autopilot?.running &&
+      target.preview?.hasFrontend &&
+      !target.preview?.hasLiveBuild
+    ) {
+      ensureFrontendPreviewBuild(target)
+        .then(async (built) => {
+          if (built) {
+            const newPreview = await resolvePreviewState(target, target.files || []);
+            newPreview.buildVersion = (target.preview?.buildVersion || 0) + 1;
+            target.preview = newPreview;
+            await saveApps(apps, user).catch(() => {});
+            console.log(`[preview] Build in background completata per ${target.id} (${target.name})`);
+          }
+        })
+        .catch(() => {});
+    }
+  }
 });
 
 function recoverStaleAutopilot(target) {
@@ -796,10 +820,19 @@ async function publicAppRequest(req, res) {
 }
 
 const distDir = path.join(rootDir, "dist");
-app.use(express.static(distDir));
+app.use(express.static(distDir, {
+  etag: false,
+  lastModified: false,
+  setHeaders(res) {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+  },
+}));
 app.use(async (_req, res, next) => {
   try {
     await fs.access(path.join(distDir, "index.html"));
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(path.join(distDir, "index.html"));
   } catch {
     next();
@@ -861,6 +894,18 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
   try {
     await saveProgress(mode === "initial" ? "Preparazione piano operativo" : target.sdd?.currentStep?.label || "Prossimo task");
 
+    // Recupero wireframe: se manca preview/index.html (bug formato passato), generalo subito
+    if (mode !== "initial") {
+      const existingWireframe = await readProjectFile(target, "preview/index.html");
+      if (!existingWireframe.toLowerCase().includes("<!doctype")) {
+        appendOperationalLog(target, "Wireframe mancante — generazione in corso...");
+        await generateWireframePreview({ target, apiKey, model, userPrompt });
+        await refreshProjectState(target);
+        target.preview = { ...target.preview, buildVersion: (target.preview?.buildVersion || 0) + 1 };
+        await saveApps(apps, user);
+      }
+    }
+
     if (mode === "initial") {
       const result = await runOrchestratorTurn({
         target,
@@ -876,6 +921,8 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
         return;
       }
       pushAssistantMessage(target, result.summary);
+      // Scaffolding iniziale completato: avvia prima build preview in background
+      schedulePreviewBuild(target, apps, user, 6000);
     } else if (mode === "change") {
       await saveProgress("Applicazione modifica richiesta");
       const result = await runOrchestratorTurn({
@@ -887,6 +934,9 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
         onProgress: async () => saveProgress("Modifica applicata"),
       });
       pushAssistantMessage(target, result.summary);
+      if (result.touched?.some(f => f.startsWith("frontend/"))) {
+        schedulePreviewBuild(target, apps, user, 4000);
+      }
     }
 
     await refreshProjectState(target);
@@ -917,6 +967,11 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
 
       pushAssistantMessage(target, result.summary);
       await refreshProjectState(target);
+
+      // Lovable-style: build incrementale in background ogni volta che il frontend cambia
+      if (result.touched?.some(f => f.startsWith("frontend/"))) {
+        schedulePreviewBuild(target, apps, user, 4000);
+      }
 
       const stopReasonAfter = await shouldStopAutopilot(user, appId);
       if (stopReasonAfter) {
@@ -1316,11 +1371,11 @@ ${arch}
 
 Prompt originale: ${userPrompt}
 
-Restituisci SOLO il blocco file nel formato:
-<<<preview/index.html
+Restituisci SOLO il file nel formato fenced code block:
+\`\`\`preview/index.html
 <!doctype html>
 ...
->>>`;
+\`\`\``;
 
     const aiText = await callOpenRouter({
       apiKey,
@@ -1334,6 +1389,13 @@ Restituisci SOLO il blocco file nel formato:
     const ops = parseOperations(aiText);
     if (ops.length) {
       await applyOperations(target, ops);
+    } else {
+      // Fallback: estrai HTML grezzo dalla risposta o genera un wireframe minimale
+      const htmlMatch = aiText.match(/<!doctype html[\s\S]*?<\/html>/i);
+      const html = htmlMatch
+        ? htmlMatch[0]
+        : `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>${target.name || "App"}</title><style>body{font-family:sans-serif;background:#f8f9fa;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;color:#333}.card{background:#fff;border-radius:12px;padding:32px 40px;box-shadow:0 4px 24px rgba(0,0,0,.1);text-align:center;max-width:340px}.badge{margin-top:24px;padding:6px 14px;background:#fff9c4;border-radius:20px;font-size:.75rem;color:#666}</style></head><body><div class="card"><h2>${target.name || "App"}</h2><p style="color:#888;font-size:.9rem">La tua app è in costruzione</p><div class="badge">🔨 In costruzione...</div></div></body></html>`;
+      await writeProjectFile(target, "preview/index.html", html);
     }
   } catch (err) {
     // Il wireframe è opzionale — non bloccare il build se fallisce
@@ -1472,6 +1534,9 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       appendOperationalLog(target, "Genero anteprima visiva dell'app...");
       await generateWireframePreview({ target, apiKey, model, userPrompt });
       await refreshProjectState(target);
+      // Incrementa buildVersion: il client rileva il cambio nel polling (2.4s)
+      // e ricarica l'iframe mostrando il wireframe appena scritto.
+      target.preview = { ...target.preview, buildVersion: (target.preview?.buildVersion || 0) + 1 };
       await onProgress?.(phase.label);
     }
 
@@ -1720,8 +1785,10 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "File obbligatori da restituire:",
     "- frontend/package.json",
     "- frontend/index.html",
+    "- frontend/tailwind.config.js",
+    "- frontend/postcss.config.js",
     "- frontend/src/App.jsx",
-    "- frontend/src/styles.css",
+    "- frontend/src/index.css (con @tailwind base/components/utilities + @import Inter + variabili CSS)",
     "- preview/index.html (fallback, non sostituisce il frontend reale)",
     "- .lc/spec/tasks.md",
     "- .lc/memory/project_context.md",
@@ -1733,23 +1800,28 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "FONDAMENTALE - Chiamate API: usa SEMPRE const API = import.meta.env.VITE_API_URL || ''; poi chiama fetch(API + '/endpoint'). Non scrivere mai localhost, 127.0.0.1 o porte hardcoded. VITE_API_URL viene iniettato da LocoCode al build e punta al backend reale.",
     "preview/index.html serve solo da fallback statico se il frontend vero non e ancora pronto.",
     "",
-    "QUALITA' VISIVA OBBLIGATORIA — il frontend DEVE avere un design professionale e curato, stile Vercel/Linear/Notion:",
-    "- Definisci CSS variables in :root: --primary:#4F46E5; --primary-dark:#3730A3; --accent:#7C3AED; --bg:#F8FAFC; --surface:#FFFFFF; --text:#0F172A; --text-muted:#64748B; --border:#E2E8F0; --radius:10px; --shadow:0 2px 12px rgba(0,0,0,.08);",
-    "- Sfondo pagina: var(--bg) chiaro. Contenuto su card bianche: background var(--surface), border-radius var(--radius), box-shadow var(--shadow), padding 20-24px.",
-    "- Layout con sidebar di navigazione sinistra (220-240px) con logo, nome app e voci menu con icone SVG inline. Contenuto principale a destra in colonna.",
-    "- Tipografia: font-family: 'Inter', system-ui, sans-serif. Titoli sezione 20-24px 700. Sottotitoli 14-15px 500 color var(--text-muted). Corpo 14px.",
-    "- Tabelle: thead background var(--primary) color white, righe tbody alternate (#F8FAFC / white), hover background #EEF2FF, bordi sottili.",
-    "- Pulsanti primari: background var(--primary), color white, border-radius 8px, padding 9px 18px, font-weight 600, hover background var(--primary-dark), transition 0.15s.",
-    "- Input e select: border 1px solid var(--border), border-radius 8px, padding 9px 12px, focus outline 2px solid var(--primary), focus border-color transparent.",
-    "- Badge di stato: verde #DCFCE7 testo #15803D, arancione #FEF9C3 testo #92400E, rosso #FEE2E2 testo #991B1B, grigi #F1F5F9 testo #475569. Border-radius 6px, padding 3px 10px, font-size 12px font-weight 600.",
-    "- Almeno 5 sezioni navigabili (sidebar menu) con contenuto realistico per ogni sezione: lista con dati fittizi ma plausibili, non placeholder generici.",
-    "- KPI o statistiche in evidenza nella dashboard principale: 3-4 numeri grandi in card colorate in cima.",
-    "- Microinterazioni: hover su righe tabella, pulsanti con cursor:pointer, link sottolineati al hover, transizioni 0.15s ease.",
+    "QUALITA' VISIVA OBBLIGATORIA — il frontend DEVE avere un design professionale e curato, stile Vercel/Linear/Notion. Un utente DEVE volerla usare subito senza modifiche.",
+    "USA TAILWIND CSS con classi utilitarie direttamente nei JSX. Ogni componente deve avere classi Tailwind complete e dettagliate.",
+    "STRUTTURA VISIVA OBBLIGATORIA:",
+    "- Sfondo pagina: bg-slate-50 o bg-gray-50. Card contenuto: bg-white rounded-xl shadow-sm border border-slate-200 p-6.",
+    "- Layout: flex con sidebar sinistra fissa (w-56 o w-64) bg-white border-r border-slate-200, contenuto principale flex-1 overflow-auto p-6.",
+    "- Sidebar: logo + nome app in alto (font-bold text-indigo-600), voci menu con icone lucide-react, active state bg-indigo-50 text-indigo-700 font-medium, hover:bg-slate-50.",
+    "- Tipografia: font-family Inter via @import in index.css. Titoli text-xl font-bold text-slate-900. Sottotitoli text-sm text-slate-500. Corpo text-sm text-slate-700.",
+    "- Pulsanti primari: bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors. Secondari: border border-slate-300 hover:bg-slate-50.",
+    "- Input/select: w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent.",
+    "- Tabelle: thead bg-slate-50 testo text-xs font-semibold text-slate-500 uppercase tracking-wider. Righe hover:bg-slate-50. Bordi divide-y divide-slate-200.",
+    "- Badge: inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold. Verde: bg-green-100 text-green-800. Rosso: bg-red-100 text-red-800. Giallo: bg-yellow-100 text-yellow-800. Grigio: bg-slate-100 text-slate-600.",
+    "- KPI dashboard: grid grid-cols-2 md:grid-cols-4 gap-4. Ogni card: bg-white rounded-xl p-4 border border-slate-200. Numero: text-2xl font-bold text-indigo-600. Label: text-xs text-slate-500 uppercase.",
+    "- Almeno 5 sezioni navigabili con dati fittizi realistici, non placeholder generici.",
+    "- Microinterazioni: transition-colors su tutti i pulsanti/link, cursor-pointer, ring su focus, hover su righe tabella.",
+    "- Importa font Inter in index.css: @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'); body { font-family: 'Inter', system-ui, sans-serif; }",
     "",
-    "DIPENDENZE OBBLIGATORIE - frontend/package.json deve contenere ESATTAMENTE queste dipendenze (niente di piu):",
-    "  dependencies: react ^18, react-dom ^18",
-    "  devDependencies: @vitejs/plugin-react ^4, vite ^5",
-    "NON usare: react-router-dom, axios, recharts, date-fns, moment, chart.js, lodash, react-query o qualsiasi altra libreria esterna.",
+    "DIPENDENZE OBBLIGATORIE - frontend/package.json deve contenere ESATTAMENTE queste dipendenze e nient'altro:",
+    "  dependencies: { \"react\": \"^18\", \"react-dom\": \"^18\", \"lucide-react\": \"^0.400.0\" }",
+    "  devDependencies: { \"@vitejs/plugin-react\": \"^4\", \"vite\": \"^5\", \"tailwindcss\": \"^3\", \"autoprefixer\": \"^10\", \"postcss\": \"^8\" }",
+    "DEVI SEMPRE includere tailwind.config.js, postcss.config.js e @tailwind base/components/utilities in src/index.css.",
+    "LIBRERIE VIETATE — non aggiungere mai a dependencies: @heroicons/react, @headlessui/react, @radix-ui/*, framer-motion, react-router-dom, react-router, recharts, chart.js, date-fns, moment, lodash, axios, react-query, @tanstack/*, zustand, jotai, redux.",
+    "ICONE: usa SOLO lucide-react. NON importare @heroicons/react o qualsiasi altro pacchetto icone. lucide-react e gia installato e disponibile.",
     "PER LA NAVIGAZIONE: usa React useState per mostrare/nascondere sezioni (es. setPage('clienti')), non react-router.",
     "PER LE DATE: usa new Date().toLocaleDateString('it-IT') nativo, non date-fns.",
     "PER I GRAFICI: usa SVG inline o barre CSS pure, non recharts o chart.js.",
@@ -1802,7 +1874,8 @@ function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, 
     "- Se il task richiede backend, aggiorna backend/app/main.py e requirements.txt.",
     "- Se il task cambia la UI, aggiorna frontend/src/ e i file coinvolti.",
     "- Aggiorna preview/index.html solo come fallback statico se il frontend reale non e ancora pronto.",
-    "- QUALITA' VISIVA: se il task riguarda la UI o il frontend, mantieni il design professionale gia stabilito (CSS variables, card bianche, sidebar navigazione, badge colorati, tabelle stilizzate). Non degradare mai il livello visivo.",
+    "- QUALITA' VISIVA: se il task riguarda la UI o il frontend, mantieni il design professionale gia stabilito (Tailwind CSS, card bg-white rounded-xl shadow-sm, sidebar con voci menu e icone lucide-react, badge colorati, tabelle con thead stilizzato, KPI card con numeri grandi). Non degradare mai il livello visivo. USA classi Tailwind complete nei JSX.",
+    "- LIBRERIE VIETATE: non aggiungere mai @heroicons/react, @headlessui/react, @radix-ui/*, recharts, chart.js, react-router-dom, date-fns, axios, lodash. Usa SOLO lucide-react per le icone.",
     "- Mantieni sempre funzionante il link finale: se una chiave API esterna manca, usa dati di prova, non errori.",
     "- Mantieni il flusso attivazione -> abbonamento mensile.",
     "- Non creare mai .venv, venv, node_modules, dist o build.",
@@ -1886,6 +1959,13 @@ async function resolvePreviewState(target, files = []) {
   const hasFrontend = files.includes("frontend/package.json") && files.includes("frontend/index.html");
   const frontendDistIndex = await frontendDistIndexPath(target);
   const hasLiveBuild = Boolean(frontendDistIndex);
+  const hasWireframe = files.includes("preview/index.html");
+
+  // Preserva buildVersion. Se il wireframe esiste ma il client non l'ha mai visto
+  // (buildVersion === 0), porta automaticamente a 1: il polling rileverà il cambio
+  // e ricaricherà l'iframe mostrando il wireframe — funziona anche per progetti già in corso.
+  const existingVersion = target.preview?.buildVersion || 0;
+  const buildVersion = existingVersion === 0 && (hasWireframe || hasLiveBuild) ? 1 : existingVersion;
 
   return {
     mode: hasLiveBuild ? "frontend" : "fallback",
@@ -1894,6 +1974,7 @@ async function resolvePreviewState(target, files = []) {
     url: `/api/apps/${target.id}/live-preview/`,
     fallbackUrl: `/api/apps/${target.id}/preview`,
     updatedAt: hasLiveBuild ? await fileMtimeIso(frontendDistIndex) : "",
+    buildVersion,
   };
 }
 
@@ -1917,6 +1998,34 @@ async function ensureFrontendPreviewBuild(target) {
 
   frontendBuilds.set(key, buildJob);
   return buildJob;
+}
+
+/**
+ * Schedula una build incrementale della preview (debounced).
+ * Ogni volta che file frontend vengono scritti durante l'autopilot, questa
+ * funzione viene chiamata: aspetta delayMs dopo l'ultimo file scritto e poi
+ * lancia la build in background. Quando finisce incrementa preview.buildVersion
+ * cosi il client rileva il cambiamento e ricarica l'iframe.
+ */
+function schedulePreviewBuild(target, apps, user, delayMs = 4000) {
+  const key = target.id;
+  if (previewBuildTimers.has(key)) clearTimeout(previewBuildTimers.get(key));
+  const timer = setTimeout(async () => {
+    previewBuildTimers.delete(key);
+    try {
+      const built = await ensureFrontendPreviewBuild(target);
+      if (built) {
+        const newPreview = await resolvePreviewState(target, target.files || []);
+        newPreview.buildVersion = (target.preview?.buildVersion || 0) + 1;
+        target.preview = newPreview;
+        await saveApps(apps, user);
+        console.log(`[preview] Build incrementale v${newPreview.buildVersion} pronta per ${target.id}`);
+      }
+    } catch (err) {
+      console.warn(`[preview] Build incrementale fallita per ${target.id}: ${err instanceof Error ? err.message : err}`);
+    }
+  }, delayMs);
+  previewBuildTimers.set(key, timer);
 }
 
 async function buildFrontendPreview(target) {
@@ -1964,10 +2073,95 @@ async function ensureFrontendDependencies(frontendDirPath) {
   const packageJsonPath = path.join(frontendDirPath, "package.json");
   const nodeModulesPath = path.join(frontendDirPath, "node_modules");
   const markerPath = path.join(nodeModulesPath, ".lococode-install.json");
+
+  // --- Patch file di configurazione mancanti (sempre, anche se npm install e gia aggiornato) ---
+
+  // Auto-crea postcss.config.js se mancante (necessario per Tailwind nel build Vite in-process)
+  const postcssConfigPath = path.join(frontendDirPath, "postcss.config.js");
+  if (!(await exists(postcssConfigPath))) {
+    await fs.writeFile(
+      postcssConfigPath,
+      `module.exports = {\n  plugins: {\n    tailwindcss: {},\n    autoprefixer: {},\n  },\n};\n`,
+      "utf8",
+    );
+    console.log(`[build] Auto-creato postcss.config.js per ${path.basename(frontendDirPath)}`);
+  }
+
+  // Auto-crea tailwind.config.js se mancante
+  const tailwindConfigPath = path.join(frontendDirPath, "tailwind.config.js");
+  if (!(await exists(tailwindConfigPath))) {
+    await fs.writeFile(
+      tailwindConfigPath,
+      `/** @type {import('tailwindcss').Config} */\nmodule.exports = {\n  content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],\n  theme: { extend: {} },\n  plugins: [],\n};\n`,
+      "utf8",
+    );
+    console.log(`[build] Auto-creato tailwind.config.js per ${path.basename(frontendDirPath)}`);
+  }
+
+  // Assicura che src/index.css abbia le direttive @tailwind
+  const indexCssPath = path.join(frontendDirPath, "src", "index.css");
+  try {
+    const cssContent = await fs.readFile(indexCssPath, "utf8").catch(() => "");
+    if (!cssContent.includes("@tailwind")) {
+      const tailwindDirectives = "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n";
+      await fs.writeFile(indexCssPath, tailwindDirectives + cssContent, "utf8");
+      console.log(`[build] Auto-aggiunte direttive @tailwind a src/index.css per ${path.basename(frontendDirPath)}`);
+    }
+  } catch {}
+
+  // --- Patch package.json (sempre, prima di decidere se reinstallare) ---
+
+  // Auto-inject dipendenze essenziali mancanti nel package.json (tailwind ecc.)
+  let pkgPatched = false;
+  try {
+    const pkgRaw = await fs.readFile(packageJsonPath, "utf8");
+    const pkg = JSON.parse(pkgRaw);
+    const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+    const required = { tailwindcss: "^3.4.0", autoprefixer: "^10.4.0", postcss: "^8.4.0" };
+    for (const [name, version] of Object.entries(required)) {
+      if (!allDeps[name]) {
+        pkg.devDependencies = pkg.devDependencies || {};
+        pkg.devDependencies[name] = version;
+        pkgPatched = true;
+      }
+    }
+
+    // Auto-rileva import di pacchetti mancanti (es. @heroicons/react) e aggiungili prima dell'install
+    const srcDir = path.join(frontendDirPath, "src");
+    const safeAutoInstall = {
+      "@heroicons/react": "^2.1.0",
+      "react-hot-toast": "^2.4.1",
+      "clsx": "^2.1.0",
+    };
+    const srcFiles = await fs.readdir(srcDir).catch(() => []);
+    for (const file of srcFiles) {
+      if (!/\.(jsx?|tsx?)$/.test(file)) continue;
+      const content = await fs.readFile(path.join(srcDir, file), "utf8").catch(() => "");
+      const updatedDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+      for (const [pkgName, pkgVersion] of Object.entries(safeAutoInstall)) {
+        if (!updatedDeps[pkgName] && (content.includes(`"${pkgName}"`) || content.includes(`'${pkgName}'`))) {
+          pkg.dependencies = pkg.dependencies || {};
+          pkg.dependencies[pkgName] = pkgVersion;
+          updatedDeps[pkgName] = pkgVersion;
+          pkgPatched = true;
+          console.log(`[build] Auto-aggiunto ${pkgName} (trovato negli import) per ${path.basename(frontendDirPath)}`);
+        }
+      }
+    }
+
+    if (pkgPatched) {
+      await fs.writeFile(packageJsonPath, JSON.stringify(pkg, null, 2), "utf8");
+      console.log(`[build] package.json aggiornato con dipendenze auto-rilevate per ${path.basename(frontendDirPath)}`);
+    }
+  } catch {}
+
+  // --- Controllo se npm install e necessario ---
+  // Ricalcola packageMtime dopo eventuali patch (pkgPatched invalida il marker)
   const packageMtime = await fileMtimeMs(packageJsonPath);
   const marker = await readJson(markerPath);
+  const needsInstall = pkgPatched || !(await exists(nodeModulesPath)) || marker?.packageMtime !== packageMtime;
 
-  if ((await exists(nodeModulesPath)) && marker?.packageMtime === packageMtime) return;
+  if (!needsInstall) return;
 
   const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
   await execFileAsync(
@@ -1981,7 +2175,7 @@ async function ensureFrontendDependencies(frontendDirPath) {
   );
 
   await fs.mkdir(nodeModulesPath, { recursive: true });
-  await fs.writeFile(markerPath, JSON.stringify({ packageMtime, installedAt: new Date().toISOString() }, null, 2), "utf8");
+  await fs.writeFile(markerPath, JSON.stringify({ packageMtime: await fileMtimeMs(packageJsonPath), installedAt: new Date().toISOString() }, null, 2), "utf8");
 }
 
 async function serveFrontendBuildFile(target, requestedPath, res) {
