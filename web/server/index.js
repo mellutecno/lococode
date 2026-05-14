@@ -733,6 +733,9 @@ app.get("/api/apps/:id/live-preview", livePreviewRequest);
 app.get("/api/apps/:id/live-preview/*splat", livePreviewRequest);
 app.get("/apps/:id/:token", publicAppRequest);
 app.get("/apps/:id/:token/*splat", publicAppRequest);
+// URL pubblica leggibile: /apps/nome-app-a8f756 o /apps/nome-app-a8f756/*
+app.get("/app/:slug", publicAppSlugRequest);
+app.get("/app/:slug/*splat", publicAppSlugRequest);
 
 async function livePreviewRequest(req, res) {
   const user = await requireUser(req, res);
@@ -2864,6 +2867,56 @@ async function findPublicApp(appId, token) {
   return null;
 }
 
+async function findPublicAppBySlug(slug) {
+  const cleanSlug = String(slug || "").trim().toLowerCase();
+  if (!cleanSlug) return null;
+
+  const store = await loadUsersStore();
+  for (const user of store.users || []) {
+    const apps = await loadApps(user);
+    const target = apps.find((item) => {
+      // Controlla publicSlug salvato o lo ricalcola al volo
+      const itemSlug = item.publicSlug || appPublicSlug(item);
+      return itemSlug === cleanSlug;
+    });
+    if (target) return { user, apps, target };
+  }
+
+  return null;
+}
+
+async function publicAppSlugRequest(req, res) {
+  const { slug } = req.params;
+  const found = await findPublicAppBySlug(slug);
+  if (!found) {
+    res.status(404).type("html").send(previewPendingHtml("App non trovata", "Il link dell'app non è valido o l'app non esiste più."));
+    return;
+  }
+
+  const { user, apps, target } = found;
+  await refreshProjectState(target);
+
+  if (target.trialExpiresAt && target.lifecycle !== "active" && new Date(target.trialExpiresAt) < new Date()) {
+    res.type("html").send(trialExpiredHtml(target.name));
+    return;
+  }
+
+  const builtFrontend = await ensureFrontendPreviewBuild(target);
+  if (builtFrontend) target.preview = await resolvePreviewState(target, target.files || []);
+  await saveApps(apps, user);
+
+  const staticPath = previewStaticPath(req.params.splat);
+  const served = await serveFrontendBuildFile(target, staticPath, res);
+  if (served) return;
+
+  const html = await readPreviewHtml(target);
+  if (!html) {
+    res.type("html").send(previewPendingHtml(target.name || "App in costruzione", "L'app è in costruzione. L'anteprima sarà disponibile a breve."));
+    return;
+  }
+  res.type("html").send(html);
+}
+
 async function readJson(filePath) {
   try {
     return JSON.parse(await fs.readFile(filePath, "utf8"));
@@ -2913,9 +2966,27 @@ function publicApp(appData) {
   };
 }
 
+function slugifyAppName(name) {
+  return String(name || "app")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")  // rimuove diacritici (à→a, è→e ecc.)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "app";
+}
+
+function appPublicSlug(appData) {
+  if (appData.publicSlug) return appData.publicSlug;
+  const token = appData.appToken || appData.demoToken || "";
+  const shortCode = token.replace(/-/g, "").slice(0, 6);
+  if (!shortCode) return "";
+  return `${slugifyAppName(appData.name)}-${shortCode}`;
+}
+
 function appUrlForApp(appData) {
-  const token = appData?.appToken || appData?.demoToken;
-  return token ? `${publicBaseUrl}/apps/${appData.id}/${token}/` : "";
+  const slug = appPublicSlug(appData);
+  return slug ? `${publicBaseUrl}/app/${slug}` : "";
 }
 
 function sanitizeAutopilotForClient(autopilot = {}) {

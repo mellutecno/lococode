@@ -943,25 +943,36 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
     const trialExpired = trialDaysLeft !== null && trialDaysLeft === 0;
     const showTrialBanner = app.lifecycle === "trial" && trialDaysLeft !== null;
 
+    const doneCount = taskState.doneCount ?? 0;
     return (
       <div className="completed-workspace">
         <article className="completed-project-row">
-          <div>
-            <span>Progetto completato</span>
-            <strong>{app.name}</strong>
-            <em>{taskState.header}</em>
+          <div className="completed-project-info">
+            <div className="completed-project-badge">
+              <Check size={13} />
+              <span>Completato</span>
+            </div>
+            <strong className="completed-project-name">{app.name}</strong>
+            <span className="completed-project-meta">{doneCount} task · {app.fileCount || 0} file generati</span>
+            {app.appUrl && (
+              <a className="completed-project-url" href={app.appUrl} target="_blank" rel="noreferrer">
+                <ExternalLink size={11} />
+                {app.appUrl.replace(/^https?:\/\//, "")}
+              </a>
+            )}
           </div>
           <div className="completed-project-actions">
             {app.appUrl && (
-              <a className="secondary-action compact" href={app.appUrl} target="_blank" rel="noreferrer">
+              <a className="primary compact" href={app.appUrl} target="_blank" rel="noreferrer">
+                <ExternalLink size={14} />
                 Apri app
               </a>
             )}
-            <button className="secondary-action compact" onClick={onBackToProjects}>
-              Progetti
+            <button className="secondary-action compact" onClick={() => setCompletedDetailsOpen(true)}>
+              Gestisci
             </button>
-            <button className="primary compact" onClick={() => setCompletedDetailsOpen(true)}>
-              Apri dettagli
+            <button className="secondary-action compact icon-only" onClick={onBackToProjects} title="Torna ai progetti">
+              ‹ Progetti
             </button>
           </div>
         </article>
@@ -1077,22 +1088,23 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
 
       {expandedPanel && (
         <section
-          className="fullscreen-panel"
+          className="fullscreen-panel fullscreen-preview-mode"
           role="dialog"
           aria-modal="true"
           aria-label="App"
           onWheel={(event) => event.stopPropagation()}
+          onClick={(e) => { if (e.target === e.currentTarget) setExpandedPanel(false); }}
         >
-          <div className="fullscreen-card">
-            <header>
-              <div>
-                <span>Anteprima</span>
-                <h2>{app.name || "App"}</h2>
+          <div className="fullscreen-preview-wrap">
+            <div className="fullscreen-preview-topbar">
+              <div className="fullscreen-preview-appname">
+                <span className="fullscreen-preview-dot" />
+                <span>{app.name || "App"}</span>
               </div>
-              <button onClick={() => setExpandedPanel(false)} aria-label="Chiudi schermo intero">
-                <X size={24} />
+              <button className="fullscreen-preview-close" onClick={() => setExpandedPanel(false)} aria-label="Chiudi">
+                <X size={18} />
               </button>
-            </header>
+            </div>
             <ProjectPanelContent projectPanel="preview" app={app} fullscreen />
           </div>
         </section>
@@ -1309,6 +1321,19 @@ function projectTaskState(app) {
       label: task || "Preparazione piano",
       meta,
       short: `${shortPhase}`,
+      doneCount,
+      remaining,
+    };
+  }
+
+  // Progetto completato: non mostrare "Completato · Completato" anche se autopilot.currentTask residuo
+  if (planCompleted) {
+    return {
+      header: `${total} task completati`,
+      kicker: "Piano completato",
+      label: "Tutti i task completati",
+      meta: progressText,
+      short: "Completato",
       doneCount,
       remaining,
     };
