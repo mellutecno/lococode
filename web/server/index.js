@@ -17,6 +17,10 @@ const dataDir = path.join(rootDir, "data");
 const projectsDir = path.join(dataDir, "projects");
 const usersDir = path.join(dataDir, "users");
 const appsPath = path.join(dataDir, "apps.json");
+const portRegistryPath = path.join(dataDir, "port-registry.json");
+const APPS_NGINX_DIR = "/etc/nginx/conf.d/lococode-apps";
+const PORT_START = 19002;
+const PORT_END = 19999;
 const configPath = path.join(dataDir, "config.json");
 const legacyConfigPath = path.join(repoDir, "user_data", "config.json");
 
@@ -499,6 +503,42 @@ app.delete("/api/apps/:id/logs", async (req, res) => {
   res.json({ app: publicApp(target), cleared: true });
 });
 
+app.delete("/api/apps/:id", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const apps = await loadApps(user);
+  const target = apps.find((item) => item.id === req.params.id);
+
+  if (!target) {
+    res.status(404).json({ error: "App non trovata." });
+    return;
+  }
+
+  // Mark stop so any running job exits cleanly
+  if (target.autopilot) {
+    target.autopilot.stopRequested = true;
+    target.autopilot.running = false;
+  }
+
+  // Remove from apps list and save
+  const updatedApps = apps.filter((item) => item.id !== target.id);
+  await saveApps(updatedApps, user);
+
+  // Ferma backend e rimuove nginx
+  await stopBackend(target.id).catch((e) => console.warn("[deploy] stopBackend:", e.message));
+
+  // Elimina cartella progetto
+  const root = projectRoot(target);
+  try {
+    await fs.rm(root, { recursive: true, force: true });
+  } catch (err) {
+    console.warn(`[server] Errore eliminando cartella ${root}:`, err.message);
+  }
+
+  res.json({ deleted: true, id: target.id });
+});
+
 async function startAutopilotRequest(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -768,20 +808,12 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
       const afterTask = getNextTaskLabel(target);
       const afterDone = (target.sdd?.steps || []).filter((step) => step.done).length;
       if (afterTask === beforeTask && afterDone <= beforeDone) {
-        const autoUpdated = await markCurrentTaskCompleted(target, beforeTask, result.summary);
-        if (autoUpdated) {
-          await refreshProjectState(target);
+        stallCount += 1;
+        if (stallCount === 1) {
           appendOperationalLog(
             target,
-            `Ho aggiornato automaticamente .lc/spec/tasks.md: completato "${beforeTask}".`,
+            `Attenzione: il task "${beforeTask}" non ha prodotto progressi visibili nel piano. Riprovo (tentativo ${stallCount}/2).`,
           );
-          pushAssistantMessage(
-            target,
-            `Task completato: "${beforeTask}". Piano aggiornato.`,
-          );
-          stallCount = 0;
-        } else {
-          stallCount += 1;
         }
       } else {
         stallCount = 0;
@@ -789,7 +821,7 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
 
       if (stallCount >= 2) {
         throw new Error(
-          `Il task "${beforeTask}" non risulta avanzare: il modello non ha aggiornato il piano SDD. LocoCode prova a spuntare automaticamente .lc/spec/tasks.md dopo ogni task; se ricapita, il task va verificato manualmente.`,
+          `Il task "${beforeTask}" è bloccato: dopo 2 tentativi il modello non ha aggiornato .lc/spec/tasks.md né avanzato al task successivo. Verifica il progetto e riprendi manualmente.`,
         );
       }
 
@@ -805,6 +837,115 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
     await stopAutopilotWithError(target, apps, user, err, model);
   }
 }
+
+
+// ─── Backend deploy helpers ────────────────────────────────
+
+async function allocatePort(appId) {
+  const registry = (await readJson(portRegistryPath)) || {};
+  if (registry[appId]) return registry[appId];
+  const used = new Set(Object.values(registry));
+  let port = PORT_START;
+  while (used.has(port) && port <= PORT_END) port++;
+  if (port > PORT_END) throw new Error("Nessuna porta disponibile per il backend.");
+  registry[appId] = port;
+  await fs.writeFile(portRegistryPath, JSON.stringify(registry, null, 2), "utf8");
+  return port;
+}
+
+async function releasePort(appId) {
+  const registry = (await readJson(portRegistryPath)) || {};
+  delete registry[appId];
+  await fs.writeFile(portRegistryPath, JSON.stringify(registry, null, 2), "utf8");
+}
+
+async function writeAppNginxConf(target, port) {
+  const token = target.appToken || target.demoToken || "";
+  if (!token) return;
+  await fs.mkdir(APPS_NGINX_DIR, { recursive: true });
+  const lines = [
+    `# App: ${target.name} (${target.id})`,
+    `location /apps/${target.id}/${token}/api/ {`,
+    `    proxy_pass http://127.0.0.1:${port}/;`,
+    `    proxy_http_version 1.1;`,
+    `    proxy_read_timeout 120s;`,
+    `    proxy_set_header Host $host;`,
+    `    proxy_set_header X-Real-IP $remote_addr;`,
+    `    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`,
+    `    proxy_set_header X-Forwarded-Proto $scheme;`,
+    `}`,
+  ];
+  await fs.writeFile(
+    path.join(APPS_NGINX_DIR, `${target.id}.conf`),
+    lines.join("\n") + "\n",
+    "utf8"
+  );
+}
+
+async function removeAppNginxConf(appId) {
+  await fs.rm(path.join(APPS_NGINX_DIR, `${appId}.conf`), { force: true });
+}
+
+async function reloadNginx() {
+  try {
+    await execFileAsync("nginx", ["-t"]);
+    await execFileAsync("nginx", ["-s", "reload"]);
+    console.log("[deploy] Nginx ricaricato.");
+  } catch (err) {
+    console.error("[deploy] nginx reload error:", err.message);
+    throw err;
+  }
+}
+
+async function deployBackend(target) {
+  const root = projectRoot(target);
+  const backendPath = path.join(root, "backend");
+  const reqFile = path.join(backendPath, "requirements.txt");
+  const mainFile = path.join(backendPath, "app", "main.py");
+
+  if (!(await exists(reqFile)) || !(await exists(mainFile))) {
+    console.log(`[deploy] Nessun backend per ${target.id}, skip.`);
+    return null;
+  }
+
+  const port = await allocatePort(target.id);
+  const venvPath = path.join(backendPath, "venv");
+  const pm2Name = `lococode-app-${target.id}`;
+
+  console.log(`[deploy] Build backend ${target.id} porta ${port}`);
+
+  await execFileAsync("python3", ["-m", "venv", venvPath]);
+  const pipBin = path.join(venvPath, "bin", "pip");
+  await execFileAsync(pipBin, ["install", "--quiet", "--no-cache-dir", "-r", reqFile]);
+
+  await execFileAsync("pm2", ["delete", pm2Name]).catch(() => {});
+  const uvicornBin = path.join(venvPath, "bin", "uvicorn");
+  await execFileAsync("pm2", [
+    "start", uvicornBin,
+    "--name", pm2Name,
+    "--",
+    "app.main:app",
+    "--host", "127.0.0.1",
+    "--port", String(port),
+  ], { cwd: backendPath });
+  await execFileAsync("pm2", ["save"]);
+
+  await writeAppNginxConf(target, port);
+  await reloadNginx();
+
+  console.log(`[deploy] Backend ${target.id} attivo porta ${port}`);
+  return port;
+}
+
+async function stopBackend(appId) {
+  const pm2Name = `lococode-app-${appId}`;
+  await execFileAsync("pm2", ["delete", pm2Name]).catch(() => {});
+  await removeAppNginxConf(appId);
+  await releasePort(appId);
+  await reloadNginx().catch(() => {});
+}
+
+// ────────────────────────────────────────────────────────────
 
 async function finishAutopilot(target, apps, user) {
   await refreshProjectState(target);
@@ -869,6 +1010,23 @@ async function pauseAutopilot(target, apps, user, message) {
     error: null,
   };
   pushAssistantMessage(target, message);
+  // Avvia backend se tutti i task sono completati
+  if (target.status === "ready") {
+    deployBackend(target)
+      .then((port) => {
+        if (port) {
+          target.backendPort = port;
+          appendOperationalLog(target,
+            `Backend avviato (porta ${port}). API disponibile su /apps/${target.id}/${target.appToken}/api/`);
+        }
+        return saveApps(apps, user);
+      })
+      .catch((err) => {
+        console.error(`[deploy] Errore ${target.id}:`, err.message);
+        appendOperationalLog(target, `Backend non avviato: ${err.message.slice(0, 200)}`);
+        return saveApps(apps, user);
+      });
+  }
   await saveApps(apps, user);
 }
 
@@ -1017,7 +1175,7 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
     model,
     systemPrompt,
     userPrompt: prompt,
-    maxTokens: 9000,
+    maxTokens: 12000,
     timeoutMs: openRouterTimeoutMs,
   });
   const operations = parseOperations(aiText);
@@ -1055,17 +1213,17 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   const phases = [
     {
       label: "specifiche progetto",
-      maxTokens: 7000,
+      maxTokens: 10000,
       getPrompt: async () => buildInitialSpecsPrompt(userPrompt),
     },
     {
       label: "parte server",
-      maxTokens: 7500,
+      maxTokens: 12000,
       getPrompt: async () => buildInitialBackendPrompt(userPrompt, await loadProjectMemory(target)),
     },
     {
-      label: "interfaccia e anteprima",
-      maxTokens: 9500,
+      label: "interfaccia utente",
+      maxTokens: 14000,
       getPrompt: async () => buildInitialFrontendPrompt(userPrompt, await loadProjectMemory(target)),
     },
   ];
@@ -1143,7 +1301,7 @@ function operationProgressMessage(phaseLabel = "", aiText = "") {
   const phase = String(phaseLabel || "").toLowerCase();
   if (phase.includes("specific")) return "Sto preparando il piano del progetto.";
   if (phase.includes("server") || phase.includes("backend") || phase.includes("deploy")) return "Sto preparando la parte server dell'app.";
-  if (phase.includes("interfaccia") || phase.includes("frontend") || phase.includes("anteprima")) return "Sto preparando interfaccia e anteprima reale.";
+  if (phase.includes("interfaccia") || phase.includes("frontend")) return "Sto costruendo l'interfaccia utente reale.";
 
   const narration = extractModelNarration(aiText);
   if (!narration) return "Sto salvando le modifiche del progetto.";
@@ -1187,12 +1345,12 @@ function buildOrchestratorSystemPrompt() {
     "- Non fare domande bloccanti quando puoi scegliere una soluzione ragionevole.",
     "- Non inserire API key o segreti nei file.",
     "- Ogni progetto generato deve tendere a un prodotto testabile: frontend, backend, database/config e istruzioni di avvio coerenti.",
-    "- Ogni progetto deve avere un flusso versione di prova -> abbonamento: chiave provvisoria, pulsante/testo 'Richiedi chiave di attivazione' o 'Abbonati', e stato pronto per chiave reale mensile.",
+    "- Ogni progetto deve avere un flusso attivazione: chiave di avvio precaricata, pulsante 'Abbonati' o 'Attiva licenza', e gestione chiave definitiva mensile.",
     "- Non proporre Render, Netlify, Vercel, Firebase o servizi esterni: il prodotto deve girare sul server LocoCode, dentro la cartella del progetto dell'utente.",
     "- Il backend deve esporre API avviabili sul server e il frontend deve poter usare una URL API configurabile con VITE_API_URL.",
-    "- Il database iniziale deve stare nella cartella del progetto, preferibilmente SQLite per la versione di prova.",
+    "- Il database deve stare nella cartella del progetto, preferibilmente SQLite. Precarica dati di esempio realistici.",
     "- Se l'app prevede accesso utenti, crea credenziali di prova fittizie documentate nel README, mai credenziali reali.",
-    "- Se l'app richiede API esterne, non bloccare la versione di prova e non mostrare errori tecnici: crea una schermata Impostazioni/Chiavi API per inserirle, usa dati fittizi finche mancano, e documenta le chiavi richieste in deploy/lococode.json.",
+    "- Se l'app richiede API esterne, crea una schermata Impostazioni/Chiavi API per inserirle. Senza chiave mostra dati di esempio, non errori tecnici. Documenta le chiavi in deploy/lococode.json.",
     "- Non inserire istruzioni da terminale, comandi bash, pip, npm o placeholder tipo OMDB_API_KEY nel testo visibile al cliente finale.",
     "- Ogni modifica deve restituire file completi, non patch parziali.",
     "- Usa solo percorsi relativi alla root progetto.",
@@ -1211,13 +1369,36 @@ function buildOrchestratorSystemPrompt() {
   ].join("\n");
 }
 
+function detectDomain(prompt) {
+  const p = prompt.toLowerCase();
+  if (/medic|dentist|pazient|clinica|cura|terapia/.test(p)) return "medical";
+  if (/contabil|fiscale|fattur|commercialist|scadenz|tribut|bilancio/.test(p)) return "finance";
+  if (/crm|pipeline|lead|commerciale|vendite|prospect/.test(p)) return "crm";
+  if (/e-commerce|ecommerce|negozio|prodotto|carrello|ordine|spedizione/.test(p)) return "ecommerce";
+  return "generic";
+}
+
+function domainInstructions(domain) {
+  switch (domain) {
+    case "medical": return "Gestisce processi amministrativi e clinici. NON dare diagnosi o consigli medici. Include: pazienti, appuntamenti, preventivi, pagamenti.";
+    case "finance": return "Gestisce dati contabili e fiscali. Includi: scadenziari, report export, fatture/ricevute, clienti, IVA e F24.";
+    case "crm": return "Gestisce pipeline commerciale, contatti, attivita e report. Includi: stati lead, filtri commerciale, preventivi, storico comunicazioni.";
+    case "ecommerce": return "Gestisce catalogo, ordini, clienti e spedizioni. Includi: dashboard vendite, magazzino, stato ordini, listino prezzi.";
+    default: return "";
+  }
+}
+
 function buildInitialSpecsPrompt(initialPrompt) {
+  const domain = detectDomain(initialPrompt);
+  const domainHint = domainInstructions(domain);
+
   return [
     "Richiesta iniziale utente:",
     initialPrompt,
     "",
     "FASE 1/3 - Specifiche SDD.",
     "Genera solo documenti di progetto e piano operativo. Non generare ancora codice applicativo.",
+    ...(domainHint ? ["", `Contesto di dominio (${domain}): ${domainHint}`] : []),
     "",
     "File obbligatori da restituire:",
     "- .lc/spec/sdd.md",
@@ -1228,11 +1409,13 @@ function buildInitialSpecsPrompt(initialPrompt) {
     "- README.md",
     "- deploy/lococode.json",
     "",
-    "Il file .lc/spec/tasks.md deve contenere checkbox markdown con task piccoli e verificabili.",
-    "Il piano deve includere: link finale dell'app, chiave provvisoria, richiesta chiave di attivazione, abbonamento mensile, gestione scadenza chiave.",
-    "Se servono API esterne, pianifica una schermata interna per inserire le chiavi senza bloccare la versione di prova.",
+    "REQUISITI STRUTTURA: .lc/spec/tasks.md deve avere tra 12 e 20 task [ ] divisi in 3-4 sezioni (es: ## Fase 1 - Setup, ## Fase 2 - Backend, ## Fase 3 - Frontend, ## Fase 4 - Polish).",
+    "- .lc/spec/sdd.md: 1) Descrizione progetto, 2) Utenti e ruoli, 3) Funzionalita principali, 4) Vincoli tecnici, 5) Flusso principale utente.",
+    "- .lc/spec/architecture.md: tabelle SQLite con colonne e tipi, endpoint FastAPI con metodo/path/payload, componenti React principali.",
+    "Il piano deve includere: link finale dell'app, chiave di avvio iniziale, flusso abbonamento mensile, gestione scadenza chiave.",
+    "Se servono API esterne, pianifica una schermata Impostazioni per inserire le chiavi. Senza chiave l'app mostra dati di esempio funzionanti.",
     "Marca completati solo i task di specifica realmente coperti in questa fase.",
-    "Se il dominio e medico/dentistico, il prodotto deve gestire processi amministrativi e clinici registrati dallo studio, ma non deve dare diagnosi o consigli medici automatici.",
+
     "Restituisci solo blocchi file.",
   ].join("\n");
 }
@@ -1257,10 +1440,10 @@ function buildInitialBackendPrompt(initialPrompt, projectMemory) {
     "- .lc/spec/tasks.md",
     "- .lc/memory/project_context.md",
     "",
-    "backend/app/main.py deve includere FastAPI, CORS, health check, modelli Pydantic, inizializzazione SQLite e API CRUD minime coerenti con il progetto.",
+    "backend/app/main.py deve includere FastAPI con CORS (allow_origins=['*']), endpoint GET / health check, modelli Pydantic completi, inizializzazione SQLite con tabelle e dati di esempio realistici precaricati al primo avvio, e API CRUD complete coerenti con il progetto.",
     "deploy/lococode.json deve descrivere nome servizio, porta suggerita, comando backend, comando build frontend, percorso SQLite, credenziali di prova, chiave provvisoria, chiave di attivazione mensile e API esterne richieste.",
-    "Il backend deve accettare una chiave provvisoria e predisporre una chiave reale con scadenza mensile, anche se il pagamento reale verra collegato dopo.",
-    "Se sono necessarie API esterne, crea endpoint/config SQLite per salvare le chiavi fornite dall'utente nella versione di prova; se mancano, restituisci dati fittizi e messaggi gentili, non errori bloccanti.",
+    "Il backend deve gestire una chiave di attivazione iniziale precaricata e predisporre una chiave definitiva con scadenza mensile per l'abbonamento.",
+    "Se sono necessarie API esterne, crea endpoint SQLite per salvare le chiavi. Se mancano, restituisci dati di esempio e messaggi chiari, non errori bloccanti.",
     "Non usare render.yaml, Netlify, Vercel o altri deploy esterni.",
     "Non inserire dati sanitari reali, API key o segreti.",
     "Aggiorna il piano dei task completati in questa fase.",
@@ -1273,7 +1456,7 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "Richiesta iniziale utente:",
     initialPrompt,
     "",
-    "FASE 3/3 - Frontend React e anteprima.",
+    "FASE 3/3 - Frontend React e interfaccia utente.",
     "Usa la memoria SDD qui sotto e genera il frontend MVP completo.",
     "",
     "Memoria progetto:",
@@ -1290,36 +1473,59 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "",
     "Il frontend deve essere in italiano, gestionale, responsive, navigabile e con dati di prova realistici ma fittizi.",
     "L'utente deve poter provare l'MVP come prodotto: pagine principali, pulsanti, form e routing devono funzionare nella preview reale.",
-    "Il frontend deve mostrare un'area 'Attivazione' o 'Abbonamento' con richiesta chiave di attivazione, stato di prova e call to action per abbonarsi.",
-    "Se l'app usa API esterne, il frontend deve avere una schermata Impostazioni/Chiavi API dove inserire la chiave; senza chiave deve funzionare con dati di prova, non fermarsi.",
-    "Il frontend deve leggere l'API da import.meta.env.VITE_API_URL e funzionare quando viene servito sotto un path pubblico del server LocoCode.",
+    "Il frontend deve mostrare un'area 'Attivazione' o 'Abbonamento' con lo stato della licenza corrente e un pulsante per abbonarsi o attivare la chiave definitiva.",
+    "Se l'app usa API esterne, il frontend deve avere una schermata Impostazioni/Chiavi API dove inserire la chiave; senza chiave mostra dati di esempio funzionanti, non si ferma.",
+    "FONDAMENTALE - Chiamate API: usa SEMPRE const API = import.meta.env.VITE_API_URL || ''; poi chiama fetch(API + '/endpoint'). Non scrivere mai localhost, 127.0.0.1 o porte hardcoded. VITE_API_URL viene iniettato da LocoCode al build e punta al backend reale.",
     "preview/index.html serve solo da fallback statico se il frontend vero non e ancora pronto.",
+    "",
+    "DIPENDENZE OBBLIGATORIE - frontend/package.json deve contenere ESATTAMENTE queste dipendenze (niente di piu):",
+    "  dependencies: react ^18, react-dom ^18",
+    "  devDependencies: @vitejs/plugin-react ^4, vite ^5",
+    "NON usare: react-router-dom, axios, recharts, date-fns, moment, chart.js, lodash, react-query o qualsiasi altra libreria esterna.",
+    "PER LA NAVIGAZIONE: usa React useState per mostrare/nascondere sezioni (es. setPage('clienti')), non react-router.",
+    "PER LE DATE: usa new Date().toLocaleDateString('it-IT') nativo, non date-fns.",
+    "PER I GRAFICI: usa SVG inline o barre CSS pure, non recharts o chart.js.",
+    "PER LE CHIAMATE API: usa fetch() nativo del browser, non axios.",
+    "lucide-react e gia disponibile come alias del server e puo essere importato normalmente.",
     "Aggiorna il piano dei task completati in questa fase.",
     "Restituisci solo blocchi file.",
   ].join("\n");
 }
 
+function groupFilesByPrefix(files) {
+  const groups = {};
+  for (const f of files) {
+    const parts = f.split("/");
+    const prefix = parts.length > 1 ? parts[0] : "(root)";
+    (groups[prefix] = groups[prefix] || []).push(f);
+  }
+  return Object.entries(groups)
+    .map(([prefix, list]) => "  " + prefix + "/\n" + list.map((f) => "    " + f).join("\n"))
+    .join("\n");
+}
+
 function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, mode }) {
-  const instruction =
+  const taskSection =
     mode === "continue"
-      ? `Continua automaticamente dal prossimo task: ${nextTask || "completa il prossimo passo tecnico utile"}.`
-      : `Applica questa richiesta utente seguendo la memoria SDD: ${userPrompt}`;
+      ? "## Task corrente\n" + (nextTask || "completa il prossimo passo tecnico utile dal piano tasks.md")
+      : "## Richiesta utente\n" + userPrompt;
 
   return [
-    instruction,
+    taskSection,
     "",
-    "Memoria progetto disponibile:",
+    "## Contesto del progetto",
     projectMemory,
     "",
-    "Istruzioni operative:",
-    "- Non ripartire da zero.",
-    "- Modifica solo i file necessari.",
-    "- Aggiorna sempre .lc/spec/tasks.md spuntando il task corrente completato con [x].",
-    "- Aggiorna sempre .lc/memory/project_context.md con una nota breve.",
-    "- Se esiste frontend/, aggiorna il frontend reale quando cambia comportamento o UI.",
-    "- Aggiorna preview/index.html solo come fallback statico quando il frontend reale non e ancora pronto.",
-    "- Mantieni sempre funzionante il link finale dell'app: se una chiave API esterna manca, mostra impostazioni e dati di prova invece di un errore tecnico.",
-    "- Mantieni il flusso versione di prova -> richiesta chiave di attivazione -> abbonamento mensile.",
+    "## Istruzioni",
+    "- Completa SOLO il task corrente indicato sopra. Non anticipare task futuri.",
+    "- Aggiorna .lc/spec/tasks.md: marca [x] SOLO il task corrente, NON i task futuri.",
+    "- Aggiorna sempre .lc/memory/project_context.md con una nota breve su cosa hai fatto.",
+    "- Non ripartire da zero. Modifica solo i file necessari.",
+    "- Se il task richiede backend, aggiorna backend/app/main.py e requirements.txt.",
+    "- Se il task cambia la UI, aggiorna frontend/src/ e i file coinvolti.",
+    "- Aggiorna preview/index.html solo come fallback statico se il frontend reale non e ancora pronto.",
+    "- Mantieni sempre funzionante il link finale: se una chiave API esterna manca, usa dati di prova, non errori.",
+    "- Mantieni il flusso attivazione -> abbonamento mensile.",
     "- Non creare mai .venv, venv, node_modules, dist o build.",
     "- Restituisci solo blocchi file nel formato richiesto.",
   ].join("\n");
@@ -1423,7 +1629,7 @@ async function ensureFrontendPreviewBuild(target) {
   const buildJob = buildFrontendPreview(target)
     .catch((err) => {
       console.warn(`Preview build non pronta per ${target.id}: ${err instanceof Error ? err.message : String(err)}`);
-      appendOperationalLog(target, "Anteprima reale in preparazione. LocoCode la aggiornera appena il frontend sara completo.");
+      appendOperationalLog(target, "Interfaccia in costruzione. LocoCode la aggiornera appena il frontend sara completo.");
       return false;
     })
     .finally(() => {
@@ -1459,6 +1665,11 @@ async function buildFrontendPreview(target) {
         "react-dom/client": path.join(rootDir, "node_modules/react-dom/client"),
         "lucide-react": path.join(rootDir, "node_modules/lucide-react"),
       },
+    },
+    define: {
+      "import.meta.env.VITE_API_URL": JSON.stringify(
+        `/apps/${target.id}/${target.appToken || target.demoToken || ""}/api`
+      ),
     },
     build: {
       outDir,
@@ -1603,24 +1814,38 @@ function mimeTypeForPath(filePath) {
 async function loadProjectMemory(target) {
   const root = projectRoot(target);
   const files = await listProjectFiles(root);
-  const memoryFiles = [
-    ".lc/spec/requirements.md",
-    ".lc/spec/architecture.md",
-    ".lc/spec/tasks.md",
-    ".lc/memory/project_context.md",
-    "README.md",
+
+  const budgets = [
+    { path: ".lc/spec/sdd.md",              max: 4000 },
+    { path: ".lc/spec/requirements.md",      max: 4000 },
+    { path: ".lc/spec/architecture.md",      max: 6000 },
+    { path: ".lc/memory/project_context.md", max: 4000, tail: true },
+    { path: ".lc/spec/tasks.md",             max: 5000, tasksOnly: true },
+    { path: "README.md",                     max: 2000 },
   ];
 
   const chunks = [];
-  for (const relPath of memoryFiles) {
-    const content = await readProjectFile(target, relPath);
-    if (content.trim()) {
-      chunks.push(`--- FILE: ${relPath} ---\n${truncate(content, 9000)}`);
+  for (const entry of budgets) {
+    let fileContent = await readProjectFile(target, entry.path);
+    if (!fileContent.trim()) continue;
+
+    if (entry.tasksOnly) {
+      const lines = fileContent.split(/\r?\n/);
+      const pending = lines.filter((l) => /^\s*-\s*\[\s*\]/.test(l));
+      const done = lines.filter((l) => /^\s*-\s*\[[xX]\]/.test(l));
+      const headings = lines.filter((l) => /^\s*#+/.test(l));
+      fileContent = [...headings, "### Task completati (ultimi 3)", ...done.slice(-3), "### Task da completare", ...pending].join("\n");
+    } else if (entry.tail) {
+      if (fileContent.length > entry.max) fileContent = fileContent.slice(-entry.max);
     }
+
+    chunks.push("--- FILE: " + entry.path + " ---\n" + truncate(fileContent, entry.max));
   }
 
-  chunks.push(`--- FILE LIST ---\n${files.join("\n") || "Nessun file ancora."}`);
-  return truncate(chunks.join("\n\n"), 36000);
+  const fileListStr = files.join("\n") || "Nessun file ancora.";
+  chunks.push("--- FILE LIST (non ricreare, modifica se necessario) ---\n" + truncate(fileListStr, 2000));
+
+  return truncate(chunks.join("\n\n"), 30000);
 }
 
 function parseOperations(responseText) {
@@ -1795,7 +2020,7 @@ async function applyOperations(target, operations) {
   return result;
 }
 
-async function callOpenRouter({
+async function callOpenRouterOnce({
   apiKey,
   model,
   systemPrompt,
@@ -1824,13 +2049,16 @@ async function callOpenRouter({
           { role: "user", content: userPrompt },
         ],
         max_tokens: maxTokens,
-        temperature: 0.22,
+        temperature: 0.45,
       }),
     });
 
+    const httpStatus = response.status;
     const raw = await response.text();
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${raw.slice(0, 600)}`);
+      const err = new Error(`HTTP ${httpStatus}: ${raw.slice(0, 600)}`);
+      err.httpStatus = httpStatus;
+      throw err;
     }
 
     if (!raw.trim()) {
@@ -1848,6 +2076,26 @@ async function callOpenRouter({
   } finally {
     if (timeout) clearTimeout(timeout);
   }
+}
+
+async function callOpenRouter(params) {
+  const maxAttempts = 3;
+  let lastErr;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      const delayMs = Math.pow(2, attempt) * 4000; // 8s, 16s
+      console.warn(`[server] callOpenRouter retry ${attempt}/${maxAttempts - 1} dopo ${delayMs / 1000}s (${lastErr?.message?.slice(0, 80)})`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    try {
+      return await callOpenRouterOnce(params);
+    } catch (err) {
+      if (err?.name === "AbortError") throw err; // timeout — no retry
+      if (err?.httpStatus && err.httpStatus < 429) throw err; // 400/401/403 — no retry
+      lastErr = err;
+    }
+  }
+  throw lastErr;
 }
 
 async function loadSettings(user = null) {

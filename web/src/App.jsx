@@ -6,6 +6,7 @@ import {
   CircleHelp,
   ClipboardList,
   Database,
+  ExternalLink,
   FileStack,
   FolderKanban,
   KeyRound,
@@ -18,6 +19,7 @@ import {
   Send,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   Workflow,
   X,
 } from "lucide-react";
@@ -71,6 +73,24 @@ export default function App() {
     () => apps.find((app) => app.id === selectedAppId) || apps[0] || null,
     [apps, selectedAppId],
   );
+
+  async function handleDeleteApp(appId, appName) {
+    if (!window.confirm(`Eliminare il progetto "${appName}"?
+Questa azione è irreversibile.`)) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/api/apps/${appId}`, { method: "DELETE" });
+      setApps((prev) => prev.filter((a) => a.id !== appId));
+      if (selectedAppId === appId) {
+        setSelectedAppId("");
+        setActiveView("projects");
+      }
+    } catch (err) {
+      setError(`Errore eliminazione: ${err.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const filteredApps = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -435,6 +455,7 @@ export default function App() {
         {activeView === "projects" && (
           <ProjectsView
             apps={filteredApps}
+            onDeleteApp={handleDeleteApp}
             selectedApp={selectedApp}
             currentUser={currentUser}
             searchTerm={searchTerm}
@@ -618,7 +639,7 @@ function AuthModal({ email, setEmail, token, setToken, step, setStep, message, b
   );
 }
 
-function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTerm, setActiveView, setSelectedAppId, onAuth }) {
+function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTerm, setActiveView, setSelectedAppId, onAuth, onDeleteApp }) {
   return (
     <div className="projects-view">
       <section className="projects-card">
@@ -645,18 +666,33 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
             </button>
           )}
           {apps.map((app) => (
-            <button
+            <div
               key={app.id}
               className={`project-tile ${selectedApp?.id === app.id ? "selected" : ""}`}
               onClick={() => {
                 setSelectedAppId(app.id);
                 setActiveView("chat");
               }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setSelectedAppId(app.id); setActiveView("chat"); } }}
             >
               <strong>{app.name}</strong>
               <span>{formatDate(app.updatedAt)}</span>
               <em>{projectTaskState(app).short}</em>
-            </button>
+              <div className="project-tile-actions" onClick={(e) => e.stopPropagation()}>
+                {app.appUrl && (
+                  <a className="tile-icon-btn" href={app.appUrl} target="_blank" rel="noreferrer" title="Apri app" onClick={(e) => e.stopPropagation()}>
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+                {onDeleteApp && (
+                  <button className="tile-icon-btn danger" title="Elimina progetto" onClick={(e) => { e.stopPropagation(); onDeleteApp(app.id, app.name); }}>
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
           ))}
           {currentUser && !apps.length && <p className="empty">Nessun progetto ancora.</p>}
         </div>
@@ -930,7 +966,7 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
       <div
         className="preview-resizer"
         role="separator"
-        aria-label="Ridimensiona anteprima"
+        aria-label="Ridimensiona pannello"
         aria-orientation="vertical"
         tabIndex={0}
         onPointerDown={startPreviewResize}
@@ -941,10 +977,10 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
         <div className="panel-title">
           <div>
             <span>Progetto</span>
-            <h2>Anteprima</h2>
+            <h2>App</h2>
           </div>
           <div className="panel-actions">
-            <button className="fullscreen-button icon-only" onClick={() => setExpandedPanel(true)} aria-label="Apri anteprima a schermo intero" title="Apri anteprima a schermo intero">
+            <button className="fullscreen-button icon-only" onClick={() => setExpandedPanel(true)} aria-label="Schermo intero" title="Schermo intero">
               <Maximize2 size={18} />
             </button>
           </div>
@@ -957,14 +993,14 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
           className="fullscreen-panel"
           role="dialog"
           aria-modal="true"
-          aria-label="Anteprima"
+          aria-label="App"
           onWheel={(event) => event.stopPropagation()}
         >
           <div className="fullscreen-card">
             <header>
               <div>
                 <span>Progetto</span>
-                <h2>Anteprima</h2>
+                <h2>App</h2>
               </div>
               <button onClick={() => setExpandedPanel(false)} aria-label="Chiudi schermo intero">
                 <X size={24} />
@@ -1031,17 +1067,17 @@ function ProjectPanelContent({ projectPanel, app, fullscreen = false }) {
 
     return (
       <div className={`phone-preview ${fullscreen ? "phone-preview-fullscreen" : ""}`}>
-        <div className="phone-device" aria-label="Anteprima applicazione in formato smartphone">
+        <div className="phone-device" aria-label="Applicazione">
           <div className="phone-screen">
             {previewUrl ? (
               <iframe
                 key={`${app.id}-${app.preview?.updatedAt || app.updatedAt || ""}`}
                 className={fullscreen ? "fullscreen-iframe" : ""}
-                title="Anteprima LocoCode"
+                title="App"
                 src={previewUrl}
               />
             ) : (
-              <iframe className={fullscreen ? "fullscreen-iframe" : ""} title="Anteprima LocoCode" srcDoc={emptyPreviewHtml()} />
+              <iframe className={fullscreen ? "fullscreen-iframe" : ""} title="App" srcDoc={emptyPreviewHtml()} />
             )}
           </div>
         </div>
@@ -1057,7 +1093,7 @@ function ProjectPanelContent({ projectPanel, app, fullscreen = false }) {
 function panelTitle(projectPanel, app) {
   if (projectPanel === "sdd") return "Piano progetto";
   if (projectPanel === "files") return "File progetto";
-  return app.status === "building" ? "Generazione in corso" : "Anteprima";
+  return app.status === "building" ? "Generazione in corso" : "App";
 }
 
 function isProjectComplete(app) {
@@ -1613,8 +1649,8 @@ function HelpView() {
     },
     {
       icon: LayoutDashboard,
-      title: "3. Prova l'app",
-      text: "Quando la web app e pronta, la provi online. Se ti piace, puoi attivarla e continuare da quella base.",
+      title: "3. Usa la tua app",
+      text: "Quando la web app e pronta, la usi subito online. I dati si salvano nel database reale sul server.",
     },
   ];
 
@@ -1622,7 +1658,7 @@ function HelpView() {
     <div className="help-view">
       <section className="help-hero">
         <h1>Crea una web app</h1>
-        <p>Avrai una versione di prova testabile sul server. Se ti piace, puoi attivarla e usarla partendo dal lavoro gia fatto.</p>
+        <p>La tua app gira sul server con database reale. Puoi usarla subito e attivarla con una chiave definitiva quando vuoi.</p>
       </section>
 
       <section className="help-grid">
@@ -1639,8 +1675,8 @@ function HelpView() {
       </section>
 
       <section className="architecture-card help-simple-card">
-        <h2>Dalla prova al prodotto</h2>
-        <p>La versione di prova non viene buttata: diventa la base dell'app attiva, con dati reali, utenti reali e configurazione definitiva quando decidi di acquistarla.</p>
+        <h2>Dall'app all'abbonamento</h2>
+        <p>L'app generata non viene buttata: diventa la base della tua app attiva con i tuoi dati reali e la tua configurazione, quando decidi di abbonarti.</p>
       </section>
     </div>
   );
@@ -1681,7 +1717,7 @@ function livePreviewUrl(app) {
 }
 
 function emptyPreviewHtml() {
-  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#f7f5ff;color:#343b4f}.box{text-align:center;padding:28px}.box h1{margin:0 0 10px;font-size:30px}.box p{margin:0;color:#697184;font-size:16px;line-height:1.5}</style></head><body><div class="box"><h1>Anteprima in preparazione</h1><p>Sara disponibile appena LocoCode avra creato i primi file dell'app.</p></div></body></html>`;
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Inter,Arial,sans-serif;background:#f7f5ff;color:#343b4f}.box{text-align:center;padding:28px}.box h1{margin:0 0 10px;font-size:30px}.box p{margin:0;color:#697184;font-size:16px;line-height:1.5}</style></head><body><div class="box"><h1>App in costruzione</h1><p>Il pannello si aggiorna automaticamente man mano che LocoCode costruisce la tua app.</p></div></body></html>`;
 }
 
 function modelLabel(model) {

@@ -700,6 +700,50 @@ button:disabled {
   font-weight: 800;
 }
 
+.project-tile {
+  cursor: pointer;
+  position: relative;
+}
+
+.project-tile-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.project-tile:hover .project-tile-actions {
+  opacity: 1;
+}
+
+.tile-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.tile-icon-btn:hover {
+  background: rgba(49, 87, 255, 0.08);
+  color: #3157ff;
+  border-color: rgba(49, 87, 255, 0.3);
+}
+
+.tile-icon-btn.danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
 .chat-layout {
   flex: 1;
   min-height: 0;
