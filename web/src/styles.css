@@ -1,16 +1,19 @@
 /* ─── Font Inter ─────────────────────────────────────────────── */
 @import url('https://rsms.me/inter/inter.css');
 
-/* ─── Design tokens — palette professionale ─────────────────── */
+/* ─── Design tokens — Liquid Glass palette ────────────────────
+   Tonalita blu-viola sature con effetto vetro traslucido. Niente
+   piu bianco puro: ogni superficie ha una tinta + alpha + blur. */
 :root {
-  /* Backgrounds: palette tinta blu-viola, mai bianco puro su superfici */
-  --bg:              #d8ddef;          /* stage piu esterno: blu chiaro saturo */
-  --stage:           #dee2f1;          /* main content area: leggermente piu chiaro */
-  --surface:         #f5f6fb;          /* card primarie: bianco-blu tinto, non puro */
-  --surface-2:       #ebeef7;          /* card secondarie / hover off */
-  --surface-3:       #dfe3f0;          /* superfici disabilitate */
-  --surface-hover:   #eef1f9;
-  --surface-elevated: #fafbff;         /* solo modali e dropdown elevati */
+  /* Stage layers: tre livelli di profondita con tinte ricche */
+  --bg:              #c8cfeb;          /* profondo: blu-lavanda saturo (era #d8ddef) */
+  --stage:           #d2d8ed;          /* medio: appena piu chiaro */
+  --surface:         rgba(255, 255, 255, 0.62);  /* VETRO: bianco semi-trasparente con backdrop-blur */
+  --surface-2:       rgba(255, 255, 255, 0.45);  /* VETRO secondario, piu trasparente */
+  --surface-3:       rgba(255, 255, 255, 0.30);
+  --surface-hover:   rgba(255, 255, 255, 0.78);
+  --surface-solid:   #f5f6fb;          /* opaco, solo dove serve davvero (input/dropdown) */
+  --surface-elevated: rgba(255, 255, 255, 0.92);  /* modali con piu opacita */
 
   /* Ink: testo, tonalita slate raffinata (non puro nero) */
   --ink:             #0b1020;
@@ -208,32 +211,53 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   display: flex;
   flex-direction: column;
   position: relative;
+  /* Liquid Glass background: gradient ricco e profondo, animato sottilmente */
   background:
-    radial-gradient(ellipse 800px 400px at 80% -10%, rgba(168,85,247,0.06) 0%, transparent 60%),
-    radial-gradient(ellipse 600px 300px at -10% 5%, rgba(91,62,232,0.08) 0%, transparent 60%),
-    linear-gradient(180deg, var(--stage) 0%, var(--bg) 100%);
+    radial-gradient(ellipse 1100px 500px at 85% -5%, rgba(168, 85, 247, 0.32) 0%, transparent 55%),
+    radial-gradient(ellipse 900px 450px at -10% 15%, rgba(91, 62, 232, 0.30) 0%, transparent 55%),
+    radial-gradient(ellipse 700px 400px at 50% 110%, rgba(56, 189, 248, 0.20) 0%, transparent 55%),
+    linear-gradient(160deg, #d8def4 0%, #c8cfeb 50%, #cdd4ed 100%);
 }
 .main-stage::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image: radial-gradient(rgba(15,23,42,0.04) 1px, transparent 1px);
-  background-size: 24px 24px;
+  background-image: radial-gradient(rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+  background-size: 28px 28px;
   background-position: -1px -1px;
-  opacity: 0.5;
-  mask-image: linear-gradient(180deg, rgba(0,0,0,0.6) 0%, transparent 60%);
-  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.6) 0%, transparent 60%);
+  opacity: 0.35;
+  mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.6) 0%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.6) 0%, transparent 70%);
+}
+/* Aurora animation: due "luci" che fluttuano lentamente */
+.main-stage::after {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 30% 40%, rgba(168, 85, 247, 0.18) 0%, transparent 35%),
+    radial-gradient(circle at 70% 60%, rgba(56, 189, 248, 0.15) 0%, transparent 35%);
+  filter: blur(60px);
+  animation: aurora 22s ease-in-out infinite alternate;
+  opacity: 0.7;
+}
+@keyframes aurora {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  50%  { transform: translate(8%, -4%) rotate(8deg); }
+  100% { transform: translate(-4%, 6%) rotate(-6deg); }
 }
 
 /* ─── App header ─────────────────────────────────────────────── */
 .app-header {
-  height: 60px;
+  height: 62px;
   flex: 0 0 auto;
-  border-bottom: 1px solid var(--line);
-  background: rgba(255,255,255,0.72);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.50);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 4px 24px rgba(15, 23, 42, 0.05);
   display: grid;
   grid-template-columns: minmax(200px,1fr) minmax(180px,auto) auto;
   align-items: center;
@@ -624,14 +648,29 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .projects-card {
   width: min(1120px,100%);
   margin: 0 auto;
-  border: 1px solid var(--line);
-  border-top: 4px solid var(--accent);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: 0 4px 6px rgba(10,14,40,0.04), 0 20px 60px rgba(10,14,40,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-top: 3px solid transparent;
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.38) 100%);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.75) inset,
+    0 16px 48px rgba(15, 23, 42, 0.10),
+    0 4px 12px rgba(15, 23, 42, 0.06);
   padding: 28px;
   display: grid;
   gap: 20px;
+  position: relative;
+}
+.projects-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--brand-gradient);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 
 .projects-head {
@@ -664,22 +703,30 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .projects-head .primary { display: inline-flex; align-items: center; gap: 7px; }
 
 .project-search {
-  min-height: 48px;
-  border: 1.5px solid var(--line-strong);
+  min-height: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: var(--radius-md);
-  background: var(--surface-2);
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
   color: var(--ink);
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 0 16px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 4px 16px rgba(15, 23, 42, 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
 .project-search:focus-within {
-  border-color: rgba(91,62,232,0.4);
-  box-shadow: 0 0 0 3px rgba(91,62,232,0.1);
-  background: var(--surface);
+  border-color: rgba(91, 62, 232, 0.45);
+  background: rgba(255, 255, 255, 0.70);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8) inset,
+    0 0 0 3px rgba(91, 62, 232, 0.15),
+    0 6px 20px rgba(91, 62, 232, 0.10);
 }
 
 .project-search input {
@@ -701,14 +748,16 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   gap: 12px;
 }
 
-/* ─── Project tile ───────────────────────────────────────────── */
+/* ─── Project tile — Liquid Glass card ───────────────────────── */
 .project-tile {
   position: relative;
   min-height: 128px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--line-strong);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-left: 3px solid rgba(91, 62, 232, 0.40);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: linear-gradient(135deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.38) 100%);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   color: var(--ink);
   text-align: left;
   padding: 18px 18px 16px 18px;
@@ -717,7 +766,10 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   gap: 6px;
   cursor: pointer;
   overflow: hidden;
-  box-shadow: var(--shadow-xs);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 8px 24px rgba(15, 23, 42, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.04);
   transition: border-color var(--t-base), box-shadow var(--t-base), transform var(--t-base), background var(--t-base);
 }
 .project-tile::before {
@@ -1287,12 +1339,16 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 
 .completed-project-row {
   width: min(1100px, 100%);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: var(--radius-xl);
   background:
-    linear-gradient(135deg, rgba(91,62,232,0.04) 0%, rgba(168,85,247,0.02) 100%),
-    var(--surface);
-  box-shadow: var(--shadow-soft), inset 0 1px 0 rgba(255,255,255,0.9);
+    linear-gradient(135deg, rgba(91, 62, 232, 0.10) 0%, rgba(168, 85, 247, 0.06) 50%, rgba(255, 255, 255, 0.40) 100%);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.75) inset,
+    0 12px 36px rgba(91, 62, 232, 0.14),
+    0 4px 12px rgba(15, 23, 42, 0.06);
   padding: 22px 24px;
   display: flex;
   align-items: center;

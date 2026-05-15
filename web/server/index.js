@@ -1624,41 +1624,164 @@ async function finishAutopilot(target, apps, user) {
   );
   await saveApps(apps, user);
 
-  // Avvia build del frontend + deploy backend in background quando tutti
-  // i task sono completati (status === "ready").
+  // Avvia post-processing in background quando tutti i task sono completati
+  // (status === "ready"). Ora gestito da una pipeline SEQUENZIALE che fa:
+  // 1. Build frontend (Vite)
+  // 2. Deploy backend (venv + uvicorn + nginx)
+  // 3. Smoke test (curl)
+  // 4. Email all'utente con risultato
   if (!target.sdd?.currentStep && target.status === "ready") {
-    // 1) Build frontend: serve l'app navigabile
-    ensureFrontendPreviewBuild(target)
-      .then(async (built) => {
-        if (built) {
-          target.preview = await resolvePreviewState(target, target.files || []);
-          await saveApps(apps, user).catch(() => {});
-        }
-      })
-      .catch((err) => console.warn(`[finish] frontend build:`, err.message));
-
-    // 2) Deploy backend: senza questo l'app e' un guscio (NO API funzionanti).
-    // Era un bug del codice precedente che chiamava deployBackend solo in
-    // caso di errore. Ora lo chiamiamo nel path di successo.
-    console.log(`[finish] Avvio deployBackend per ${target.id}`);
-    appendOperationalLog(target, "Avvio deploy backend Python...");
-    deployBackend(target)
-      .then(async (port) => {
-        if (port) {
-          target.backendPort = port;
-          appendOperationalLog(target, `Backend deployato (porta ${port}). API live su /app/${appPublicSlug(target)}/api/`);
-          console.log(`[finish] Backend ${target.id} attivo su porta ${port}`);
-        } else {
-          appendOperationalLog(target, "Backend non deployato (file mancanti)");
-        }
-        await saveApps(apps, user).catch(() => {});
-      })
-      .catch(async (err) => {
-        console.error(`[finish] deployBackend ${target.id} fallito:`, err.message);
-        appendOperationalLog(target, `Errore deploy backend: ${err.message.slice(0, 200)}`);
-        await saveApps(apps, user).catch(() => {});
-      });
+    runPostGenerationPipeline(target, apps, user).catch((err) => {
+      console.error(`[finish] pipeline fallita per ${target.id}:`, err);
+    });
   }
+}
+
+async function runPostGenerationPipeline(target, apps, user) {
+  const appId = target.id;
+  const startedAt = Date.now();
+  appendOperationalLog(target, "Avvio pipeline finale: build frontend + deploy backend + smoke test...");
+  await saveApps(apps, user).catch(() => {});
+
+  // 1) Build frontend
+  let frontendOk = false;
+  try {
+    const built = await ensureFrontendPreviewBuild(target);
+    if (built) {
+      target.preview = await resolvePreviewState(target, target.files || []);
+      frontendOk = true;
+      appendOperationalLog(target, "✓ Frontend buildato e pronto.");
+    } else {
+      appendOperationalLog(target, "⚠ Frontend non buildato (file mancanti).");
+    }
+    await saveApps(apps, user).catch(() => {});
+  } catch (err) {
+    console.warn(`[finish] frontend build ${appId}:`, err.message);
+    appendOperationalLog(target, `⚠ Errore build frontend: ${err.message.slice(0, 150)}`);
+    await saveApps(apps, user).catch(() => {});
+  }
+
+  // 2) Deploy backend
+  let backendPort = null;
+  try {
+    const port = await deployBackend(target);
+    if (port) {
+      target.backendPort = port;
+      backendPort = port;
+      appendOperationalLog(target, `✓ Backend Python attivo (porta ${port}).`);
+    } else {
+      appendOperationalLog(target, "⚠ Backend non deployato (file mancanti).");
+    }
+    await saveApps(apps, user).catch(() => {});
+  } catch (err) {
+    console.error(`[finish] backend deploy ${appId}:`, err.message);
+    appendOperationalLog(target, `⚠ Errore deploy backend: ${err.message.slice(0, 200)}`);
+    await saveApps(apps, user).catch(() => {});
+  }
+
+  // 3) Smoke test: chiama un endpoint pubblico per verificare che TUTTO funzioni
+  let smokeOk = false;
+  if (backendPort) {
+    const slug = target.publicSlug || appPublicSlug(target);
+    const smokeUrl = `${publicBaseUrl}/app/${slug}`;
+    const apiSmokeUrl = `${publicBaseUrl}/app/${slug}/api/`;
+    try {
+      const res = await fetch(smokeUrl);
+      const apiRes = await fetch(apiSmokeUrl).catch(() => ({ status: 0 }));
+      const backendRes = await fetch(`http://127.0.0.1:${backendPort}/`).catch(() => ({ status: 0 }));
+      const frontendStatus = res.status;
+      const apiStatus = apiRes.status;
+      const backendStatus = backendRes.status;
+      // Accettiamo qualsiasi status < 500 sul frontend, e backend che almeno risponda
+      smokeOk = frontendStatus < 500 && backendStatus > 0 && backendStatus < 500;
+      appendOperationalLog(
+        target,
+        `${smokeOk ? "✓" : "⚠"} Smoke test: frontend HTTP ${frontendStatus} · API HTTP ${apiStatus} · backend HTTP ${backendStatus}`,
+      );
+      await saveApps(apps, user).catch(() => {});
+    } catch (err) {
+      appendOperationalLog(target, `⚠ Smoke test fallito: ${err.message.slice(0, 150)}`);
+      await saveApps(apps, user).catch(() => {});
+    }
+  }
+
+  // 4) Email utente con risultato finale
+  const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
+  await notifyUserAppReady(user, target, { frontendOk, backendPort, smokeOk, elapsedSec }).catch((err) =>
+    console.warn(`[notify] email ${appId}:`, err.message),
+  );
+}
+
+// Manda email all'utente quando l'app e' pronta (o quasi).
+async function notifyUserAppReady(user, target, status) {
+  const userEmail = user?.email;
+  if (!userEmail) return;
+  const adminEmail = (process.env.LOCOCODE_ADMIN_EMAIL || "mellucciantonio@gmail.com").trim();
+  const smtpHost = process.env.SMTP_HOST;
+  if (!smtpHost) {
+    console.log(`[notify] SMTP non configurato, skip email a ${userEmail}`);
+    return;
+  }
+  const portValue = Number(process.env.SMTP_PORT || 587);
+  const smtpUser = process.env.SMTP_USER || "";
+  const smtpPass = process.env.SMTP_PASS || "";
+  const from = process.env.SMTP_FROM || smtpUser || "noreply@lococode.local";
+
+  const slug = target.publicSlug || appPublicSlug(target);
+  const appUrl = appUrlForApp(target);
+  const allOk = status.frontendOk && status.backendPort && status.smokeOk;
+  const subject = allOk
+    ? `✓ La tua app "${target.name}" è online!`
+    : `⚠ App "${target.name}" generata con avvisi`;
+
+  const minutes = Math.floor(status.elapsedSec / 60);
+  const seconds = status.elapsedSec % 60;
+  const elapsedText = minutes > 0 ? `${minutes} min ${seconds} sec` : `${seconds} sec`;
+
+  const html = allOk
+    ? `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#f4f6fb;padding:40px 20px;margin:0">
+       <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:36px 32px;box-shadow:0 4px 24px rgba(15,23,42,0.08)">
+         <div style="text-align:center;margin-bottom:24px">
+           <div style="display:inline-block;width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);line-height:64px;font-size:32px">✓</div>
+         </div>
+         <h1 style="font-size:24px;margin:0 0 12px;color:#0b1020;text-align:center;letter-spacing:-0.02em">La tua app è online</h1>
+         <p style="font-size:15px;color:#475569;line-height:1.65;text-align:center;margin:0 0 28px">
+           <strong style="color:#0b1020">${escapeHtml(target.name)}</strong> è stata generata e deployata con successo. Puoi usarla subito.
+         </p>
+         <div style="text-align:center;margin:32px 0">
+           <a href="${appUrl}" style="display:inline-block;background:linear-gradient(135deg,#5b3ee8,#7c5af0);color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-size:15px;font-weight:600">Apri la tua app →</a>
+         </div>
+         <div style="border-top:1px solid #e5e7eb;padding-top:20px;margin-top:24px;color:#64748b;font-size:13px;line-height:1.7">
+           <div><strong style="color:#0b1020">URL:</strong> ${appUrl}</div>
+           <div><strong style="color:#0b1020">Tier:</strong> ${target.generationTier || "base"}</div>
+           <div><strong style="color:#0b1020">Tempo totale:</strong> ${elapsedText}</div>
+         </div>
+       </div>
+       <p style="text-align:center;font-size:12px;color:#94a3b8;margin-top:24px">LocoCode · Generato il ${new Date().toLocaleString("it-IT")}</p>
+       </body></html>`
+    : `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#f4f6fb;padding:40px 20px;margin:0">
+       <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:36px 32px;box-shadow:0 4px 24px rgba(15,23,42,0.08)">
+         <h1 style="font-size:22px;margin:0 0 12px;color:#0b1020;letter-spacing:-0.02em">App generata con avvisi</h1>
+         <p style="font-size:15px;color:#475569;line-height:1.65;margin:0 0 24px">
+           <strong>${escapeHtml(target.name)}</strong> è stata generata ma alcuni controlli post-generazione hanno mostrato avvisi.
+         </p>
+         <ul style="font-size:14px;color:#475569;line-height:1.8;padding-left:20px">
+           <li>Frontend: ${status.frontendOk ? "✓ OK" : "⚠ problema build"}</li>
+           <li>Backend: ${status.backendPort ? `✓ porta ${status.backendPort}` : "⚠ non deployato"}</li>
+           <li>Smoke test: ${status.smokeOk ? "✓ OK" : "⚠ controllo fallito"}</li>
+         </ul>
+         <p style="margin-top:20px"><a href="${appUrl}">${appUrl}</a></p>
+       </div>
+       </body></html>`;
+
+  const transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: portValue,
+    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true" || portValue === 465,
+    auth: smtpUser && smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
+  });
+  await transporter.sendMail({ from, to: userEmail, subject, html });
+  console.log(`[notify] Email inviata a ${userEmail} per app ${target.id} (allOk=${allOk})`);
 }
 
 async function shouldStopAutopilot(user, appId) {
