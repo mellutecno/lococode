@@ -849,10 +849,10 @@ function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLog
 }
 
 const FALLBACK_TIERS = {
-  base: { key: "base", label: "Base", description: "App funzionante, design pulito ma essenziale", color: "#10b981", estCost: { min: 0.10, max: 0.25 }, hasReview: false },
-  media: { key: "media", label: "Media", description: "Frontend curato (Kimi K2.6 specializzato in design)", color: "#3b82f6", estCost: { min: 0.25, max: 0.45 }, hasReview: false },
-  pro: { key: "pro", label: "Pro", description: "Frontend + review automatica del design con Claude Haiku 4.5", color: "#8b5cf6", estCost: { min: 0.50, max: 0.90 }, hasReview: true },
-  premium: { key: "premium", label: "Premium", description: "Tutto Claude Sonnet 4.5 + review GPT-5. Massima qualita.", color: "#f59e0b", estCost: { min: 1.50, max: 3.50 }, hasReview: true },
+  base: { key: "base", label: "Base", description: "App funzionante, design pulito ma essenziale", color: "#10b981", feeEur: 3.99, estCost: { min: 0.20, max: 0.50 }, hasReview: false },
+  media: { key: "media", label: "Media", description: "Frontend curato (Kimi K2.6 specializzato in design)", color: "#3b82f6", feeEur: 4.99, estCost: { min: 0.40, max: 0.80 }, hasReview: false },
+  pro: { key: "pro", label: "Pro", description: "Frontend + review automatica del design con Claude Haiku 4.5", color: "#8b5cf6", feeEur: 9.99, estCost: { min: 0.50, max: 0.90 }, hasReview: true },
+  premium: { key: "premium", label: "Premium", description: "Tutto Claude Sonnet 4.5 + review GPT-5. Massima qualita.", color: "#f59e0b", feeEur: 19.99, estCost: { min: 1.50, max: 3.50 }, hasReview: true },
 };
 
 function TierSelector({ value, onChange, isAdmin, tiersCatalog }) {
@@ -886,9 +886,9 @@ function TierSelector({ value, onChange, isAdmin, tiersCatalog }) {
                 {locked && <span className="tier-card-lock">🔒</span>}
               </div>
               <div className="tier-card-desc">{tier.description}</div>
-              <div className="tier-card-cost">
-                <span>Costo viva LocoCode</span>
-                <strong>€{tier.estCost.min.toFixed(2)} – €{tier.estCost.max.toFixed(2)}</strong>
+              <div className="tier-card-fee">
+                <strong>€{(tier.feeEur ?? 0).toFixed(2)}</strong>
+                <span>creazione (rimborsato se abboni)</span>
               </div>
             </button>
           );
@@ -1030,6 +1030,11 @@ function PricingCard({ app, onPurchaseTier }) {
             {app.pricing.metrics.doneTasks} task · {app.pricing.metrics.fileCount} file
             {app.pricing.metrics.hasBackend ? " · backend incluso" : ""}
           </p>
+          {typeof app.pricing.generationFeeEur === "number" && app.pricing.generationFeeEur > 0 && (
+            <p style={{ marginTop: 6, color: "var(--success)", fontSize: 12, fontWeight: 600 }}>
+              ✓ Hai pagato <strong>€{app.pricing.generationFeeEur.toFixed(2)}</strong> per la creazione — viene scalato dal piano che scegli.
+            </p>
+          )}
         </div>
         {app.lifecycle !== "trial" && (
           <span className="pricing-lifecycle-badge">Piano attivo: {app.lifecycle.replace(/_/g, " ")}</span>
@@ -1044,9 +1049,23 @@ function PricingCard({ app, onPurchaseTier }) {
             </div>
             <div className="pricing-plan-price">
               {plan.price.monthlyEur ? (
-                <><strong>€{plan.price.monthlyEur.toFixed(2)}</strong><span>/mese</span></>
+                <>
+                  <strong>€{plan.price.monthlyEur.toFixed(2)}</strong><span>/mese</span>
+                  {typeof plan.price.firstMonthEur === "number" && plan.price.firstMonthEur < plan.price.monthlyEur && (
+                    <div className="pricing-plan-discount">
+                      Primo mese: <strong>€{plan.price.firstMonthEur.toFixed(2)}</strong> (sconto creazione)
+                    </div>
+                  )}
+                </>
               ) : (
-                <><strong>€{plan.price.oneShotEur}</strong><span>una tantum</span></>
+                <>
+                  <strong>€{plan.price.oneShotEur}</strong><span>una tantum</span>
+                  {typeof plan.price.oneShotEurDiscounted === "number" && plan.price.oneShotEurDiscounted < plan.price.oneShotEur && (
+                    <div className="pricing-plan-discount">
+                      Tu paghi: <strong>€{plan.price.oneShotEurDiscounted.toFixed(2)}</strong> (sconto creazione)
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <ul className="pricing-plan-features">

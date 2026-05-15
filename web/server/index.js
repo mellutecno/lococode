@@ -80,6 +80,7 @@ const GENERATION_TIERS = {
     label: "Base",
     description: "App funzionante, design pulito ma essenziale",
     color: "#10b981",
+    feeEur: 3.99,
     estCost: { min: 0.20, max: 0.50 },
     models: {
       sdd: "deepseek/deepseek-v4-pro",
@@ -92,6 +93,7 @@ const GENERATION_TIERS = {
     label: "Media",
     description: "Frontend curato con Kimi (specializzato in design)",
     color: "#3b82f6",
+    feeEur: 4.99,
     estCost: { min: 0.40, max: 0.80 },
     models: {
       sdd: "deepseek/deepseek-v4-pro",
@@ -104,6 +106,7 @@ const GENERATION_TIERS = {
     label: "Pro",
     description: "Frontend + revisione design con Claude Haiku 4.5",
     color: "#8b5cf6",
+    feeEur: 9.99,
     estCost: { min: 0.50, max: 0.90 },
     models: {
       sdd: "deepseek/deepseek-v4-pro",
@@ -116,6 +119,7 @@ const GENERATION_TIERS = {
     label: "Premium",
     description: "Tutto Claude Sonnet 4.5 + review GPT-5",
     color: "#f59e0b",
+    feeEur: 19.99,
     estCost: { min: 1.50, max: 3.50 },
     models: {
       sdd: "anthropic/claude-sonnet-4.5",
@@ -368,6 +372,7 @@ app.get("/api/generation-tiers", (req, res) => {
       description: t.description,
       color: t.color,
       estCost: t.estCost,
+      feeEur: t.feeEur,
       hasReview: !!t.models.review,
     };
   }
@@ -3748,18 +3753,24 @@ function computeAppScore(appData) {
   return { score, doneTasks, fileCount, hasBackend, extApis };
 }
 
-// Tier suggerito + prezzi proposti (in EUR).
-// I costi reali per noi sono dominati dal consumo token AI (frazioni di EUR
-// per app piccole). Quindi prezziamo per VALORE PERCEPITO, non per costo:
-// - Starter / Pro: una tantum sotto i 100 EUR (impulse-buy, no friction)
-// - Business: prezzo medio per app full-stack significative
-// - Enterprise: trattativa diretta
+// Prezzi creazione (in EUR) — pagamento UPFRONT per generare l'app.
+// Questi prezzi vengono scalati come SCONTO dal primo mese di abbonamento
+// o dal pagamento export una tantum.
+const GENERATION_FEES = {
+  base:    3.99,
+  media:   4.99,
+  pro:     9.99,
+  premium: 19.99,
+};
+
+// Tier post-creazione (Starter/Pro/Business/Enterprise) basato su score reale.
+// Determina i prezzi degli abbonamenti hosting e dell'export.
 function computeAppPricing(appData) {
   const { score, doneTasks, fileCount, hasBackend } = computeAppScore(appData);
   let tier = "Starter";
-  let monthlyLococodeKeys = 9.99;   // chiavi LocoCode
-  let monthlyHostingOnly = 4.99;    // hosting con chiavi utente
-  let exportOneShot = 49;           // scarica tutto
+  let monthlyLococodeKeys = 9.99;
+  let monthlyHostingOnly = 4.99;
+  let exportOneShot = 49;
   if (score >= 280) {
     tier = "Enterprise";
     monthlyLococodeKeys = 79.99;
@@ -3776,17 +3787,43 @@ function computeAppPricing(appData) {
     monthlyHostingOnly = 9.99;
     exportOneShot = 99;
   }
+
+  // Prezzo pagato per creazione dell'app, in base al tier scelto dall'utente
+  // (NON dal tier finale: l'utente paga per cosa ha CHIESTO).
+  const genTier = String(appData.generationTier || "base").toLowerCase();
+  const generationFeeEur = GENERATION_FEES[genTier] ?? GENERATION_FEES.base;
+
+  // Sconto: il prezzo di creazione viene SCALATO dal primo mese di abbonamento
+  // o dal pagamento export, MA solo se l'utente passa effettivamente al pagato.
+  // Esempio: hai pagato 4,99 EUR per Media. Se ti abboni Hosting LocoCode a
+  // 19,99/mese, il PRIMO mese costera' 19,99 - 4,99 = 15,00. Dal secondo mese
+  // di nuovo 19,99 pieno.
+  const firstMonthLococodeKeys = Math.max(0, Number((monthlyLococodeKeys - generationFeeEur).toFixed(2)));
+  const firstMonthHostingOnly  = Math.max(0, Number((monthlyHostingOnly - generationFeeEur).toFixed(2)));
+  const exportOneShotDiscounted = Math.max(0, Number((exportOneShot - generationFeeEur).toFixed(2)));
+
   return {
     score,
     tier,
     metrics: { doneTasks, fileCount, hasBackend },
+    generationTier: genTier,
+    generationFeeEur,
     plans: {
-      // Hosting su LocoCode + chiavi AI fornite da LocoCode (tutto incluso)
-      hosted_lococode_api: { monthlyEur: monthlyLococodeKeys, label: "Hosting + chiavi LocoCode" },
-      // Hosting su LocoCode + chiavi AI fornite dall'utente (provider a sua scelta)
-      hosted_user_api: { monthlyEur: monthlyHostingOnly, label: "Hosting + chiavi tue" },
-      // Pacchetto export: utente scarica il codice e si arrangia da solo
-      exported: { oneShotEur: exportOneShot, label: "Export self-host" },
+      hosted_lococode_api: {
+        monthlyEur: monthlyLococodeKeys,
+        firstMonthEur: firstMonthLococodeKeys,
+        label: "Hosting + chiavi LocoCode",
+      },
+      hosted_user_api: {
+        monthlyEur: monthlyHostingOnly,
+        firstMonthEur: firstMonthHostingOnly,
+        label: "Hosting + chiavi tue",
+      },
+      exported: {
+        oneShotEur: exportOneShot,
+        oneShotEurDiscounted: exportOneShotDiscounted,
+        label: "Export self-host",
+      },
     },
   };
 }
