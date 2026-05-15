@@ -3271,6 +3271,20 @@ textarea:focus, select:focus {
 }
 input::placeholder, textarea::placeholder { color: var(--muted); }
 
+/* Select aperto: il browser usa il rendering OS per la lista option,
+   ma rispetta background/color sui singoli <option>. Forzo dark su tutti
+   i select dell'app cosi' niente piu' testi chiari su fondo bianco. */
+select option,
+select optgroup {
+  background-color: #161b30;
+  color: var(--ink);
+}
+select option:checked,
+select option:hover {
+  background-color: var(--accent);
+  color: #ffffff;
+}
+
 /* Settings/auth/help: superfici dark */
 .settings-card, .auth-card, .help-card, .help-view section, .settings-section {
   background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
