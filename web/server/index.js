@@ -1707,14 +1707,28 @@ Restituisci SOLO il file nel formato fenced code block:
 ...
 \`\`\``;
 
-    const aiText = await callOpenRouter({
+    const wireframeStart = Date.now();
+    const aiResult = await callOpenRouter({
       apiKey,
       model,
       systemPrompt: "Sei un designer UI. Genera solo il blocco file richiesto, senza spiegazioni.",
       userPrompt: wireframePrompt,
       maxTokens: 2500,
       timeoutMs: openRouterTimeoutMs,
+      returnUsage: true,
     });
+    const aiText = aiResult.text;
+    if (aiResult.usage) {
+      target.tokenUsage = target.tokenUsage || {};
+      target.tokenUsage.wireframe = {
+        model,
+        promptTokens: aiResult.usage.prompt_tokens || 0,
+        completionTokens: aiResult.usage.completion_tokens || 0,
+        totalTokens: aiResult.usage.total_tokens || 0,
+        durationMs: Date.now() - wireframeStart,
+        at: new Date().toISOString(),
+      };
+    }
 
     const ops = parseOperations(aiText);
     if (ops.length) {
@@ -1748,14 +1762,32 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
   const files = await listProjectFiles(root);
   const prompt = buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, mode, completedCount, totalCount, files });
 
-  const aiText = await callOpenRouter({
+  const followupStart = Date.now();
+  const aiResult = await callOpenRouter({
     apiKey,
     model,
     systemPrompt,
     userPrompt: prompt,
     maxTokens: 60000,
     timeoutMs: openRouterTimeoutMs,
+    returnUsage: true,
   });
+  const aiText = aiResult.text;
+  const aiUsage = aiResult.usage;
+  // Accumula i token di ogni follow-up sotto la chiave "followup"
+  if (aiUsage) {
+    target.tokenUsage = target.tokenUsage || {};
+    const prev = target.tokenUsage.followup || { model, promptTokens: 0, completionTokens: 0, totalTokens: 0, durationMs: 0, calls: 0 };
+    target.tokenUsage.followup = {
+      model,
+      promptTokens: prev.promptTokens + (aiUsage.prompt_tokens || 0),
+      completionTokens: prev.completionTokens + (aiUsage.completion_tokens || 0),
+      totalTokens: prev.totalTokens + (aiUsage.total_tokens || 0),
+      durationMs: prev.durationMs + (Date.now() - followupStart),
+      calls: prev.calls + 1,
+      at: new Date().toISOString(),
+    };
+  }
   const operations = parseOperations(aiText);
   if (!operations.length) {
     throw new Error(
