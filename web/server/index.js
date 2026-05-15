@@ -638,6 +638,11 @@ app.post("/api/generate", async (req, res) => {
   }
   const effectiveTier = isAdminUser(user) ? generationTier : "base";
 
+  // Kind: webapp (default, flusso completo con backend) oppure website (sito
+  // vetrina statico, niente backend). Influenza prompt e pipeline.
+  const requestedKind = String(req.body.kind || "webapp").trim().toLowerCase();
+  const appKind = requestedKind === "website" ? "website" : "webapp";
+
   if (!target) {
     target = {
       id: `app-${Date.now()}`,
@@ -650,6 +655,7 @@ app.post("/api/generate", async (req, res) => {
       updatedAt: now,
       model,
       generationTier: effectiveTier,
+      kind: appKind,
       prompt,
       status: "building",
       phase: "intake",
@@ -2111,6 +2117,30 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   // Modelli per fase basati sul tier scelto dall'utente. Fallback al modello
   // globale (admin override) se il tier non specifica nulla.
   const tier = target.generationTier || "base";
+  const isWebsite = target.kind === "website";
+
+  // In modalita' "sito web vetrina" il prompt viene arricchito con istruzioni
+  // tassative: niente backend, niente database, solo frontend statico. Il
+  // backend phase viene saltato del tutto piu' sotto.
+  const websitePreamble = isWebsite
+    ? [
+        "═══ MODALITA' SITO WEB VETRINA ═══",
+        "Questo NON e' una web app gestionale. E' un sito web statico di presenza online per un'attivita' commerciale.",
+        "VINCOLI ASSOLUTI:",
+        "- NIENTE backend, NIENTE database, NIENTE login, NIENTE registrazione, NIENTE area utente.",
+        "- NESSUN file in backend/. Niente FastAPI, niente Python, niente API.",
+        "- Solo frontend React+Vite (gia' fornito) + componenti UI del design system.",
+        "- Dati 'finti' realistici hardcoded direttamente nei componenti (orari, menu, contatti, mappa).",
+        "- Sezioni obbligatorie: <Hero> grande con CTA, <ChiSiamo>, <MenuServizi>, <Galleria>, <Contatti> con telefono cliccabile (tel: link) + email + mappa Google embed via <iframe src='https://www.google.com/maps?q=...&output=embed'>, <Footer> con orari.",
+        "- L'app deve essere SINGLE-PAGE con scroll fluido tra sezioni (anchor link). Non multi-page.",
+        "- USA SEMPRE i componenti del design system (Button, Card, ecc.) ma costruisci il contenuto vetrina dentro <PageLayout>... oppure direttamente in App.jsx con sezioni stilizzate glassmorphism.",
+        "- Foto: placeholder Unsplash con query coerente (es. https://source.unsplash.com/featured/?pizza,restaurant). NON Lorem Picsum.",
+        "═══════════════════════════════════════",
+        "",
+        "Richiesta titolare:",
+      ].join("\n") + "\n"
+    : "";
+  const effectivePrompt = websitePreamble + userPrompt;
   const tierModels = getTierModels(tier);
   const modelFor = (phaseKey) => tierModels[phaseKey] || model;
 
@@ -2125,25 +2155,28 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       key: "sdd",
       maxTokens: 60000, // limite alto: lascia che il modello generi tutto senza troncamenti
       model: modelFor("sdd"),
-      getPrompt: async () => buildInitialSpecsPrompt(userPrompt),
-      expectedFiles: [".lc/spec/sdd.md", ".lc/spec/architecture.md", ".lc/spec/tasks.md", "README.md"],
+      getPrompt: async () => buildInitialSpecsPrompt(effectivePrompt),
+      expectedFiles: isWebsite
+        ? [".lc/spec/sdd.md", ".lc/spec/tasks.md", "README.md"]
+        : [".lc/spec/sdd.md", ".lc/spec/architecture.md", ".lc/spec/tasks.md", "README.md"],
     },
-    {
+    // Backend phase: SALTATA quando kind=website (sito vetrina, no server).
+    ...(isWebsite ? [] : [{
       label: "parte server",
       phaseNum: 2,
       key: "backend",
-      maxTokens: 60000, // limite alto: lascia che il modello generi tutto senza troncamenti
+      maxTokens: 60000,
       model: modelFor("backend"),
-      getPrompt: async () => buildInitialBackendPrompt(userPrompt, await loadProjectMemory(target)),
+      getPrompt: async () => buildInitialBackendPrompt(effectivePrompt, await loadProjectMemory(target)),
       expectedFiles: ["backend/app/main.py", "backend/requirements.txt", "backend/.env.example"],
-    },
+    }]),
     {
-      label: "interfaccia utente",
-      phaseNum: 3,
+      label: isWebsite ? "sito vetrina" : "interfaccia utente",
+      phaseNum: isWebsite ? 2 : 3,
       key: "frontend",
       maxTokens: 60000, // limite alto: lascia che il modello generi tutto senza troncamenti
       model: modelFor("frontend"),
-      getPrompt: async () => buildInitialFrontendPrompt(userPrompt, await loadProjectMemory(target)),
+      getPrompt: async () => buildInitialFrontendPrompt(effectivePrompt, await loadProjectMemory(target)),
       expectedFiles: ["frontend/src/App.jsx", "frontend/package.json", "preview/index.html"],
     },
   ];

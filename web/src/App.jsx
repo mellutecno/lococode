@@ -12,6 +12,7 @@ import {
   FileCode,
   FileStack,
   FolderKanban,
+  Globe,
   KeyRound,
   LayoutDashboard,
   Lock,
@@ -328,7 +329,7 @@ Questa azione è irreversibile.`)) return;
     }
   }
 
-  async function generateApp({ text, appId = "", overrideModel = "", name = "", tier = "base" }) {
+  async function generateApp({ text, appId = "", overrideModel = "", name = "", tier = "base", kind = "" }) {
     if (!requireAuth()) return;
     const cleanPrompt = text.trim();
     if (!cleanPrompt || busy) return;
@@ -354,6 +355,7 @@ Questa azione è irreversibile.`)) return;
           model: chosenModel,
           appId,
           generationTier: tier,
+          kind: kind || "webapp",
           openrouterApiKey: apiKey,
         }),
       });
@@ -545,12 +547,20 @@ Questa azione è irreversibile.`)) return;
             setGenerationTier={setGenerationTier}
             tiersCatalog={tiersCatalog}
             isAdmin={currentUser?.isAdmin === true}
-            onGenerate={() => generateApp({ text: prompt, name: projectName, tier: generationTier })}
+            onGenerate={() => generateApp({ text: prompt, name: projectName, tier: generationTier, kind: "webapp" })}
             onQuick={(item) => {
               setProjectName(item.label);
               setPrompt(item.prompt);
-              void generateApp({ text: item.prompt, name: item.label, tier: generationTier });
+              void generateApp({ text: item.prompt, name: item.label, tier: generationTier, kind: "webapp" });
             }}
+          />
+        )}
+
+        {activeView === "website" && (
+          <WebsiteHomeView
+            busy={busy}
+            onBackToProjects={() => setActiveView("projects")}
+            onGenerate={({ text, name, kind }) => generateApp({ text, name, tier: "base", kind })}
           />
         )}
 
@@ -712,6 +722,7 @@ function AuthModal({ email, setEmail, token, setToken, step, setStep, message, b
 }
 
 function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTerm, setActiveView, setSelectedAppId, onAuth, onDeleteApp }) {
+  const isEmpty = currentUser && !apps.length;
   return (
     <div className="projects-view">
       <section className="projects-card">
@@ -720,61 +731,102 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
             <span>Area lavoro</span>
             <h1>Workspace</h1>
           </div>
-          <button className="primary" onClick={() => setActiveView("apps")}>
-            <Plus size={20} />
-            <span>Nuova app</span>
-          </button>
+          {!isEmpty && (
+            <div className="projects-head-actions">
+              <button className="secondary compact" onClick={() => setActiveView("website")}>
+                <Globe size={18} />
+                <span>Nuovo sito</span>
+              </button>
+              <button className="primary" onClick={() => setActiveView("apps")}>
+                <Plus size={20} />
+                <span>Nuova web app</span>
+              </button>
+            </div>
+          )}
         </div>
-        <label className="project-search">
-          <Search size={22} />
-          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Cerca nel workspace" />
-        </label>
+        {!isEmpty && (
+          <label className="project-search">
+            <Search size={22} />
+            <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Cerca nel workspace" />
+          </label>
+        )}
 
-        <div className="project-grid">
-          {!currentUser && (
-            <button className="project-tile auth-item" onClick={onAuth}>
-              <strong>Accedi con token</strong>
-              <span>Inserisci email e token per vedere il tuo workspace.</span>
-            </button>
-          )}
-          {apps.map((app) => (
-            <div
-              key={app.id}
-              className={`project-tile ${selectedApp?.id === app.id ? "selected" : ""}`}
-              data-status={app.status || "idle"}
-              onClick={() => {
-                setSelectedAppId(app.id);
-                setActiveView("chat");
-              }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setSelectedAppId(app.id); setActiveView("chat"); } }}
-            >
-              <strong>{app.name}</strong>
-              <span>{formatDate(app.updatedAt)}</span>
-              <em>{projectTaskState(app).short}</em>
-              <div className="project-tile-actions" onClick={(e) => e.stopPropagation()}>
-                {app.appUrl && (
-                  <a className="tile-icon-btn" href={app.appUrl} target="_blank" rel="noreferrer" title="Apri app" onClick={(e) => e.stopPropagation()}>
-                    <ExternalLink size={14} />
-                  </a>
-                )}
-                {onDeleteApp && (
-                  <button className="tile-icon-btn danger" title="Elimina app" onClick={(e) => { e.stopPropagation(); onDeleteApp(app.id, app.name); }}>
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
+        {isEmpty ? (
+          <div className="creation-choice">
+            <h2 className="creation-choice-title">Cosa vuoi creare?</h2>
+            <p className="creation-choice-sub">Scegli il punto di partenza giusto. Puoi sempre creare l'altro in seguito.</p>
+            <div className="creation-choice-grid">
+              <button className="creation-card creation-card-app" onClick={() => setActiveView("apps")}>
+                <div className="creation-card-icon"><Workflow size={28} /></div>
+                <h3>Web App</h3>
+                <p>Gestionali, dashboard, strumenti interattivi. Database incluso, login, area utenti, dati salvati.</p>
+                <ul className="creation-card-features">
+                  <li>Backend + database</li>
+                  <li>Login e registrazione</li>
+                  <li>Dati persistenti</li>
+                </ul>
+                <span className="creation-card-cta">Crea web app →</span>
+              </button>
+              <button className="creation-card creation-card-site" onClick={() => setActiveView("website")}>
+                <div className="creation-card-icon"><Globe size={28} /></div>
+                <h3>Sito Web</h3>
+                <p>Vetrina online per attività: pizzeria, ristorante, parrucchiere, officina. Bello, veloce, statico.</p>
+                <ul className="creation-card-features">
+                  <li>Hero + menu/servizi</li>
+                  <li>Contatti + mappa</li>
+                  <li>Galleria foto</li>
+                </ul>
+                <span className="creation-card-cta">Crea sito web →</span>
+              </button>
             </div>
-          ))}
-          {currentUser && !apps.length && (
-            <div className="projects-empty-state">
-              <div className="projects-empty-icon"><FolderKanban size={36} /></div>
-              <strong>Nessuna app ancora</strong>
-              <span>Crea la tua prima app con il pulsante "Nuova app"</span>
-            </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="project-grid">
+            {!currentUser && (
+              <button className="project-tile auth-item" onClick={onAuth}>
+                <strong>Accedi con token</strong>
+                <span>Inserisci email e token per vedere il tuo workspace.</span>
+              </button>
+            )}
+            {apps.map((app) => {
+              const isWebsite = app.kind === "website";
+              return (
+                <div
+                  key={app.id}
+                  className={`project-tile ${selectedApp?.id === app.id ? "selected" : ""}`}
+                  data-status={app.status || "idle"}
+                  data-kind={app.kind || "webapp"}
+                  onClick={() => {
+                    setSelectedAppId(app.id);
+                    setActiveView("chat");
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { setSelectedAppId(app.id); setActiveView("chat"); } }}
+                >
+                  <div className="project-tile-kind-badge">
+                    {isWebsite ? <><Globe size={11} /> Sito web</> : <><Workflow size={11} /> Web app</>}
+                  </div>
+                  <strong>{app.name}</strong>
+                  <span>{formatDate(app.updatedAt)}</span>
+                  <em>{projectTaskState(app).short}</em>
+                  <div className="project-tile-actions" onClick={(e) => e.stopPropagation()}>
+                    {app.appUrl && (
+                      <a className="tile-icon-btn" href={app.appUrl} target="_blank" rel="noreferrer" title="Apri app" onClick={(e) => e.stopPropagation()}>
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                    {onDeleteApp && (
+                      <button className="tile-icon-btn danger" title="Elimina app" onClick={(e) => { e.stopPropagation(); onDeleteApp(app.id, app.name); }}>
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
     </div>
   );
@@ -955,6 +1007,131 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
         })}
       </div>
 
+    </div>
+  );
+}
+
+// Form dedicato alla creazione di siti web (vetrina statica). Differenza dal
+// flusso web app: niente tier selector visibile (tutti i siti usano lo stesso
+// pipeline ridotto), e campi guidati per business invece di prompt libero.
+function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
+  const [businessName, setBusinessName] = useState("");
+  const [businessType, setBusinessType] = useState("pizzeria");
+  const [city, setCity] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [description, setDescription] = useState("");
+
+  const businessTypes = [
+    { value: "pizzeria", label: "Pizzeria" },
+    { value: "ristorante", label: "Ristorante" },
+    { value: "bar", label: "Bar / Caffetteria" },
+    { value: "trattoria", label: "Trattoria / Osteria" },
+    { value: "gelateria", label: "Gelateria / Pasticceria" },
+    { value: "parrucchiere", label: "Parrucchiere / Barber" },
+    { value: "estetista", label: "Centro estetico" },
+    { value: "officina", label: "Officina / Carrozzeria" },
+    { value: "studio", label: "Studio professionale" },
+    { value: "palestra", label: "Palestra / Centro sportivo" },
+    { value: "altro", label: "Altra attività" },
+  ];
+
+  const canSubmit = businessName.trim().length > 0 && city.trim().length > 0 && !busy;
+
+  function buildPrompt() {
+    const typeLabel = businessTypes.find((t) => t.value === businessType)?.label || businessType;
+    const lines = [
+      `Sito web vetrina per: ${businessName.trim()} (${typeLabel}) a ${city.trim()}.`,
+    ];
+    if (phone.trim()) lines.push(`Telefono: ${phone.trim()}.`);
+    if (address.trim()) lines.push(`Indirizzo: ${address.trim()}.`);
+    if (description.trim()) lines.push(`Descrizione fornita dal titolare: ${description.trim()}`);
+    lines.push(
+      "",
+      "Sezioni obbligatorie: Hero con call-to-action, Chi siamo, Menu/Servizi (con almeno 6 voci credibili per il tipo di attività), Galleria (4-6 foto placeholder coerenti), Contatti con telefono cliccabile + mappa Google embed dell'indirizzo, Footer con orari.",
+      "Niente login, niente backend, niente database. Sito puramente vetrina, multipagina o single-page lungo.",
+    );
+    return lines.join("\n");
+  }
+
+  return (
+    <div className="home-view">
+      <section className="hero-block">
+        <button className="back-link" onClick={onBackToProjects}>← Torna al workspace</button>
+        <div className="hero-badge"><Globe size={12} /> Sito web vetrina</div>
+        <h1>Crea il sito della tua attività</h1>
+        <p className="hero-sub">Dimmi nome, tipo e città. Costruisco un sito vetrina bellissimo con menu, contatti, mappa e galleria — niente login né database, solo presenza online curata.</p>
+
+        <div className="website-form">
+          <label className="project-name-field">
+            <span>Nome attività *</span>
+            <input
+              value={businessName}
+              onChange={(e) => setBusinessName(e.target.value)}
+              placeholder="Esempio: Pizzeria Da Mario"
+            />
+          </label>
+
+          <div className="website-form-row">
+            <label className="project-name-field">
+              <span>Tipo di attività *</span>
+              <select className="website-select" value={businessType} onChange={(e) => setBusinessType(e.target.value)}>
+                {businessTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </label>
+            <label className="project-name-field">
+              <span>Città *</span>
+              <input
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                placeholder="Esempio: Salerno"
+              />
+            </label>
+          </div>
+
+          <div className="website-form-row">
+            <label className="project-name-field">
+              <span>Telefono</span>
+              <input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="089 123 456"
+              />
+            </label>
+            <label className="project-name-field">
+              <span>Indirizzo</span>
+              <input
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="Via Roma 12"
+              />
+            </label>
+          </div>
+
+          <label className="project-name-field">
+            <span>Note libere per il sito (opzionale)</span>
+            <textarea
+              className="website-textarea"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Es: specialità pizza napoletana cotta in forno a legna, ambiente familiare, orari 18-24 chiuso lunedì..."
+              rows={4}
+            />
+          </label>
+
+          <button
+            className="primary website-submit"
+            disabled={!canSubmit}
+            onClick={() => onGenerate({
+              text: buildPrompt(),
+              name: businessName.trim(),
+              kind: "website",
+            })}
+          >
+            {busy ? <><Sparkles className="spin" size={18} /> Generazione in corso…</> : <><Globe size={18} /> Crea sito web</>}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

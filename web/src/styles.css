@@ -3299,3 +3299,232 @@ input::placeholder, textarea::placeholder { color: var(--muted); }
 /* Phone preview chrome: torna ad essere bianca solo dove serve (frame iPhone) */
 .phone-home-bar { background: #fff; }
 
+/* ═══════════════════════════════════════════════════════════════════
+   CREATION CHOICE — Empty state con 2 card (Web App / Sito Web)
+   ═══════════════════════════════════════════════════════════════════ */
+.creation-choice {
+  padding: 18px 6px 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+.creation-choice-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.creation-choice-sub {
+  margin: 0 0 22px;
+  font-size: 14px;
+  color: var(--muted);
+  max-width: 540px;
+}
+.creation-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  width: 100%;
+  max-width: 760px;
+}
+.creation-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 26px 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(140deg, rgba(124, 90, 240, 0.10) 0%, rgba(255, 255, 255, 0.03) 100%);
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--t-base), box-shadow var(--t-base), border-color var(--t-base), background var(--t-base);
+  color: var(--ink);
+  position: relative;
+  overflow: hidden;
+}
+.creation-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(140deg, rgba(124, 90, 240, 0.18) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity var(--t-base);
+  pointer-events: none;
+}
+.creation-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(124, 90, 240, 0.40);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(124, 90, 240, 0.20);
+}
+.creation-card:hover::before { opacity: 1; }
+.creation-card-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(124, 90, 240, 0.40);
+}
+.creation-card-site .creation-card-icon {
+  background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+  box-shadow: 0 8px 24px rgba(14, 165, 233, 0.40);
+}
+.creation-card h3 {
+  margin: 2px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.creation-card p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+.creation-card-features {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.creation-card-features li {
+  position: relative;
+  padding-left: 14px;
+}
+.creation-card-features li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: var(--accent-2);
+  font-weight: 700;
+}
+.creation-card-cta {
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+/* Workspace head: due bottoni affiancati */
+.projects-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.projects-head-actions .secondary.compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13px;
+  transition: background var(--t-base), border-color var(--t-base);
+}
+.projects-head-actions .secondary.compact:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--line-strong);
+}
+
+/* Project tile: badge piccolo "Web app" / "Sito web" in alto */
+.project-tile-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.project-tile[data-kind="website"] .project-tile-kind-badge {
+  background: rgba(14, 165, 233, 0.12);
+  border-color: rgba(14, 165, 233, 0.30);
+  color: #7dd3fc;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   WEBSITE FORM — form dedicato per creazione siti vetrina
+   ═══════════════════════════════════════════════════════════════════ */
+.website-form {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 640px;
+}
+.website-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 640px) {
+  .website-form-row { grid-template-columns: 1fr; }
+}
+.website-select {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  color: var(--ink);
+  font-size: 14px;
+}
+.website-textarea {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 100px;
+}
+.website-submit {
+  margin-top: 6px;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 20px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.back-link {
+  align-self: flex-start;
+  margin-bottom: 8px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 0;
+  cursor: pointer;
+  transition: color var(--t-base);
+}
+.back-link:hover { color: var(--ink); }
+
