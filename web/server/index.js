@@ -1785,7 +1785,7 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
     model,
     systemPrompt,
     userPrompt: prompt,
-    maxTokens: 12000,
+    maxTokens: 60000,
     timeoutMs: openRouterTimeoutMs,
   });
   const operations = parseOperations(aiText);
@@ -1835,7 +1835,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       label: "specifiche progetto",
       phaseNum: 1,
       key: "sdd",
-      maxTokens: 16000, // aumentato da 10k a 16k: DeepSeek tende a saturare il limite scrivendo solo sdd.md verboso e troncando tasks/architecture
+      maxTokens: 60000, // limite alto: lascia che il modello generi tutto senza troncamenti
       model: modelFor("sdd"),
       getPrompt: async () => buildInitialSpecsPrompt(userPrompt),
       expectedFiles: [".lc/spec/sdd.md", ".lc/spec/architecture.md", ".lc/spec/tasks.md", "README.md"],
@@ -1844,7 +1844,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       label: "parte server",
       phaseNum: 2,
       key: "backend",
-      maxTokens: 24000, // aumentato da 12k a 24k: DeepSeek saturava il limite scrivendo solo requirements.txt e troncando main.py
+      maxTokens: 60000, // limite alto: lascia che il modello generi tutto senza troncamenti
       model: modelFor("backend"),
       getPrompt: async () => buildInitialBackendPrompt(userPrompt, await loadProjectMemory(target)),
       expectedFiles: ["backend/app/main.py", "backend/requirements.txt", "backend/.env.example"],
@@ -1853,7 +1853,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       label: "interfaccia utente",
       phaseNum: 3,
       key: "frontend",
-      maxTokens: 28000, // aumentato da 14k a 28k: frontend e' il piu' grosso, serve margine ampio
+      maxTokens: 60000, // limite alto: lascia che il modello generi tutto senza troncamenti
       model: modelFor("frontend"),
       getPrompt: async () => buildInitialFrontendPrompt(userPrompt, await loadProjectMemory(target)),
       expectedFiles: ["frontend/src/App.jsx", "frontend/package.json", "preview/index.html"],
@@ -1869,7 +1869,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       label: "design review",
       phaseNum: 4,
       key: "review",
-      maxTokens: 14000,
+      maxTokens: 60000,
       model: reviewModel,
       isReview: true,
       getPrompt: async () => buildDesignReviewPrompt(target),
@@ -3067,7 +3067,7 @@ async function callOpenRouterOnce({
   model,
   systemPrompt,
   userPrompt,
-  maxTokens = 12000,
+  maxTokens = 60000,
   timeoutMs = openRouterTimeoutMs,
 }) {
   const shouldAbort = Number(timeoutMs) > 0;
