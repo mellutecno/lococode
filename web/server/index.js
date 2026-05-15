@@ -8,6 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { build as viteBuild } from "vite";
+import { getDesignSystemFiles, DESIGN_SYSTEM_PROMPT_SECTION } from "./designSystem.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -2503,6 +2504,8 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "FASE 3/3 - Frontend React e interfaccia utente.",
     "Usa la memoria SDD qui sotto e genera il frontend MVP completo.",
     "",
+    DESIGN_SYSTEM_PROMPT_SECTION,
+    "",
     "Memoria progetto:",
     projectMemory,
     "",
@@ -2701,10 +2704,23 @@ async function buildDesignReviewPrompt(target) {
     "- Stati warning: amber-500 non yellow",
     "- Neutrals: slate non gray",
     "",
+    "DESIGN SYSTEM GIA' DISPONIBILE — USALO:",
+    "Il progetto ha gia' in frontend/src/components/ui/ i componenti pronti: Button, Card, CardHeader, Input, Textarea, Select, Badge, Empty, Stat, Modal, AuthLayout, PageLayout, SidebarBrand, SidebarItem, SidebarNav, PageHeader.",
+    "Quando redesigni una pagina, SOSTITUISCI gli elementi raw con questi componenti:",
+    "  - <button className=...> -> <Button variant='primary|secondary|ghost|danger|success' icon={IconLucide}>",
+    "  - <input/> standalone -> <Input label=... icon={IconLucide} />",
+    "  - <div className='rounded-lg bg-white shadow...'> -> <Card variant='glass'>",
+    "  - liste vuote -> <Empty icon={...} title=... description=... />",
+    "  - KPI dashboard -> <Stat label=... value=... tone=... icon={...} delta={...} />",
+    "  - Pagina login/register -> <AuthLayout title=... subtitle=...>...</AuthLayout>",
+    "  - Pagina con sidebar -> <PageLayout sidebar={<><SidebarBrand .../> <SidebarNav>...</SidebarNav></>} header={<PageHeader title=... action={...} />}>",
+    "Import path: from './components/ui' (oppure '../components/ui' / '../../components/ui' a seconda della profondita').",
+    "",
     "REGOLE OPERATIVE:",
     "- Restituisci TUTTI i file frontend riscritti col nuovo design (App.jsx, ogni page, ogni component). Questa NON e' una review, e' un redesign.",
-    "- MAI cambiare la LOGICA (state, useEffect, fetch, props): rimangono identici. Cambia SOLO classi Tailwind, struttura JSX visuale, palette, tipografia.",
+    "- MAI cambiare la LOGICA (state, useEffect, fetch, props): rimangono identici. Cambia SOLO il JSX (sostituisci raw HTML con componenti UI), classi Tailwind, struttura visuale, palette, tipografia.",
     "- MAI cambiare package.json o vite.config.js.",
+    "- MAI riscrivere o creare file in frontend/src/components/ui/ (sono gestiti da LocoCode).",
     "- MAI introdurre librerie nuove (resta su tailwindcss + lucide-react).",
     "- Tutti i contrasti devono essere AA almeno (text-slate-700 sopra bg-white, text-white sopra bg-slate-900, ecc).",
     "- Restituisci ALMENO 5 file riscritti se hai trovato un design banale, sotto forma di blocchi file.",
@@ -2759,7 +2775,8 @@ function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, 
     "- Se il task richiede backend, aggiorna backend/app/main.py e requirements.txt.",
     "- Se il task cambia la UI, aggiorna frontend/src/ e i file coinvolti.",
     "- Aggiorna preview/index.html solo come fallback statico se il frontend reale non e ancora pronto.",
-    "- QUALITA' VISIVA: se il task riguarda la UI o il frontend, mantieni il design professionale gia stabilito (Tailwind CSS, card bg-white rounded-xl shadow-sm, sidebar con voci menu e icone lucide-react, badge colorati, tabelle con thead stilizzato, KPI card con numeri grandi). Non degradare mai il livello visivo. USA classi Tailwind complete nei JSX.",
+    "- DESIGN SYSTEM PREINSTALLATO: il progetto ha gia' i componenti UI 'Liquid Glass' in frontend/src/components/ui/ (Button, Card, CardHeader, Input, Textarea, Select, Badge, Empty, Stat, Modal, AuthLayout, PageLayout, SidebarBrand, SidebarItem, SidebarNav, PageHeader). USA SEMPRE questi componenti importandoli da './components/ui' (o '../components/ui'). NON ricrearli con div+className, NON usare <button>/<input> grezzi. Se il task richiede UI, importa e componi.",
+    "- QUALITA' VISIVA: mantieni lo stile premium del design system (gradient indigo->purple, glassmorphism, font Inter). Non degradare mai il livello visivo.",
     "- LIBRERIE VIETATE: non aggiungere mai @heroicons/react, @headlessui/react, @radix-ui/*, recharts, chart.js, react-router-dom, date-fns, axios, lodash. Usa SOLO lucide-react per le icone.",
     "- Mantieni sempre funzionante il link finale: se una chiave API esterna manca, usa dati di prova, non errori.",
     "- Mantieni il flusso attivazione -> abbonamento mensile.",
@@ -2993,10 +3010,55 @@ async function sanitizeFrontendSources(srcDir) {
   }
 }
 
+// Iniezione del design system "Liquid Glass" preinstallato.
+// Scrive (sovrascrive sempre) i componenti UI pronti in frontend/src/components/ui,
+// piu' lc-theme.css e tailwind.config.js custom. Questo garantisce che ogni app
+// generata abbia un set di componenti belli a disposizione, indipendentemente
+// dall'AI usata. Inoltre auto-importa './lc-theme.css' in src/main.jsx se manca.
+async function injectDesignSystem(frontendDirPath) {
+  const files = getDesignSystemFiles(frontendDirPath, path);
+  // tailwind.config.js viene gestito qui: sempre sovrascritto con la versione
+  // brand. (Il fallback piu' avanti nel codice resta come safety net.)
+  for (const [rel, content] of Object.entries(files)) {
+    const target = path.join(frontendDirPath, rel);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, content, "utf8");
+  }
+
+  // Assicura import './lc-theme.css' in src/main.jsx
+  const mainPath = path.join(frontendDirPath, "src", "main.jsx");
+  const mainExists = await exists(mainPath);
+  if (mainExists) {
+    const original = await fs.readFile(mainPath, "utf8").catch(() => "");
+    if (original && !/['"`]\.\/lc-theme\.css['"`]/.test(original)) {
+      // Inserisci subito dopo l'ultimo import esistente
+      const lines = original.split("\n");
+      let lastImport = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (/^\s*import\b/.test(lines[i])) lastImport = i;
+      }
+      const themeLine = "import './lc-theme.css';";
+      if (lastImport >= 0) {
+        lines.splice(lastImport + 1, 0, themeLine);
+      } else {
+        lines.unshift(themeLine);
+      }
+      await fs.writeFile(mainPath, lines.join("\n"), "utf8");
+      console.log(`[ds] Auto-inserito import lc-theme.css in main.jsx per ${path.basename(frontendDirPath)}`);
+    }
+  }
+}
+
 async function ensureFrontendDependencies(frontendDirPath) {
   const packageJsonPath = path.join(frontendDirPath, "package.json");
   const nodeModulesPath = path.join(frontendDirPath, "node_modules");
   const markerPath = path.join(nodeModulesPath, ".lococode-install.json");
+
+  // --- Iniezione design system preinstallato (sempre, prima della sanitizzazione) ---
+  // Scrive frontend/src/components/ui/*.jsx, lc-theme.css e tailwind.config.js brand.
+  // L'AI ha l'ordine di importare da './components/ui'. Anche se sgarra, sanitizeFrontendSources
+  // ripulisce i pattern problematici.
+  await injectDesignSystem(frontendDirPath);
 
   // --- Sanitize sorgenti: rimuovi fallback localhost hardcoded ---
   // L'AI genera spesso `import.meta.env.VITE_API_URL || 'http://localhost:8000'`.
