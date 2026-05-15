@@ -1590,6 +1590,8 @@ async function finishAutopilot(target, apps, user) {
   const now = new Date().toISOString();
   if (!target.appToken) target.appToken = target.demoToken || crypto.randomUUID();
   if (!target.lifecycle) target.lifecycle = "trial";
+  // Salva publicSlug calcolato cosi' non rischia di cambiare se ricalcoliamo
+  if (!target.publicSlug) target.publicSlug = appPublicSlug(target);
   const appUrl = appUrlForApp(target);
   appendOperationalLog(
     target,
@@ -1617,9 +1619,10 @@ async function finishAutopilot(target, apps, user) {
   );
   await saveApps(apps, user);
 
-  // Avvia build del frontend in background: quando il polling rileva preview.hasLiveBuild=true
-  // il client ricarica l'iframe mostrando la vera app React invece del wireframe.
-  if (!target.sdd?.currentStep) {
+  // Avvia build del frontend + deploy backend in background quando tutti
+  // i task sono completati (status === "ready").
+  if (!target.sdd?.currentStep && target.status === "ready") {
+    // 1) Build frontend: serve l'app navigabile
     ensureFrontendPreviewBuild(target)
       .then(async (built) => {
         if (built) {
@@ -1627,7 +1630,29 @@ async function finishAutopilot(target, apps, user) {
           await saveApps(apps, user).catch(() => {});
         }
       })
-      .catch(() => {});
+      .catch((err) => console.warn(`[finish] frontend build:`, err.message));
+
+    // 2) Deploy backend: senza questo l'app e' un guscio (NO API funzionanti).
+    // Era un bug del codice precedente che chiamava deployBackend solo in
+    // caso di errore. Ora lo chiamiamo nel path di successo.
+    console.log(`[finish] Avvio deployBackend per ${target.id}`);
+    appendOperationalLog(target, "Avvio deploy backend Python...");
+    deployBackend(target)
+      .then(async (port) => {
+        if (port) {
+          target.backendPort = port;
+          appendOperationalLog(target, `Backend deployato (porta ${port}). API live su /app/${appPublicSlug(target)}/api/`);
+          console.log(`[finish] Backend ${target.id} attivo su porta ${port}`);
+        } else {
+          appendOperationalLog(target, "Backend non deployato (file mancanti)");
+        }
+        await saveApps(apps, user).catch(() => {});
+      })
+      .catch(async (err) => {
+        console.error(`[finish] deployBackend ${target.id} fallito:`, err.message);
+        appendOperationalLog(target, `Errore deploy backend: ${err.message.slice(0, 200)}`);
+        await saveApps(apps, user).catch(() => {});
+      });
   }
 }
 
