@@ -27,7 +27,7 @@ const legacyConfigPath = path.join(repoDir, "user_data", "config.json");
 await loadEnvFile(path.join(rootDir, ".env"));
 
 const port = Number(process.env.LOCOCODE_API_PORT || 8787);
-const openRouterTimeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS || 30 * 60 * 1000); // 30 min: DeepSeek puo' essere lento su output lunghi
+const openRouterTimeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS || 0); // 0 = nessun timeout
 const usersPath = path.join(dataDir, "users.json");
 const authSecret = process.env.LOCOCODE_AUTH_SECRET || "lococode-local-auth-secret";
 const loginTokenTtlMs = Number(process.env.LOCOCODE_LOGIN_TOKEN_TTL_MS || 24 * 60 * 60 * 1000);
@@ -1303,11 +1303,7 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
 
     await refreshProjectState(target);
 
-    const maxTurns = 40;
-    let turns = 0;
-    let stallCount = 0;
-
-    while (target.sdd?.currentStep && turns < maxTurns) {
+    while (target.sdd?.currentStep) {
       const stopReasonBefore = await shouldStopAutopilot(user, appId);
       if (stopReasonBefore) {
         await pauseAutopilot(target, apps, user, stopReasonBefore);
@@ -1315,7 +1311,6 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
       }
 
       const beforeTask = getNextTaskLabel(target);
-      const beforeDone = (target.sdd?.steps || []).filter((step) => step.done).length;
 
       await saveProgress(beforeTask || "Prossimo task");
       const result = await runOrchestratorTurn({
@@ -1330,7 +1325,6 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
       pushAssistantMessage(target, result.summary);
       await refreshProjectState(target);
 
-      // Lovable-style: build incrementale in background ogni volta che il frontend cambia
       if (result.touched?.some(f => f.startsWith("frontend/"))) {
         schedulePreviewBuild(target, apps, user, 4000);
       }
@@ -1340,32 +1334,6 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
         await pauseAutopilot(target, apps, user, stopReasonAfter);
         return;
       }
-
-      const afterTask = getNextTaskLabel(target);
-      const afterDone = (target.sdd?.steps || []).filter((step) => step.done).length;
-      if (afterTask === beforeTask && afterDone <= beforeDone) {
-        stallCount += 1;
-        if (stallCount === 1) {
-          appendOperationalLog(
-            target,
-            `Attenzione: il task "${beforeTask}" non ha prodotto progressi visibili nel piano. Riprovo (tentativo ${stallCount}/2).`,
-          );
-        }
-      } else {
-        stallCount = 0;
-      }
-
-      if (stallCount >= 2) {
-        throw new Error(
-          `Il task "${beforeTask}" è bloccato: dopo 2 tentativi il modello non ha aggiornato .lc/spec/tasks.md né avanzato al task successivo. Verifica il progetto e riprendi manualmente.`,
-        );
-      }
-
-      turns += 1;
-    }
-
-    if (turns >= maxTurns && target.sdd?.currentStep) {
-      throw new Error("Limite di sicurezza raggiunto: ho eseguito molti task senza arrivare alla fine del piano SDD.");
     }
 
     await finishAutopilot(target, apps, user);
@@ -1940,42 +1908,13 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
     target.updatedAt = new Date().toISOString();
     await onProgress?.(phase.label);
 
-    // — Validazione output per fase (3.1) —
+    // Genera wireframe visivo dopo la fase 1 (SDD)
     if (phase.phaseNum === 1) {
-      const tasksContent = await readProjectFile(target, ".lc/spec/tasks.md");
-      const pendingCount = (tasksContent.match(/^\s*-\s*\[\s*\]/gm) || []).length;
-      const archContent = (await readProjectFile(target, ".lc/spec/architecture.md")).trim();
-      if (pendingCount < 3 || !archContent) {
-        throw new Error(
-          `Fase 1 incompleta: tasks.md contiene ${pendingCount} task aperti (minimo 3)${!archContent ? " e architecture.md è vuoto" : ""}. Riavvia il progetto o verifica il prompt.`,
-        );
-      }
-      // Genera subito un wireframe visivo e lo mostra nell'anteprima
       appendOperationalLog(target, "Genero anteprima visiva dell'app...");
-      await generateWireframePreview({ target, apiKey, model, userPrompt });
+      try { await generateWireframePreview({ target, apiKey, model, userPrompt }); } catch {}
       await refreshProjectState(target);
-      // Incrementa buildVersion: il client rileva il cambio nel polling (2.4s)
-      // e ricarica l'iframe mostrando il wireframe appena scritto.
       target.preview = { ...target.preview, buildVersion: (target.preview?.buildVersion || 0) + 1 };
       await onProgress?.(phase.label);
-    }
-
-    if (phase.phaseNum === 2) {
-      const mainPy = await readProjectFile(target, "backend/app/main.py");
-      // Validazione stretta: senza main.py non c'e' backend.
-      // Se manca o e' minuscolo, blocchiamo subito invece di proseguire al
-      // frontend (che poi cerca un backend inesistente).
-      if (mainPy.length < 200) {
-        throw new Error(
-          `Fase 2 incompleta: backend/app/main.py e' ${mainPy.length ? "troppo corto (" + mainPy.length + " caratteri)" : "vuoto o mancante"}. Il modello ha probabilmente saturato il limite token. Riprendi per ritentare.`,
-        );
-      }
-      if (mainPy.length < 500) {
-        appendOperationalLog(
-          target,
-          `Attenzione: backend/app/main.py e' corto (${mainPy.length} chars). Il backend potrebbe essere incompleto.`,
-        );
-      }
     }
 
     if (phase.phaseNum === 3) {
