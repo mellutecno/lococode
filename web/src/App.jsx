@@ -1162,7 +1162,9 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
   if (projectComplete && !completedDetailsOpen) {
     const trialDaysLeft = app.trialDaysLeft;
     const trialExpired = trialDaysLeft !== null && trialDaysLeft === 0;
-    const showTrialBanner = app.lifecycle === "trial" && trialDaysLeft !== null;
+    // Mostra il banner trial SOLO se sta per scadere (≤7gg) o è gia scaduto.
+    // Quando ci sono 30gg interi non serve ingombrare la pagina.
+    const showTrialBanner = app.lifecycle === "trial" && trialDaysLeft !== null && trialDaysLeft <= 7;
 
     const doneCount = taskState.doneCount ?? 0;
     return (

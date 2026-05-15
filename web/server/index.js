@@ -104,15 +104,17 @@ const GENERATION_TIERS = {
   },
   pro: {
     label: "Pro",
-    description: "Frontend + revisione design con Claude Haiku 4.5",
+    description: "Frontend + revisione design con Claude Sonnet 4.5 (gusto top)",
     color: "#8b5cf6",
     feeEur: 9.99,
-    estCost: { min: 0.50, max: 0.90 },
+    estCost: { min: 0.70, max: 1.50 },
     models: {
       sdd: "deepseek/deepseek-v4-pro",
       backend: "deepseek/deepseek-v4-pro",
       frontend: "anthropic/claude-haiku-4.5",
-      review: "anthropic/claude-haiku-4.5",
+      // Reviewer upgrade: Sonnet 4.5 ha gusto estetico molto piu' marcato di
+      // Haiku. Pro deve essere VISIBILMENTE migliore di Media.
+      review: "anthropic/claude-sonnet-4.5",
     },
   },
   premium: {
@@ -2652,36 +2654,65 @@ async function buildDesignReviewPrompt(target) {
   }
 
   return [
-    "Sei un SENIOR DESIGNER con gusto estetico raffinato (stile Linear, Stripe, Vercel, Notion).",
-    "Ti consegno tutto il frontend di un'app React+Tailwind appena generata da un altro modello AI.",
-    "Il tuo UNICO compito: trovare problemi VISIVI e correggerli. NON cambiare la logica, NON aggiungere features, NON riscrivere da zero.",
+    "Sei il PRINCIPAL DESIGNER di Stripe. Hai appena ricevuto questo frontend appena generato. Il tuo lavoro NON e' un piccolo polishing: e' un REDESIGN COMPLETO secondo il tuo gusto.",
     "",
-    "PROBLEMI DA CACCIARE (con priorita assoluta):",
-    "1. Contrasti sbagliati: text-white su bg-white, text-gray-300 sul bianco, text-gray-500 su bg-gray-100, ecc. Tutto deve essere LEGGIBILE.",
-    "2. Sfondi piatti bianchi puri (bg-white sul wrapper esterno): sostituisci con bg-slate-50 o bg-gradient-to-br from-slate-50 to-indigo-50.",
-    "3. Card senza bordo E senza shadow: aggiungi border border-slate-200 oppure shadow-sm.",
-    "4. Input senza background o senza border visibili: aggiungi bg-white border border-slate-300.",
-    "5. Spacing troppo compresso: padding minimo p-6 sulle card, py-12 sulle sezioni hero.",
-    "6. Mancanza di hover/focus states sui pulsanti e link: aggiungi hover:bg-... transition-colors duration-200.",
-    "7. Gerarchia tipografica piatta: titoli text-2xl/3xl font-bold tracking-tight, sottotitoli text-sm text-slate-500.",
-    "8. KPI con numeri piccoli o colori spenti: numeri text-3xl/4xl font-bold text-indigo-600 (mai text-gray-200).",
-    "9. Empty states minimal: icona grande in cerchio bg-slate-100, titolo bold, paragrafo grigio, eventuale CTA.",
-    "10. Mancanza di un look 'wow': aggiungi micro-decorazioni dove utile (gradient testo sui titoli hero, badge colorati, separatori sottili).",
+    "L'app deve uscire dall'esecuzione con un look BELLISSIMO, professionale, premium. L'utente paga per questo. Se restituisci una pagina con 'Email/Password' centrata su sfondo bianco con bordi grigi 1px, hai fallito.",
+    "",
+    "STILE OBBLIGATORIO — NON E' UNA PROPOSTA, E' UN VINCOLO:",
+    "",
+    "## Hero / Landing / Login pages",
+    "- Sfondo: `bg-gradient-to-br from-slate-50 via-white to-indigo-50` minimo, oppure `bg-[#0a0e27]` per dark hero",
+    "- Almeno UN elemento decorativo: gradient orb sfumato in alto a destra OR pattern dot sottile OR shape blob astratto sull'angolo",
+    "- Titolo principale: text-4xl md:text-5xl font-bold tracking-tight, con UNA parola chiave in gradient text (`bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent`)",
+    "- Sottotitolo: text-lg text-slate-600 max-w-md",
+    "- CTA principale: gradient button con shadow-xl, hover:shadow-2xl, transition-all duration-200, NON un blu piatto",
+    "",
+    "## Card / Container",
+    "- MAI bg-white piatto su pagine pulite. Usa bg-white/70 backdrop-blur-xl border border-white/60 shadow-xl",
+    "- Border radius: rounded-2xl (16px), MAI rounded-md su card grandi",
+    "- Inset highlight tramite ring-1 ring-white/40 inset, OR ::before con linear-gradient bianco trasparente",
+    "",
+    "## Input fields",
+    "- bg-white/80 backdrop-blur, border border-slate-200, rounded-xl, py-3 px-4, focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-all",
+    "- Icona dentro l'input a sinistra (lucide-react) con text-slate-400, focus-within:text-indigo-500",
+    "- Placeholder con text-slate-400 italic se vuoi (es. 'esempio@email.com')",
+    "",
+    "## Buttons",
+    "- Primario: bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40 transition-all hover:-translate-y-0.5",
+    "- Secondario: bg-white/70 backdrop-blur border border-slate-200 text-slate-700 hover:bg-white",
+    "",
+    "## Dashboard / Liste interne",
+    "- Sidebar: bg-slate-900 dark con accent indigo, items con hover:bg-white/5",
+    "- Cards: glassmorphism (bg-white/60 backdrop-blur-xl shadow-xl ring-1 ring-slate-200/60)",
+    "- KPI numbers: text-4xl font-bold con bg-gradient sui numeri, sotto label uppercase text-xs text-slate-500 tracking-wider",
+    "",
+    "## Dati di esempio realistici",
+    "Se vedi dati tipo 'Test 1', 'Lorem', 'Item A' SOSTITUISCILI con dati credibili italiani al contesto dell'app: nomi (Mario Rossi, Giulia Bianchi), date variate, prezzi realistici, categorie sensate.",
+    "",
+    "## Animations & microinteractions",
+    "- transition-all duration-200 su TUTTI gli elementi cliccabili",
+    "- hover:scale-[1.02] sulle card",
+    "- Fade-in subtle (opacity + translate-y) sui contenuti che appaiono",
+    "",
+    "## Color palette indigo + purple come base, ma:",
+    "- Stati success: emerald non green-500",
+    "- Stati error: rose-500 non red-500",
+    "- Stati warning: amber-500 non yellow",
+    "- Neutrals: slate non gray",
     "",
     "REGOLE OPERATIVE:",
-    "- Restituisci SOLO i file che hai effettivamente modificato, nel formato standard (blocco file).",
-    "- Se TUTTO il frontend e' gia' impeccabile, restituisci ZERO file (niente blocchi). Questo segnala 'design accettato'.",
-    "- NON cambiare il package.json (le dipendenze sono giuste).",
-    "- NON cambiare la logica JavaScript (stato, useEffect, fetch).",
-    "- NON cambiare i nomi delle funzioni esportate.",
-    "- Cambia SOLO classi Tailwind, struttura JSX visuale, contenuti testuali decorativi, palette tailwind.config.js, custom CSS in index.css.",
-    "- Lavora come un occhio esperto che pulisce a fine giornata, non come un nuovo sviluppatore.",
+    "- Restituisci TUTTI i file frontend riscritti col nuovo design (App.jsx, ogni page, ogni component). Questa NON e' una review, e' un redesign.",
+    "- MAI cambiare la LOGICA (state, useEffect, fetch, props): rimangono identici. Cambia SOLO classi Tailwind, struttura JSX visuale, palette, tipografia.",
+    "- MAI cambiare package.json o vite.config.js.",
+    "- MAI introdurre librerie nuove (resta su tailwindcss + lucide-react).",
+    "- Tutti i contrasti devono essere AA almeno (text-slate-700 sopra bg-white, text-white sopra bg-slate-900, ecc).",
+    "- Restituisci ALMENO 5 file riscritti se hai trovato un design banale, sotto forma di blocchi file.",
     "",
-    "Ecco tutti i file frontend correnti:",
+    "Ecco tutti i file frontend correnti che devi REDESIGNARE:",
     "",
     bundle,
     "",
-    "Adesso applica le tue migliorie. Buon lavoro.",
+    "Adesso fai il tuo lavoro da Principal Designer. L'utente paga per la differenza tra Pro e Base — questo redesign DEVE essere visibilmente piu bello.",
   ].join("\n");
 }
 
@@ -2922,10 +2953,58 @@ async function buildFrontendPreview(target) {
   return exists(distIndex);
 }
 
+// Cerca pattern problematici nei sorgenti React generati dall'AI e li sanifica.
+// Es: 'http://localhost:8000' fallback -> '' (stringa vuota: niente piu mixed
+// content, e in prod VITE_API_URL e' sempre iniettato).
+async function sanitizeFrontendSources(srcDir) {
+  if (!(await exists(srcDir))) return;
+  const stack = [srcDir];
+  const patterns = [
+    // fallback || 'http://localhost:PORT' -> || ''
+    {
+      re: /\|\|\s*['"`]https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?['"`]/g,
+      to: "|| ''",
+    },
+    // : 'http://localhost:PORT'  (es. const x = { API_URL: 'http://localhost:8000' })
+    {
+      re: /['"`]https?:\/\/(localhost|127\.0\.0\.1):\d+['"`]/g,
+      to: "''",
+    },
+  ];
+  while (stack.length) {
+    const dir = stack.pop();
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        stack.push(full);
+      } else if (/\.(jsx?|tsx?|mjs|cjs)$/.test(e.name)) {
+        const content = await fs.readFile(full, "utf8").catch(() => "");
+        if (!content) continue;
+        let next = content;
+        for (const p of patterns) next = next.replace(p.re, p.to);
+        if (next !== content) {
+          await fs.writeFile(full, next, "utf8");
+        }
+      }
+    }
+  }
+}
+
 async function ensureFrontendDependencies(frontendDirPath) {
   const packageJsonPath = path.join(frontendDirPath, "package.json");
   const nodeModulesPath = path.join(frontendDirPath, "node_modules");
   const markerPath = path.join(nodeModulesPath, ".lococode-install.json");
+
+  // --- Sanitize sorgenti: rimuovi fallback localhost hardcoded ---
+  // L'AI genera spesso `import.meta.env.VITE_API_URL || 'http://localhost:8000'`.
+  // In produzione il fallback finisce comunque nel bundle (anche se NON usato a
+  // runtime), e se per qualche motivo il browser legge il bundle vecchio in
+  // cache la chiamata HTTPS->HTTP viene bloccata da mixed-content => "Failed to fetch".
+  // Sostituisco il fallback con stringa vuota: in produzione VITE_API_URL e' SEMPRE
+  // iniettato dal build di LocoCode, quindi il fallback non serve.
+  await sanitizeFrontendSources(path.join(frontendDirPath, "src"));
 
   // --- Patch file di configurazione build (sempre, anche se npm install e gia aggiornato) ---
 
