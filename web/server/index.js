@@ -1844,7 +1844,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       label: "parte server",
       phaseNum: 2,
       key: "backend",
-      maxTokens: 12000,
+      maxTokens: 24000, // aumentato da 12k a 24k: DeepSeek saturava il limite scrivendo solo requirements.txt e troncando main.py
       model: modelFor("backend"),
       getPrompt: async () => buildInitialBackendPrompt(userPrompt, await loadProjectMemory(target)),
       expectedFiles: ["backend/app/main.py", "backend/requirements.txt", "backend/.env.example"],
@@ -1853,7 +1853,7 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       label: "interfaccia utente",
       phaseNum: 3,
       key: "frontend",
-      maxTokens: 14000,
+      maxTokens: 28000, // aumentato da 14k a 28k: frontend e' il piu' grosso, serve margine ampio
       model: modelFor("frontend"),
       getPrompt: async () => buildInitialFrontendPrompt(userPrompt, await loadProjectMemory(target)),
       expectedFiles: ["frontend/src/App.jsx", "frontend/package.json", "preview/index.html"],
@@ -1962,10 +1962,18 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
 
     if (phase.phaseNum === 2) {
       const mainPy = await readProjectFile(target, "backend/app/main.py");
+      // Validazione stretta: senza main.py non c'e' backend.
+      // Se manca o e' minuscolo, blocchiamo subito invece di proseguire al
+      // frontend (che poi cerca un backend inesistente).
+      if (mainPy.length < 200) {
+        throw new Error(
+          `Fase 2 incompleta: backend/app/main.py e' ${mainPy.length ? "troppo corto (" + mainPy.length + " caratteri)" : "vuoto o mancante"}. Il modello ha probabilmente saturato il limite token. Riprendi per ritentare.`,
+        );
+      }
       if (mainPy.length < 500) {
         appendOperationalLog(
           target,
-          `Attenzione: backend/app/main.py è corto (${mainPy.length} chars). Il backend potrebbe essere incompleto.`,
+          `Attenzione: backend/app/main.py e' corto (${mainPy.length} chars). Il backend potrebbe essere incompleto.`,
         );
       }
     }
@@ -2173,14 +2181,16 @@ function buildInitialBackendPrompt(initialPrompt, projectMemory) {
     "Memoria progetto:",
     projectMemory,
     "",
-    "File obbligatori da restituire:",
-    "- backend/requirements.txt",
-    "- backend/app/__init__.py",
-    "- backend/app/main.py",
-    "- backend/.env.example",
-    "- deploy/lococode.json",
-    "- .lc/spec/tasks.md",
-    "- .lc/memory/project_context.md",
+    "ORDINE OBBLIGATORIO DI OUTPUT (scrivi i file in QUESTO ordine — se ti sta finendo lo spazio, taglia gli ULTIMI, mai i primi):",
+    "1. backend/app/main.py        — IL FILE PIU CRITICO (server FastAPI completo)",
+    "2. backend/requirements.txt   — dipendenze, file critico",
+    "3. backend/app/__init__.py    — solo riga vuota o version",
+    "4. backend/.env.example       — esempio variabili",
+    "5. deploy/lococode.json       — config deploy",
+    "6. .lc/spec/tasks.md          — aggiornato con task completati",
+    "7. .lc/memory/project_context.md",
+    "",
+    "REGOLA D'ORO: main.py DEVE essere completo e funzionante anche se devi tagliare gli altri. NIENTE FILE VUOTI.",
     "",
     "backend/app/main.py deve includere FastAPI con CORS (allow_origins=['*']), endpoint GET / health check, modelli Pydantic completi, inizializzazione SQLite con tabelle e dati di esempio realistici precaricati al primo avvio, e API CRUD complete coerenti con il progetto.",
     "deploy/lococode.json deve descrivere nome servizio, porta suggerita, comando backend, comando build frontend, percorso SQLite, credenziali di prova, chiave provvisoria, chiave di attivazione mensile e API esterne richieste.",
@@ -2204,18 +2214,21 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "Memoria progetto:",
     projectMemory,
     "",
-    "File obbligatori da restituire:",
-    "- frontend/package.json",
-    "- frontend/index.html",
-    "- frontend/tailwind.config.js",
-    "- frontend/postcss.config.js",
-    "- frontend/src/App.jsx",
-    "- frontend/src/main.jsx",
-    "- frontend/src/index.css (con @tailwind base/components/utilities + @import Inter + variabili CSS)",
-    "- frontend/src/components/TrialBanner.jsx (banner trial — usa il template indicato sotto)",
-    "- preview/index.html (fallback, non sostituisce il frontend reale)",
-    "- .lc/spec/tasks.md",
-    "- .lc/memory/project_context.md",
+    "ORDINE OBBLIGATORIO DI OUTPUT (scrivi i file in QUESTO ordine — se ti sta finendo lo spazio, taglia gli ULTIMI, mai i primi):",
+    "1. frontend/src/App.jsx                    — IL FILE PIU CRITICO (root del React app)",
+    "2. frontend/src/main.jsx                   — entry point, critico",
+    "3. frontend/package.json                   — dipendenze, critico",
+    "4. frontend/src/index.css                  — Tailwind directives, critico",
+    "5. frontend/tailwind.config.js             — config Tailwind",
+    "6. frontend/postcss.config.js              — config PostCSS",
+    "7. frontend/index.html                     — entry HTML Vite",
+    "8. frontend/src/components/TrialBanner.jsx — banner trial (template fornito sotto)",
+    "9. Altri componenti/pagine (se servono)",
+    "10. preview/index.html                     — fallback statico (opzionale)",
+    "11. .lc/spec/tasks.md",
+    "12. .lc/memory/project_context.md",
+    "",
+    "REGOLA D'ORO: App.jsx + main.jsx + package.json + index.css DEVONO essere completi e funzionanti. Se devi tagliare, taglia preview/index.html e i task md. NIENTE FILE VUOTI O TRONCATI A META.",
     "",
     "Il frontend deve essere in italiano, gestionale, responsive, navigabile e con dati di prova realistici ma fittizi.",
     "L'utente deve poter provare l'MVP come prodotto: pagine principali, pulsanti, form e routing devono funzionare nella preview reale.",
