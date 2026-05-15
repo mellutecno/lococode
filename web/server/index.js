@@ -80,7 +80,7 @@ const GENERATION_TIERS = {
     label: "Base",
     description: "App funzionante, design pulito ma essenziale",
     color: "#10b981",
-    estCost: { min: 0.10, max: 0.25 },
+    estCost: { min: 0.20, max: 0.50 },
     models: {
       sdd: "deepseek/deepseek-v4-pro",
       backend: "deepseek/deepseek-v4-pro",
@@ -92,7 +92,7 @@ const GENERATION_TIERS = {
     label: "Media",
     description: "Frontend curato con Kimi (specializzato in design)",
     color: "#3b82f6",
-    estCost: { min: 0.25, max: 0.45 },
+    estCost: { min: 0.40, max: 0.80 },
     models: {
       sdd: "deepseek/deepseek-v4-pro",
       backend: "deepseek/deepseek-v4-pro",
@@ -3592,7 +3592,8 @@ function publicApp(appData) {
   const pricing = computeAppPricing(appData);
 
   // Calcolo costo totale generazione (stima EUR) dal tokenUsage salvato.
-  // Tariffe semplificate al kilo-token in EUR (medie). Per dettaglio admin.
+  // Tariffe in EUR per 1k token. Valori calibrati su misurazioni reali
+  // OpenRouter (DeepSeek aggiornato dopo test del 15/05/2026).
   const TOKEN_PRICES_EUR_PER_K = {
     "anthropic/claude-sonnet-4.5": { in: 0.003, out: 0.015 },
     "anthropic/claude-haiku-4.5":  { in: 0.001, out: 0.005 },
@@ -3600,8 +3601,8 @@ function publicApp(appData) {
     "openai/gpt-5-mini":           { in: 0.0006, out: 0.003 },
     "google/gemini-2.5-pro":       { in: 0.002, out: 0.010 },
     "google/gemini-2.5-flash":     { in: 0.0003, out: 0.0015 },
-    "deepseek/deepseek-v4-pro":    { in: 0.0003, out: 0.0014 },
-    "moonshotai/kimi-k2.6":        { in: 0.0006, out: 0.002 },
+    "deepseek/deepseek-v4-pro":    { in: 0.0005, out: 0.0035 }, // calibrato 15/05/2026
+    "moonshotai/kimi-k2.6":        { in: 0.0006, out: 0.0025 },
     "qwen/qwen3-coder":            { in: 0.0004, out: 0.0014 },
     "x-ai/grok-4-fast":            { in: 0.0008, out: 0.0030 },
   };
