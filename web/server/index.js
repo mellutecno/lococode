@@ -2153,8 +2153,22 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
 function summarizeTouchedFiles(files) {
   const list = Array.isArray(files) ? files.filter(Boolean) : [];
   if (!list.length) return "Nessun file modificato";
-  const preview = list.slice(0, 3).join(", ");
-  return list.length <= 3 ? "File salvati nel progetto" : `${list.length} file salvati nel progetto`;
+  // Mostra i 3 file piu' importanti (preferendo .py/.jsx significativi)
+  const isImportant = (f) =>
+    f.endsWith("main.py") ||
+    f.endsWith("App.jsx") ||
+    f.endsWith("main.jsx") ||
+    f.includes("/routes/") ||
+    f.includes("/components/") ||
+    f.includes("/pages/") ||
+    f.includes("/models/") ||
+    f.includes("/api/");
+  const ranked = [...list].sort((a, b) => Number(isImportant(b)) - Number(isImportant(a)));
+  const preview = ranked.slice(0, 3).map((f) => f.split("/").pop()).join(", ");
+  if (list.length === 0) return "Nessun file modificato";
+  if (list.length === 1) return `File modificato: ${preview}`;
+  if (list.length <= 3) return `File modificati: ${preview}`;
+  return `${list.length} file salvati (incluso ${preview})`;
 }
 
 function appendModelNarration(target, aiText, phaseLabel = "") {
@@ -3294,18 +3308,22 @@ async function callOpenRouterOnce({
 }
 
 async function callOpenRouter(params) {
-  const maxAttempts = 3;
+  const maxAttempts = 4; // retry max 3 volte oltre il primo tentativo
   let lastErr;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
-      const delayMs = Math.pow(2, attempt) * 4000; // 8s, 16s
-      console.warn(`[server] callOpenRouter retry ${attempt}/${maxAttempts - 1} dopo ${delayMs / 1000}s (${lastErr?.message?.slice(0, 80)})`);
+      const delayMs = Math.min(30000, Math.pow(2, attempt) * 2000); // 4s, 8s, 16s, max 30s
+      console.warn(`[server] callOpenRouter retry ${attempt}/${maxAttempts - 1} dopo ${delayMs / 1000}s (${lastErr?.message?.slice(0, 100)})`);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
     try {
       const result = await callOpenRouterOnce(params);
-      // Retro-compat: se il chiamante non ha chiesto returnUsage, ritorna
-      // direttamente il testo come prima.
+      // RISPOSTE VUOTE: se il modello ha risposto con 0 caratteri (glitch rete
+      // o rate limit silenzioso), retry come fosse un errore.
+      if (!result.text || result.text.trim().length === 0) {
+        lastErr = new Error(`Risposta vuota dal modello (tentativo ${attempt + 1}/${maxAttempts})`);
+        continue;
+      }
       return params.returnUsage ? result : result.text;
     } catch (err) {
       if (err?.name === "AbortError") throw err; // timeout — no retry

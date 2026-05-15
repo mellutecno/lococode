@@ -1497,6 +1497,12 @@ function projectTaskState(app) {
   const currentStep = app?.sdd?.currentStep || steps.find((step) => !step.done) || null;
   const planCompleted = total > 0 && remaining === 0;
 
+  // Indice sequenziale (1-based) del task corrente nell'INTERO piano.
+  // Sostituisce le numerazioni gerarchiche tipo "1.1, 2.1, 1.2" che confondono.
+  const currentTaskIndex = currentStep
+    ? steps.findIndex((s) => s.id === currentStep.id) + 1
+    : 0;
+
   // Fase completa (es. "Fase 4 - Polish e Deploy") senza accorciare
   const phase = planCompleted ? "Completato" : formatPhaseLabel(currentStep?.phase || app?.sdd?.phase || "");
   const shortPhase = compactPhaseLabel(phase);
@@ -1511,12 +1517,19 @@ function projectTaskState(app) {
   // Strip numeric/letter prefixes like "4.4 - ", "T19: ", "2.3.", "1) " from task labels
   const rawTask = app?.autopilot?.currentTask || currentStep?.label || "";
   const task = rawTask.replace(/^\s*[A-Za-z]?\d+(\.\d+)*\s*[-.:)]\s*/, "").trim() || rawTask;
-  // meta: solo fase — mostrata nell'em del task-card (no contatori che confondono)
-  const meta = total ? phase : "";
-  // Header: fase + task corrente
+  // meta: solo fase + posizione task (es. "Fase 3 - Frontend · Task 8 di 22")
+  const positionText = total && currentTaskIndex > 0
+    ? `Task ${currentTaskIndex} di ${total}`
+    : "";
+  const meta = total
+    ? positionText
+      ? `${phase} · ${positionText}`
+      : phase
+    : "";
+  // Header: fase + posizione + task corrente
   const headerMeta = total
     ? task
-      ? `${phase} · ${task}`
+      ? `${phase} · ${positionText ? positionText + " · " : ""}${task}`
       : phase
     : "Piano in preparazione";
 
