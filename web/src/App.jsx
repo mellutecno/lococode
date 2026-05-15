@@ -979,28 +979,43 @@ function PricingCard({ app, onPurchaseTier }) {
   const plans = [
     {
       key: "hosted_lococode_api",
-      title: "Hosting + chiavi LocoCode",
-      tagline: "L'app gira sui nostri server, le chiavi AI le mettiamo noi (tutto incluso).",
+      title: "Hosting LocoCode (full)",
+      tagline: "L'app gira sui nostri server. SE la tua app usa AI durante l'uso (chatbot, riassunti, ecc.), le chiavi le forniamo noi.",
       price: app.pricing.plans.hosted_lococode_api,
       cta: "Abbonati",
       featured: true,
-      features: ["Hosting incluso", "Chiavi AI incluse", "Aggiornamenti illimitati*", "Dominio lococode.mellutecno.it"],
+      features: [
+        "Hosting + dominio lococode.mellutecno.it",
+        "Backup automatici",
+        "Chiavi AI incluse SE l'app le richiede",
+        "Aggiornamenti illimitati al codice",
+      ],
     },
     {
       key: "hosted_user_api",
-      title: "Hosting + chiavi tue",
-      tagline: "L'app gira sui nostri server, tu fornisci le tue chiavi AI (provider a tua scelta).",
+      title: "Hosting LocoCode (BYO keys)",
+      tagline: "L'app gira sui nostri server. SE la tua app usa AI durante l'uso, le chiavi le metti tu (provider a tua scelta).",
       price: app.pricing.plans.hosted_user_api,
       cta: "Abbonati",
-      features: ["Hosting incluso", "Le tue chiavi API", "Costi token a tuo carico", "Dominio lococode.mellutecno.it"],
+      features: [
+        "Hosting + dominio lococode.mellutecno.it",
+        "Backup automatici",
+        "Chiavi AI a tuo carico SE servono (non in tutte le app)",
+        "Aggiornamenti illimitati al codice",
+      ],
     },
     {
       key: "exported",
-      title: "Scarica e arrangiati",
-      tagline: "Scarichi tutto il codice e lo metti sul tuo server con le chiavi che vuoi.",
+      title: "Esporta tutto",
+      tagline: "Scarichi tutto il codice e lo metti dove vuoi: server, chiavi e gestione completamente tue.",
       price: app.pricing.plans.exported,
       cta: "Acquista codice",
-      features: ["Codice sorgente completo", "Script deploy incluso", "Nessun vincolo", "Pagamento una tantum"],
+      features: [
+        "Codice sorgente completo + script deploy",
+        "Hosting a tuo carico",
+        "Chiavi AI a tuo carico SE servono",
+        "Pagamento una tantum, nessun vincolo",
+      ],
     },
   ];
 
