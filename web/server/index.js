@@ -570,28 +570,43 @@ app.delete("/api/apps/:id", async (req, res) => {
     return;
   }
 
-  // Mark stop so any running job exits cleanly
+  const appId = target.id;
+  const appName = target.name || appId;
+  console.log(`[delete] Avvio eliminazione app "${appName}" (${appId})`);
+
+  // 1. Stoppa autopilot in corso e rimuovi job dalla mappa in-memory
   if (target.autopilot) {
     target.autopilot.stopRequested = true;
     target.autopilot.running = false;
   }
+  const runningKey = jobKey(user.id, appId);
+  if (runningJobs.has(runningKey)) {
+    runningJobs.delete(runningKey);
+    console.log(`[delete] Rimosso job in-memory per ${appId}`);
+  }
 
-  // Remove from apps list and save
-  const updatedApps = apps.filter((item) => item.id !== target.id);
+  // 2. Rimuovi entry da apps.json (la app sparisce immediatamente dall'UI)
+  const updatedApps = apps.filter((item) => item.id !== appId);
   await saveApps(updatedApps, user);
 
-  // Ferma backend e rimuove nginx
-  await stopBackend(target.id).catch((e) => console.warn("[deploy] stopBackend:", e.message));
+  // 3. Ferma backend Python (uvicorn/pm2) e rimuovi config nginx dedicata
+  await stopBackend(appId).catch((e) => console.warn(`[delete] stopBackend ${appId}:`, e.message));
 
-  // Elimina cartella progetto
+  // 4. Elimina cartella progetto (frontend, backend, .lococode_runtime, dist, .lc, deploy...)
   const root = projectRoot(target);
   try {
     await fs.rm(root, { recursive: true, force: true });
+    console.log(`[delete] Cartella progetto rimossa: ${root}`);
   } catch (err) {
-    console.warn(`[server] Errore eliminando cartella ${root}:`, err.message);
+    console.warn(`[delete] Errore eliminando cartella ${root}:`, err.message);
   }
 
-  res.json({ deleted: true, id: target.id });
+  // 5. Invalida eventuali alias/redirect su nginx (slug pubblico)
+  // La cartella .lococode_runtime/frontend-dist viene gia rimossa dal passo 4,
+  // quindi /app/{slug} risponde 404 al prossimo hit.
+
+  console.log(`[delete] Eliminazione completata per "${appName}"`);
+  res.json({ deleted: true, id: appId, name: appName });
 });
 
 app.post("/api/apps/:id/request-license", async (req, res) => {
@@ -1836,8 +1851,19 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "FONDAMENTALE - Chiamate API: usa SEMPRE const API = import.meta.env.VITE_API_URL || ''; poi chiama fetch(API + '/endpoint'). Non scrivere mai localhost, 127.0.0.1 o porte hardcoded. VITE_API_URL viene iniettato da LocoCode al build e punta al backend reale.",
     "preview/index.html serve solo da fallback statico se il frontend vero non e ancora pronto.",
     "",
-    "QUALITA' VISIVA OBBLIGATORIA — il frontend DEVE avere un design professionale e curato, stile Vercel/Linear/Notion. Un utente DEVE volerla usare subito senza modifiche.",
+    "QUALITA' VISIVA OBBLIGATORIA — il frontend DEVE essere bellissimo, moderno e curato come Linear, Stripe Dashboard, Vercel, Notion, Raycast, Arc Browser. Un utente DEVE volerla usare subito e dire 'wow, e bella'. Niente stile bootstrap anni 2010, niente sfondi pure white piatti, niente layout banali.",
     "USA TAILWIND CSS con classi utilitarie direttamente nei JSX. Ogni componente deve avere classi Tailwind complete e dettagliate.",
+    "ISPIRAZIONE VISIVA OBBLIGATORIA — copia questi pattern che funzionano:",
+    "- Backgrounds: NIENTE bg-white piatto. Usa bg-gradient-to-br from-slate-50 to-slate-100, o bg-slate-50 con sezioni in bg-white card. Per hero/landing: gradient pastello indigo-50 -> purple-50 -> white.",
+    "- Accent gradients: per pulsanti primari, badge importanti, hero text: bg-gradient-to-r from-indigo-600 to-purple-600 (testo: bg-clip-text text-transparent quando usato su testo).",
+    "- Ombre sofisticate: shadow-sm su card normali, shadow-lg con hover:shadow-xl per card interattive. Aggiungi sempre ring-1 ring-slate-200 per definire i bordi senza essere aggressivi.",
+    "- Microinterazioni: transition-all duration-200 su tutti gli elementi interattivi, hover:scale-[1.02] sulle card, hover:-translate-y-0.5 sui pulsanti primari.",
+    "- Spaziatura generosa: padding p-6/p-8 nelle card, gap-6 nelle grid, mb-8 tra sezioni. Non risparmiare spazio.",
+    "- Typography raffinata: font-bold tracking-tight per i titoli (text-2xl o text-3xl), text-slate-900 sui titoli, text-slate-600 sui paragrafi, text-sm text-slate-500 sui meta-text.",
+    "- Stati vuoti curati: icone grandi (size 48 o 64) in cerchi con bg-slate-100, titolo bold, paragrafo che spiega cosa fare, pulsante d'azione primario.",
+    "- Loading states: spinner colorato indigo-600 al centro con messaggio, mai schermate vuote.",
+    "- Empty data: dati di esempio realistici e variati, non 'Lorem ipsum' o 'Test 1, Test 2'. Per un app gestionale: clienti realistici (Mario Rossi, Pizzeria da Luigi, Edilizia Verdi srl), date variate, statistiche credibili.",
+    "",
     "STRUTTURA VISIVA OBBLIGATORIA:",
     "- Sfondo pagina: bg-slate-50 o bg-gray-50. Card contenuto: bg-white rounded-xl shadow-sm border border-slate-200 p-6.",
     "- Layout: flex con sidebar sinistra fissa (w-56 o w-64) bg-white border-r border-slate-200, contenuto principale flex-1 overflow-auto p-6.",
