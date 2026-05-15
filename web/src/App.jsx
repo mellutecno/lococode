@@ -254,6 +254,31 @@ Questa azione è irreversibile.`)) return;
     }
   }
 
+  // Avvia acquisto: chiama /purchase, riceve approval_url, apre la finestra
+  // di pagamento (PayPal in live, conferma locale in sandbox).
+  async function purchaseTier(appId, tier) {
+    try {
+      const response = await apiFetch(`/api/apps/${appId}/purchase`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier }),
+      });
+      const data = await readApiJson(response);
+      if (!response.ok) throw new Error(data.error || "Errore creazione ordine.");
+      if (data.approvalUrl) {
+        // Apre in nuova tab. In sandbox e una pagina locale che simula PayPal.
+        window.open(data.approvalUrl, "_blank", "noopener");
+        setStatus(`Ordine ${data.orderId} creato. Completa il pagamento nella nuova tab.`);
+        // Poll per vedere se l'ordine viene confermato (in sandbox e immediato)
+        setTimeout(() => refreshApps(appId), 4000);
+      } else {
+        setStatus("Ordine creato. Controlla la tua email per completare il pagamento.");
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function logout() {
     await apiFetch("/api/auth/logout", { method: "POST" });
     localStorage.removeItem(SESSION_KEY);
@@ -521,6 +546,7 @@ Questa azione è irreversibile.`)) return;
             onStop={stopAutopilot}
             onBackToProjects={() => setActiveView("projects")}
             onRequestLicense={requestLicense}
+            onPurchaseTier={purchaseTier}
           />
         )}
 
@@ -865,7 +891,89 @@ function Composer({ value, onChange, model, setModel, busy, placeholder, onSubmi
   );
 }
 
-function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume, onStop, onBackToProjects, onRequestLicense }) {
+function PricingCard({ app, onPurchaseTier }) {
+  if (!app?.pricing || !app.lifecycle || app.lifecycle === "exported") return null;
+
+  const isExportedAlready = app.lifecycle === "exported";
+  const isHosted = app.lifecycle === "hosted_lococode_api" || app.lifecycle === "hosted_user_api";
+
+  const plans = [
+    {
+      key: "hosted_lococode_api",
+      title: "Hosted · API LocoCode",
+      tagline: "L'app gira sui nostri server, noi paghiamo i token AI per te.",
+      price: app.pricing.plans.hosted_lococode_api,
+      cta: "Abbonati",
+      featured: true,
+      features: ["Hosting incluso", "Chiavi OpenRouter incluse", "Aggiornamenti AI illimitati*", "Dominio lococode.mellutecno.it"],
+    },
+    {
+      key: "hosted_user_api",
+      title: "Hosted · API tue",
+      tagline: "L'app gira sui nostri server, tu fornisci le tue chiavi OpenRouter.",
+      price: app.pricing.plans.hosted_user_api,
+      cta: "Abbonati",
+      features: ["Hosting incluso", "Le tue chiavi API", "Costi token a tuo carico", "Dominio lococode.mellutecno.it"],
+    },
+    {
+      key: "exported",
+      title: "Export self-host",
+      tagline: "Scarichi tutto il codice e lo metti sul tuo server con le tue chiavi.",
+      price: app.pricing.plans.exported,
+      cta: "Acquista codice",
+      features: ["Codice sorgente completo", "Script deploy incluso", "Nessun lock-in", "Pagamento una tantum"],
+    },
+  ];
+
+  return (
+    <section className="pricing-card-wrap">
+      <header className="pricing-card-header">
+        <div>
+          <h3>Acquista licenza</h3>
+          <p>
+            Score complessità: <strong>{app.pricing.score}</strong> · Tier suggerito: <strong>{app.pricing.tier}</strong>
+            {" · "}
+            {app.pricing.metrics.doneTasks} task · {app.pricing.metrics.fileCount} file
+            {app.pricing.metrics.hasBackend ? " · backend incluso" : ""}
+          </p>
+        </div>
+        {app.lifecycle !== "trial" && (
+          <span className="pricing-lifecycle-badge">Piano attivo: {app.lifecycle.replace(/_/g, " ")}</span>
+        )}
+      </header>
+      <div className="pricing-plans">
+        {plans.map((plan) => (
+          <article key={plan.key} className={`pricing-plan ${plan.featured ? "featured" : ""} ${app.lifecycle === plan.key ? "current" : ""}`}>
+            <div className="pricing-plan-head">
+              <h4>{plan.title}</h4>
+              <p>{plan.tagline}</p>
+            </div>
+            <div className="pricing-plan-price">
+              {plan.price.monthlyEur ? (
+                <><strong>€{plan.price.monthlyEur.toFixed(2)}</strong><span>/mese</span></>
+              ) : (
+                <><strong>€{plan.price.oneShotEur}</strong><span>una tantum</span></>
+              )}
+            </div>
+            <ul className="pricing-plan-features">
+              {plan.features.map((f) => <li key={f}>{f}</li>)}
+            </ul>
+            {app.lifecycle === plan.key ? (
+              <span className="pricing-plan-current">✓ Piano attualmente attivo</span>
+            ) : (
+              <button className="primary compact" onClick={() => onPurchaseTier(app.id, plan.key)}>
+                {plan.cta}
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+      <p className="pricing-footnote">* In modalità sandbox il pagamento è simulato. La conferma sblocca il piano immediatamente. PayPal Live disponibile a breve.</p>
+    </section>
+  );
+}
+
+function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend, onResume, onStop, onBackToProjects, onRequestLicense, onPurchaseTier }) {
   const [expandedPanel, setExpandedPanel] = useState(false);
   const [completedDetailsOpen, setCompletedDetailsOpen] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(true);
@@ -980,22 +1088,16 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
           <div className={`trial-banner ${trialExpired ? "expired" : ""} ${trialDaysLeft <= 1 ? "warning" : ""}`}>
             <div className="trial-banner-text">
               {trialExpired ? (
-                <><strong>Trial scaduto.</strong> L'app non è più accessibile pubblicamente. Attiva la licenza permanente per riabilitarla.</>
+                <><strong>Trial scaduto.</strong> L'app non è più accessibile pubblicamente. Attiva una licenza per riabilitarla.</>
               ) : trialDaysLeft === 1 ? (
-                <><strong>Ultimo giorno di trial!</strong> Da domani l'app non sarà più utilizzabile. Attiva ora la licenza permanente per non perdere l'accesso.</>
+                <><strong>Ultimo giorno di trial!</strong> Da domani l'app non sarà più utilizzabile. Scegli un piano qui sotto per non perdere l'accesso.</>
               ) : (
-                <><strong>Trial attivo</strong> — {trialDaysLeft} giorni rimanenti. Attiva la licenza permanente prima della scadenza.</>
+                <><strong>Trial attivo</strong> — {trialDaysLeft} giorni rimanenti. Acquista un piano prima della scadenza.</>
               )}
             </div>
-            {!app.licenseRequested ? (
-              <button className="primary compact" onClick={() => onRequestLicense(app.id)}>
-                Attiva licenza permanente
-              </button>
-            ) : (
-              <span className="trial-requested">✓ Richiesta inviata — ti contatteremo a breve</span>
-            )}
           </div>
         )}
+        <PricingCard app={app} onPurchaseTier={onPurchaseTier} />
       </div>
     );
   }
@@ -1826,20 +1928,66 @@ function compactExcerpt(content) {
 
 function FilesPanel({ app }) {
   const files = app.files || [];
+  const sourceLocked = app.sourceLocked !== false; // default a "locked" se non specificato
+  const tierExportEur = app.pricing?.plans?.exported?.oneShotEur;
+  const isExported = app.lifecycle === "exported";
+
+  // Distinzione: meta-file sempre visibili, sorgenti gated
+  const isMetaFile = (p) => p.startsWith(".lc/") || p === "README.md";
+  const sourceCount = files.filter((f) => !isMetaFile(f)).length;
+  const metaCount = files.filter((f) => isMetaFile(f)).length;
 
   return (
     <section className="file-browser">
       <div className="file-summary">
         <strong>{files.length} file</strong>
-        <span>Cartella app: {app.storagePath || "web/data/projects"}</span>
+        <span>
+          {isExported
+            ? "Codice sorgente sbloccato — puoi scaricare l'archivio completo."
+            : `${sourceCount} sorgenti bloccati · ${metaCount} specifiche pubbliche`}
+        </span>
       </div>
-      <div className="file-list">
-        {files.map((file) => (
-          <div className="file-row" key={file}>
-            <FileStack size={16} />
-            <span>{file}</span>
+
+      {sourceLocked && !isExported && (
+        <div className="source-locked-banner">
+          <div className="source-locked-icon">🔒</div>
+          <div className="source-locked-text">
+            <strong>Codice sorgente protetto</strong>
+            <p>
+              I file frontend e backend sono bloccati. Acquista il pacchetto <strong>Export self-host</strong>
+              {tierExportEur ? <> a <strong>€{tierExportEur}</strong> una tantum</> : null} per sbloccare
+              il download completo del codice. Le specifiche del progetto restano sempre consultabili sotto.
+            </p>
           </div>
-        ))}
+        </div>
+      )}
+
+      {isExported && (
+        <div className="source-unlocked-banner">
+          <div className="source-locked-icon">✓</div>
+          <div className="source-locked-text">
+            <strong>Codice sbloccato</strong>
+            <p>Hai pieno accesso al sorgente di questa app. Puoi scaricare l'archivio completo.</p>
+          </div>
+          <a className="primary compact" href={`/api/apps/${app.id}/export`} download>
+            Scarica ZIP
+          </a>
+        </div>
+      )}
+
+      <div className="file-list">
+        {files.map((file) => {
+          const meta = isMetaFile(file);
+          const locked = !meta && !isExported;
+          return (
+            <div className={`file-row ${locked ? "file-row-locked" : ""}`} key={file}>
+              <FileStack size={16} />
+              <span>{file}</span>
+              {locked && <span className="file-lock-badge">🔒 locked</span>}
+              {meta && !isExported && <span className="file-meta-badge">spec</span>}
+            </div>
+          );
+        })}
         {!files.length && (
           <div className="panel-empty">
             <strong>Nessun file generato</strong>

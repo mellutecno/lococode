@@ -392,14 +392,81 @@ app.get("/api/apps/:id/files", async (req, res) => {
 
   const root = projectRoot(target);
   const files = await listProjectFiles(root);
+
+  // GATE: il contenuto del codice sorgente e sbloccato SOLO se l'utente ha
+  // pagato il pacchetto Export (lifecycle === "exported"). Altrimenti
+  // ritorniamo solo i metadata (path + size) per dare trasparenza sulla
+  // dimensione, ma non il contenuto.
+  const canSeeSource = isAppExported(target);
+
+  // I file di "spec" e "memoria" (.lc/spec/, .lc/memory/) restano sempre
+  // visibili: sono il piano/documenti dell'app, non codice sorgente di valore.
+  const isMetaFile = (p) => p.startsWith(".lc/") || p === "README.md";
+
   const payload = [];
   for (const relPath of files) {
-    payload.push({
-      path: relPath,
-      content: await readProjectFile(target, relPath),
-    });
+    if (canSeeSource || isMetaFile(relPath)) {
+      payload.push({
+        path: relPath,
+        content: await readProjectFile(target, relPath),
+        locked: false,
+      });
+    } else {
+      // Solo metadata. Stima dimensione senza leggere tutto in memoria.
+      let size = 0;
+      try {
+        const stat = await fs.stat(path.join(root, relPath));
+        size = stat.size;
+      } catch {}
+      payload.push({
+        path: relPath,
+        content: null,
+        locked: true,
+        size,
+      });
+    }
   }
-  res.json({ files: payload });
+
+  res.json({
+    files: payload,
+    sourceLocked: !canSeeSource,
+    pricing: computeAppPricing(target),
+  });
+});
+
+// Endpoint export: genera ZIP del codice sorgente. Disponibile SOLO per app
+// in lifecycle "exported". Risponde con uno stream zip in-memory.
+app.get("/api/apps/:id/export", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const apps = await loadApps(user);
+  const target = apps.find((item) => item.id === req.params.id);
+  if (!target) {
+    res.status(404).json({ error: "App non trovata." });
+    return;
+  }
+  if (!isAppExported(target)) {
+    res.status(402).json({ error: "Per scaricare il codice serve il pacchetto Export. Acquistalo dal pannello." });
+    return;
+  }
+
+  const root = projectRoot(target);
+  const files = await listProjectFiles(root);
+  // Costruiamo uno ZIP semplice senza dipendenze esterne usando il modulo
+  // built-in node:zlib + un format ZIP minimale.
+  // Per evitare di aggiungere nuove dipendenze, generiamo un .tar.gz al volo.
+  const fileName = `${slugifyAppName(target.name)}-export.tar.gz`;
+  res.setHeader("Content-Type", "application/gzip");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+
+  const { spawn } = await import("node:child_process");
+  const tar = spawn("tar", ["-czf", "-", "-C", root, ...files], { stdio: ["ignore", "pipe", "pipe"] });
+  tar.stdout.pipe(res);
+  tar.on("error", (err) => {
+    console.warn("[export] tar errore:", err.message);
+    if (!res.headersSent) res.status(500).json({ error: "Errore creazione archivio." });
+  });
 });
 
 app.post("/api/generate", async (req, res) => {
@@ -609,6 +676,122 @@ app.delete("/api/apps/:id", async (req, res) => {
   res.json({ deleted: true, id: appId, name: appName });
 });
 
+// ─── Acquisto / PayPal (sandbox/mock) ─────────────────────────────
+// Tier validi:
+//   "hosted_lococode_api" — abbonamento A: hosted + nostre API key
+//   "hosted_user_api"     — abbonamento B: hosted + chiavi utente
+//   "exported"            — pacchetto C: one-shot, sblocca codice sorgente
+//
+// Per ora il flusso e MOCK: ritorna un approval_url che punta a una pagina
+// di conferma interna (/api/apps/:id/purchase/confirm). Quando integri
+// PayPal vero, basta sostituire la creazione ordine con la chiamata REST.
+const PAYPAL_LIVE = String(process.env.LOCOCODE_PAYPAL_LIVE || "").toLowerCase() === "true";
+
+app.post("/api/apps/:id/purchase", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+
+  const tier = String(req.body.tier || "").trim();
+  if (!["hosted_lococode_api", "hosted_user_api", "exported"].includes(tier)) {
+    res.status(400).json({ error: "Tier non valido." });
+    return;
+  }
+
+  const apps = await loadApps(user);
+  const target = apps.find((item) => item.id === req.params.id);
+  if (!target) {
+    res.status(404).json({ error: "App non trovata." });
+    return;
+  }
+
+  const pricing = computeAppPricing(target);
+  const plan = pricing.plans[tier];
+  if (!plan) {
+    res.status(400).json({ error: "Piano non disponibile." });
+    return;
+  }
+  const amount = plan.oneShotEur || plan.monthlyEur;
+
+  // Genera order ID. In sandbox mock e una stringa locale; in produzione
+  // sara l'ID restituito da PayPal Orders API v2.
+  const orderId = `mock-${crypto.randomBytes(12).toString("hex")}`;
+  target.pendingOrder = {
+    orderId,
+    tier,
+    amountEur: amount,
+    createdAt: new Date().toISOString(),
+    provider: PAYPAL_LIVE ? "paypal" : "mock",
+  };
+  await saveApps(apps, user);
+
+  // In modalita LIVE, qui chiameremmo l'API PayPal /v2/checkout/orders e
+  // ritorneremmo l'approval_url di PayPal. Per ora ritorniamo un URL locale
+  // di conferma (utile in sandbox per test E2E).
+  const approvalUrl = PAYPAL_LIVE
+    ? null // TODO: sostituire con response.links[].rel === "approve"
+    : `${publicBaseUrl}/api/apps/${target.id}/purchase/confirm?order=${orderId}`;
+
+  res.json({
+    orderId,
+    tier,
+    amountEur: amount,
+    approvalUrl,
+    sandbox: !PAYPAL_LIVE,
+  });
+});
+
+// Conferma ordine — in sandbox/mock viene visitata direttamente dall'utente
+// (simula il ritorno da PayPal dopo approvazione). In LIVE diventa il webhook
+// che PayPal chiama dopo PAYMENT.CAPTURE.COMPLETED.
+app.get("/api/apps/:id/purchase/confirm", async (req, res) => {
+  const orderId = String(req.query.order || "").trim();
+  if (!orderId) {
+    res.status(400).send("Ordine mancante.");
+    return;
+  }
+
+  // Trova app + utente proprietario dall'orderId memorizzato
+  const store = await loadUsersStore();
+  let foundUser = null;
+  let foundApp = null;
+  let foundApps = null;
+  for (const u of store.users || []) {
+    const apps = await loadApps(u);
+    const t = apps.find((a) => a.id === req.params.id && a.pendingOrder?.orderId === orderId);
+    if (t) {
+      foundUser = u;
+      foundApp = t;
+      foundApps = apps;
+      break;
+    }
+  }
+  if (!foundApp) {
+    res.status(404).send("Ordine non trovato o gia confermato.");
+    return;
+  }
+
+  const tier = foundApp.pendingOrder.tier;
+  const amount = foundApp.pendingOrder.amountEur;
+  foundApp.lifecycle = tier; // "hosted_lococode_api" | "hosted_user_api" | "exported"
+  foundApp.lastPurchaseAt = new Date().toISOString();
+  foundApp.lastPurchaseEur = amount;
+  // In mock mode rimuoviamo trialExpiresAt per non bloccare
+  if (tier !== "exported") {
+    // abbonamenti: rinnoviamo trial-like a 30 giorni dal pagamento
+    foundApp.trialExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  } else {
+    foundApp.trialExpiresAt = null;
+  }
+  delete foundApp.pendingOrder;
+  foundApp.licenseRequested = false;
+  await saveApps(foundApps, foundUser);
+
+  console.log(`[purchase] App ${foundApp.id} attivata su tier "${tier}" per ${amount} EUR (utente ${foundUser.email})`);
+
+  // Risposta HTML user-friendly (simula la landing di ritorno PayPal)
+  res.type("html").send(`<!doctype html><html lang="it"><head><meta charset="utf-8"><title>Acquisto confermato</title><style>body{font-family:system-ui,sans-serif;background:#f4f6ff;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.card{background:#fff;padding:40px 48px;border-radius:16px;box-shadow:0 8px 32px rgba(91,62,232,0.15);text-align:center;max-width:440px}h1{color:#059669;margin:0 0 12px}p{color:#475569;line-height:1.6}.btn{display:inline-block;margin-top:20px;background:linear-gradient(135deg,#5b3ee8,#7c5af0);color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-weight:600}</style></head><body><div class="card"><h1>&check; Acquisto confermato</h1><p>Hai attivato <strong>${foundApp.name}</strong> sul piano <strong>${tier}</strong> per <strong>€${amount.toFixed(2)}</strong>.</p><p style="font-size:13px;color:#94a3b8">Modalita: ${PAYPAL_LIVE ? "PayPal Live" : "Sandbox / Mock"}</p><a href="${publicBaseUrl}" class="btn">Torna al pannello LocoCode</a></div></body></html>`);
+});
+
 app.post("/api/apps/:id/request-license", async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -768,18 +951,21 @@ app.get("/api/public/app-status/:slug", async (req, res) => {
   const appData = found.target;
   const now = new Date();
   const expiresAt = appData.trialExpiresAt ? new Date(appData.trialExpiresAt) : null;
-  const isActive = appData.lifecycle === "active";
+  const lifecycle = normalizeLifecycle(appData.lifecycle);
+  const isActive = isAppActive(appData);
   const expired = !isActive && expiresAt && expiresAt < now;
   const trialDaysLeft =
     isActive || !expiresAt ? null : Math.max(0, Math.ceil((expiresAt - now) / 86400000));
+  const pricing = computeAppPricing(appData);
   res.set("Cache-Control", "no-store");
   res.json({
     name: appData.name || "",
-    lifecycle: appData.lifecycle || "trial",
+    lifecycle,
     isActive,
     expired: !!expired,
     trialDaysLeft,
     trialExpiresAt: appData.trialExpiresAt || null,
+    pricing,
   });
 });
 
@@ -851,7 +1037,7 @@ async function publicAppRequest(req, res) {
   await refreshProjectState(target);
 
   // Trial check — blocca accesso se scaduto e non attivo
-  if (target.trialExpiresAt && target.lifecycle !== "active" && new Date(target.trialExpiresAt) < new Date()) {
+  if (target.trialExpiresAt && !isAppActive(target) && new Date(target.trialExpiresAt) < new Date()) {
     res.type("html").send(trialExpiredHtml(target.name));
     return;
   }
@@ -3012,7 +3198,7 @@ async function publicAppSlugRequest(req, res) {
   const { user, apps, target } = found;
   await refreshProjectState(target);
 
-  if (target.trialExpiresAt && target.lifecycle !== "active" && new Date(target.trialExpiresAt) < new Date()) {
+  if (target.trialExpiresAt && !isAppActive(target) && new Date(target.trialExpiresAt) < new Date()) {
     res.type("html").send(trialExpiredHtml(target.name));
     return;
   }
@@ -3041,6 +3227,80 @@ async function readJson(filePath) {
   }
 }
 
+// ─── Pricing / scoring ────────────────────────────────────────────
+// 4 stati per il ciclo di vita dell'app:
+//   trial               — prova 30gg, codice sorgente locked
+//   hosted_lococode_api — abbonamento A: app sul nostro server + nostre API key
+//   hosted_user_api     — abbonamento B: app sul nostro server + chiavi utente
+//   exported            — pagato one-shot C: utente puo scaricare ZIP completo
+// "active" (vecchio nome) viene normalizzato a hosted_lococode_api per retro-compat.
+const PAID_LIFECYCLES = new Set(["hosted_lococode_api", "hosted_user_api", "exported", "active"]);
+const EXPORT_LIFECYCLES = new Set(["exported"]);
+
+function normalizeLifecycle(value) {
+  const v = String(value || "trial").toLowerCase();
+  if (v === "active") return "hosted_lococode_api"; // retro-compat
+  if (["trial", "hosted_lococode_api", "hosted_user_api", "exported"].includes(v)) return v;
+  return "trial";
+}
+
+function isAppActive(appData) {
+  return PAID_LIFECYCLES.has(String(appData.lifecycle || "").toLowerCase());
+}
+
+function isAppExported(appData) {
+  return EXPORT_LIFECYCLES.has(String(appData.lifecycle || "").toLowerCase());
+}
+
+// Calcola score di complessita dell'app in base ai task completati e file generati.
+// Usato per suggerire il tier di prezzo (Starter/Pro/Business/Enterprise).
+function computeAppScore(appData) {
+  const steps = Array.isArray(appData.sdd?.steps) ? appData.sdd.steps : [];
+  const doneTasks = steps.filter((s) => s.done).length;
+  const files = Array.isArray(appData.files) ? appData.files : [];
+  const fileCount = files.length || appData.fileCount || 0;
+  const hasBackend = files.some((f) => typeof f === "string" && f.startsWith("backend/"));
+  // Conta integrazioni esterne note (heuristica: import o .env keys)
+  const extApis = 0; // riservato per futuro
+  const score = Math.round(doneTasks * 6 + fileCount * 1.2 + (hasBackend ? 25 : 0) + extApis * 8);
+  return { score, doneTasks, fileCount, hasBackend, extApis };
+}
+
+// Tier suggerito + prezzi proposti (in EUR).
+function computeAppPricing(appData) {
+  const { score, doneTasks, fileCount, hasBackend } = computeAppScore(appData);
+  let tier = "Starter";
+  let monthlyHosted = 14.99;
+  let monthlyHostedUserApi = 6.99;
+  let exportOneShot = 99;
+  if (score >= 280) {
+    tier = "Enterprise";
+    monthlyHosted = 79.99;
+    monthlyHostedUserApi = 29.99;
+    exportOneShot = 599;
+  } else if (score >= 130) {
+    tier = "Business";
+    monthlyHosted = 39.99;
+    monthlyHostedUserApi = 14.99;
+    exportOneShot = 399;
+  } else if (score >= 50) {
+    tier = "Pro";
+    monthlyHosted = 19.99;
+    monthlyHostedUserApi = 9.99;
+    exportOneShot = 199;
+  }
+  return {
+    score,
+    tier,
+    metrics: { doneTasks, fileCount, hasBackend },
+    plans: {
+      hosted_lococode_api: { monthlyEur: monthlyHosted, label: "Hosted · API LocoCode" },
+      hosted_user_api: { monthlyEur: monthlyHostedUserApi, label: "Hosted · API utente" },
+      exported: { oneShotEur: exportOneShot, label: "Export self-host" },
+    },
+  };
+}
+
 function publicApp(appData) {
   const appToken = appData.appToken || appData.demoToken || "";
   const appUrl = appUrlForApp({ ...appData, appToken });
@@ -3053,16 +3313,20 @@ function publicApp(appData) {
   delete safe.appToken;
 
   const trialExpiresAt = appData.trialExpiresAt || null;
-  const isActive = appData.lifecycle === "active";
+  const lifecycle = normalizeLifecycle(appData.lifecycle);
+  const isActive = isAppActive(appData);
   const trialDaysLeft = trialExpiresAt && !isActive
     ? Math.max(0, Math.ceil((new Date(trialExpiresAt) - new Date()) / 86400000))
     : null;
+  const pricing = computeAppPricing(appData);
 
   return {
     ...safe,
-    lifecycle: appData.lifecycle || "trial",
+    lifecycle,
     trialExpiresAt,
     trialDaysLeft,
+    pricing,
+    sourceLocked: !isAppExported(appData),
     licenseRequested: appData.licenseRequested || false,
     appUrl,
     autopilot: sanitizeAutopilotForClient(appData.autopilot),
