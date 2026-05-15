@@ -888,7 +888,7 @@ function TierSelector({ value, onChange, isAdmin, tiersCatalog }) {
               <div className="tier-card-desc">{tier.description}</div>
               <div className="tier-card-fee">
                 <strong>€{(tier.feeEur ?? 0).toFixed(2)}</strong>
-                <span>creazione (rimborsato se abboni)</span>
+                <span>creazione (rimborsato se ti abboni)</span>
               </div>
             </button>
           );
@@ -2213,13 +2213,8 @@ function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiC
           </div>
         )}
 
-        {!isAdmin && (
-          <div className="shared-key-banner active">
-            <strong>Tutto incluso</strong> — i servizi cloud necessari sono già forniti da LocoCode. Niente da configurare.
-          </div>
-        )}
-
-        {canSetApiKey && (
+        {/* Chiavi servizi cloud */}
+        {canSetApiKey ? (
           <label>
             La tua chiave servizi cloud {isAdmin ? <span className="settings-optional">(admin — accesso libero)</span> : <span className="settings-optional">(piano Hosting + chiavi tue)</span>}
             <input
@@ -2229,16 +2224,24 @@ function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiC
               placeholder={using ? "Lascia vuoto per usare quelle condivise" : "Incolla qui la tua chiave"}
             />
           </label>
+        ) : (
+          <div className="settings-readonly">
+            <span className="settings-readonly-label">Chiavi servizi cloud</span>
+            <span className="settings-readonly-value">Fornite da LocoCode</span>
+          </div>
         )}
 
-        {/* Selettore modello visibile SOLO all'admin: gli utenti normali sono
-            vincolati al tier scelto in fase di generazione, il modello non e'
-            modificabile in nessun caso. */}
-        {isAdmin && (
+        {/* Modello: scelta solo admin, per non-admin info-only */}
+        {isAdmin ? (
           <label>
             Modello predefinito <span className="settings-optional">(admin)</span>
             <ModelSelect value={model} onChange={setModel} />
           </label>
+        ) : (
+          <div className="settings-readonly">
+            <span className="settings-readonly-label">Motore di generazione</span>
+            <span className="settings-readonly-value">Determinato dal tier acquistato</span>
+          </div>
         )}
         <label>
           Lingua interfaccia
