@@ -38,3 +38,6 @@ _analysis/
 Thumbs.db
 .vscode/
 .idea/
+
+# Claude Code state (locale, per-developer)
+.claude/
