@@ -933,6 +933,7 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
           busy={busy}
           placeholder="Descrivi l'app da creare..."
           onSubmit={onGenerate}
+          showModel={isAdmin}
         />
       </section>
 
