@@ -491,8 +491,8 @@ app.post("/api/generate", async (req, res) => {
     const trialExpired = user.trialExpiresAt && new Date(user.trialExpiresAt) < new Date();
     res.status(400).json({
       error: trialExpired
-        ? "Il tuo trial di 30 giorni è scaduto. Abbonati per continuare a usare la chiave condivisa, oppure inserisci la tua API key OpenRouter nelle impostazioni."
-        : "API key OpenRouter non disponibile. Inseriscila nelle impostazioni o riprova più tardi.",
+        ? "Il tuo trial di 30 giorni è scaduto. Abbonati per continuare a usare le chiavi condivise, oppure inserisci la tua API key nelle impostazioni."
+        : "API key non disponibile. Inseriscila nelle impostazioni o riprova più tardi.",
     });
     return;
   }
@@ -870,8 +870,8 @@ async function startAutopilotRequest(req, res) {
     const trialExpired = user.trialExpiresAt && new Date(user.trialExpiresAt) < new Date();
     res.status(400).json({
       error: trialExpired
-        ? "Il tuo trial è scaduto. Abbonati per continuare a usare la chiave condivisa, oppure inserisci la tua API key OpenRouter."
-        : "API key OpenRouter non disponibile. Inseriscila nelle impostazioni.",
+        ? "Il tuo trial è scaduto. Abbonati per continuare a usare le chiavi condivise, oppure inserisci la tua API key."
+        : "API key non disponibile. Inseriscila nelle impostazioni.",
     });
     return;
   }
@@ -3267,35 +3267,43 @@ function computeAppScore(appData) {
 }
 
 // Tier suggerito + prezzi proposti (in EUR).
+// I costi reali per noi sono dominati dal consumo token AI (frazioni di EUR
+// per app piccole). Quindi prezziamo per VALORE PERCEPITO, non per costo:
+// - Starter / Pro: una tantum sotto i 100 EUR (impulse-buy, no friction)
+// - Business: prezzo medio per app full-stack significative
+// - Enterprise: trattativa diretta
 function computeAppPricing(appData) {
   const { score, doneTasks, fileCount, hasBackend } = computeAppScore(appData);
   let tier = "Starter";
-  let monthlyHosted = 14.99;
-  let monthlyHostedUserApi = 6.99;
-  let exportOneShot = 99;
+  let monthlyLococodeKeys = 9.99;   // chiavi LocoCode
+  let monthlyHostingOnly = 4.99;    // hosting con chiavi utente
+  let exportOneShot = 49;           // scarica tutto
   if (score >= 280) {
     tier = "Enterprise";
-    monthlyHosted = 79.99;
-    monthlyHostedUserApi = 29.99;
-    exportOneShot = 599;
+    monthlyLococodeKeys = 79.99;
+    monthlyHostingOnly = 29.99;
+    exportOneShot = 399;
   } else if (score >= 130) {
     tier = "Business";
-    monthlyHosted = 39.99;
-    monthlyHostedUserApi = 14.99;
-    exportOneShot = 399;
+    monthlyLococodeKeys = 39.99;
+    monthlyHostingOnly = 14.99;
+    exportOneShot = 199;
   } else if (score >= 50) {
     tier = "Pro";
-    monthlyHosted = 19.99;
-    monthlyHostedUserApi = 9.99;
-    exportOneShot = 199;
+    monthlyLococodeKeys = 19.99;
+    monthlyHostingOnly = 9.99;
+    exportOneShot = 99;
   }
   return {
     score,
     tier,
     metrics: { doneTasks, fileCount, hasBackend },
     plans: {
-      hosted_lococode_api: { monthlyEur: monthlyHosted, label: "Hosted · API LocoCode" },
-      hosted_user_api: { monthlyEur: monthlyHostedUserApi, label: "Hosted · API utente" },
+      // Hosting su LocoCode + chiavi AI fornite da LocoCode (tutto incluso)
+      hosted_lococode_api: { monthlyEur: monthlyLococodeKeys, label: "Hosting + chiavi LocoCode" },
+      // Hosting su LocoCode + chiavi AI fornite dall'utente (provider a sua scelta)
+      hosted_user_api: { monthlyEur: monthlyHostingOnly, label: "Hosting + chiavi tue" },
+      // Pacchetto export: utente scarica il codice e si arrangia da solo
       exported: { oneShotEur: exportOneShot, label: "Export self-host" },
     },
   };

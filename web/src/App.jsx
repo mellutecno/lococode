@@ -457,7 +457,7 @@ Questa azione è irreversibile.`)) return;
 
   async function testApiConnection() {
     if (!requireAuth()) return;
-    setApiCheck("Test OpenRouter in corso...");
+    setApiCheck("Test API in corso...");
     setStatus("Test API...");
     setError("");
     try {
@@ -900,28 +900,28 @@ function PricingCard({ app, onPurchaseTier }) {
   const plans = [
     {
       key: "hosted_lococode_api",
-      title: "Hosted · API LocoCode",
-      tagline: "L'app gira sui nostri server, noi paghiamo i token AI per te.",
+      title: "Hosting + chiavi LocoCode",
+      tagline: "L'app gira sui nostri server, le chiavi AI le mettiamo noi (tutto incluso).",
       price: app.pricing.plans.hosted_lococode_api,
       cta: "Abbonati",
       featured: true,
-      features: ["Hosting incluso", "Chiavi OpenRouter incluse", "Aggiornamenti AI illimitati*", "Dominio lococode.mellutecno.it"],
+      features: ["Hosting incluso", "Chiavi AI incluse", "Aggiornamenti illimitati*", "Dominio lococode.mellutecno.it"],
     },
     {
       key: "hosted_user_api",
-      title: "Hosted · API tue",
-      tagline: "L'app gira sui nostri server, tu fornisci le tue chiavi OpenRouter.",
+      title: "Hosting + chiavi tue",
+      tagline: "L'app gira sui nostri server, tu fornisci le tue chiavi AI (provider a tua scelta).",
       price: app.pricing.plans.hosted_user_api,
       cta: "Abbonati",
       features: ["Hosting incluso", "Le tue chiavi API", "Costi token a tuo carico", "Dominio lococode.mellutecno.it"],
     },
     {
       key: "exported",
-      title: "Export self-host",
-      tagline: "Scarichi tutto il codice e lo metti sul tuo server con le tue chiavi.",
+      title: "Scarica e arrangiati",
+      tagline: "Scarichi tutto il codice e lo metti sul tuo server con le chiavi che vuoi.",
       price: app.pricing.plans.exported,
       cta: "Acquista codice",
-      features: ["Codice sorgente completo", "Script deploy incluso", "Nessun lock-in", "Pagamento una tantum"],
+      features: ["Codice sorgente completo", "Script deploy incluso", "Nessun vincolo", "Pagamento una tantum"],
     },
   ];
 
@@ -931,7 +931,7 @@ function PricingCard({ app, onPurchaseTier }) {
         <div>
           <h3>Acquista licenza</h3>
           <p>
-            Score complessità: <strong>{app.pricing.score}</strong> · Tier suggerito: <strong>{app.pricing.tier}</strong>
+            Complessità app: <strong>{app.pricing.tier}</strong> (score {app.pricing.score})
             {" · "}
             {app.pricing.metrics.doneTasks} task · {app.pricing.metrics.fileCount} file
             {app.pricing.metrics.hasBackend ? " · backend incluso" : ""}
@@ -2091,20 +2091,20 @@ function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiC
 
         {available && (
           <div className={`shared-key-banner ${trialExpired ? "expired" : trialActive ? "active" : "subscribed"}`}>
-            {isSubscribed && <><strong>Abbonato</strong> — stai usando la chiave OpenRouter condivisa LocoCode.</>}
-            {trialActive && <><strong>Trial attivo</strong> — chiave condivisa disponibile per {trialDaysLeft} {trialDaysLeft === 1 ? "giorno" : "giorni"} ancora. Nessuna configurazione richiesta.</>}
-            {trialExpired && <><strong>Trial scaduto.</strong> Abbonati per continuare a usare la chiave condivisa, oppure inserisci la tua API key.</>}
-            {!trialActive && !trialExpired && !isSubscribed && <>Chiave condivisa disponibile.</>}
+            {isSubscribed && <><strong>Abbonato</strong> — stai usando le chiavi AI condivise LocoCode.</>}
+            {trialActive && <><strong>Trial attivo</strong> — chiavi condivise disponibili per {trialDaysLeft} {trialDaysLeft === 1 ? "giorno" : "giorni"} ancora. Nessuna configurazione richiesta.</>}
+            {trialExpired && <><strong>Trial scaduto.</strong> Abbonati per continuare a usare le chiavi condivise, oppure inserisci la tua API key.</>}
+            {!trialActive && !trialExpired && !isSubscribed && <>Chiavi condivise disponibili.</>}
           </div>
         )}
 
         <label>
-          API key personale OpenRouter <span className="settings-optional">(opzionale — sovrascrive la chiave condivisa)</span>
+          La tua API key <span className="settings-optional">(opzionale — sovrascrive le chiavi condivise)</span>
           <input
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
             type="password"
-            placeholder={using ? "Lascia vuoto per usare la chiave condivisa" : "sk-or-..."}
+            placeholder={using ? "Lascia vuoto per usare le chiavi condivise" : "Incolla qui la tua API key"}
           />
         </label>
         <label>
