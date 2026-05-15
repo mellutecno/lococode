@@ -1123,6 +1123,30 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   line-height: 1.5;
 }
 
+/* Mobile: tier card e pricing card stackati verticali, swipe orizzontale ok */
+@media (max-width: 768px) {
+  .tier-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .tier-card {
+    padding: 14px 16px;
+  }
+  .tier-card-label { font-size: 15px; }
+  .tier-card-desc { font-size: 12.5px; }
+  .tier-card-cost strong { font-size: 13px; }
+
+  .pricing-plans {
+    grid-template-columns: 1fr;
+  }
+  .pricing-card-wrap {
+    padding: 16px;
+  }
+  .pricing-card-header { flex-direction: column; align-items: flex-start; }
+  .pricing-plan { padding: 16px; }
+  .pricing-plan-price strong { font-size: 22px; }
+}
+
 /* ─── Pricing card ───────────────────────────────────────────── */
 .pricing-card-wrap {
   width: min(1100px, 100%);
