@@ -55,6 +55,8 @@ export default function App() {
   const [apps, setApps] = useState([]);
   const [selectedAppId, setSelectedAppId] = useState("");
   const [projectName, setProjectName] = useState("");
+  const [generationTier, setGenerationTier] = useState("base");
+  const [tiersCatalog, setTiersCatalog] = useState({});
   const [prompt, setPrompt] = useState("");
   const [chatPrompt, setChatPrompt] = useState("");
   const [model, setModel] = useState(COMMON_MODELS[0]);
@@ -135,6 +137,14 @@ Questa azione è irreversibile.`)) return;
 
     return () => window.clearInterval(timer);
   }, [selectedApp?.id, selectedApp?.status, selectedApp?.autopilot?.running]);
+
+  // Carica il catalogo tier una sola volta (pubblico, no auth)
+  useEffect(() => {
+    fetch("/api/generation-tiers")
+      .then((r) => (r.ok ? r.json() : { tiers: {} }))
+      .then((d) => setTiersCatalog(d.tiers || {}))
+      .catch(() => {});
+  }, []);
 
   async function bootstrap() {
     const token = localStorage.getItem(SESSION_KEY);
@@ -312,7 +322,7 @@ Questa azione è irreversibile.`)) return;
     }
   }
 
-  async function generateApp({ text, appId = "", overrideModel = "", name = "" }) {
+  async function generateApp({ text, appId = "", overrideModel = "", name = "", tier = "base" }) {
     if (!requireAuth()) return;
     const cleanPrompt = text.trim();
     if (!cleanPrompt || busy) return;
@@ -337,6 +347,7 @@ Questa azione è irreversibile.`)) return;
           projectName: cleanProjectName,
           model: chosenModel,
           appId,
+          generationTier: tier,
           openrouterApiKey: apiKey,
         }),
       });
@@ -524,11 +535,15 @@ Questa azione è irreversibile.`)) return;
             model={model}
             setModel={setModel}
             busy={busy}
-            onGenerate={() => generateApp({ text: prompt, name: projectName })}
+            generationTier={generationTier}
+            setGenerationTier={setGenerationTier}
+            tiersCatalog={tiersCatalog}
+            isAdmin={currentUser?.isAdmin === true}
+            onGenerate={() => generateApp({ text: prompt, name: projectName, tier: generationTier })}
             onQuick={(item) => {
               setProjectName(item.label);
               setPrompt(item.prompt);
-              void generateApp({ text: item.prompt, name: item.label });
+              void generateApp({ text: item.prompt, name: item.label, tier: generationTier });
             }}
           />
         )}
@@ -833,7 +848,63 @@ function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLog
   );
 }
 
-function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setModel, busy, onGenerate, onQuick }) {
+const FALLBACK_TIERS = {
+  base: { key: "base", label: "Base", description: "App funzionante, design pulito ma essenziale", color: "#10b981", estCost: { min: 0.10, max: 0.25 }, hasReview: false },
+  media: { key: "media", label: "Media", description: "Frontend curato (Kimi K2.6 specializzato in design)", color: "#3b82f6", estCost: { min: 0.25, max: 0.45 }, hasReview: false },
+  pro: { key: "pro", label: "Pro", description: "Frontend + review automatica del design con Claude Haiku 4.5", color: "#8b5cf6", estCost: { min: 0.50, max: 0.90 }, hasReview: true },
+  premium: { key: "premium", label: "Premium", description: "Tutto Claude Sonnet 4.5 + review GPT-5. Massima qualita.", color: "#f59e0b", estCost: { min: 1.50, max: 3.50 }, hasReview: true },
+};
+
+function TierSelector({ value, onChange, isAdmin, tiersCatalog }) {
+  const catalog = (tiersCatalog && Object.keys(tiersCatalog).length) ? tiersCatalog : FALLBACK_TIERS;
+  const order = ["base", "media", "pro", "premium"];
+  return (
+    <div className="tier-selector">
+      <div className="tier-selector-head">
+        <strong>Livello di generazione</strong>
+        <span>Sceglie la combinazione di motori AI usata per costruire la tua app.</span>
+      </div>
+      <div className="tier-grid">
+        {order.map((k) => {
+          const tier = catalog[k];
+          if (!tier) return null;
+          const locked = !isAdmin && k !== "base";
+          const active = value === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              className={`tier-card ${active ? "active" : ""} ${locked ? "locked" : ""}`}
+              style={{ "--tier-color": tier.color }}
+              onClick={() => { if (!locked) onChange(k); }}
+              disabled={locked}
+              title={locked ? "Disponibile con piano Premium" : tier.description}
+            >
+              <div className="tier-card-head">
+                <span className="tier-card-label">{tier.label}</span>
+                {tier.hasReview && <span className="tier-card-badge">+ Review</span>}
+                {locked && <span className="tier-card-lock">🔒</span>}
+              </div>
+              <div className="tier-card-desc">{tier.description}</div>
+              <div className="tier-card-cost">
+                <span>Costo viva LocoCode</span>
+                <strong>€{tier.estCost.min.toFixed(2)} – €{tier.estCost.max.toFixed(2)}</strong>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {!isAdmin && (
+        <p className="tier-hint">
+          🔒 I tier Media/Pro/Premium si sbloccano con l'abbonamento corrispondente.
+          Durante il trial puoi usare Base.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setModel, busy, onGenerate, onQuick, generationTier, setGenerationTier, isAdmin, tiersCatalog }) {
   return (
     <div className="home-view">
       <section className="hero-block">
@@ -848,6 +919,12 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
             placeholder="Esempio: Gestionale studio medico"
           />
         </label>
+        <TierSelector
+          value={generationTier}
+          onChange={setGenerationTier}
+          isAdmin={isAdmin}
+          tiersCatalog={tiersCatalog}
+        />
         <Composer
           value={prompt}
           onChange={setPrompt}

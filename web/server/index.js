@@ -50,20 +50,86 @@ const runningJobs = new Map();
 const frontendBuilds = new Map();
 const previewBuildTimers = new Map(); // debounce timer per incrementale live-preview
 
-// Modelli disponibili — ordinati per qualita visiva sul frontend.
-// Claude e GPT generalmente generano UI piu belle perche hanno "gusto" estetico
-// migliore. DeepSeek e ottimo per la logica e costa meno, ma applica Tailwind
-// in modo piu meccanico (testi senza contrasto, ecc).
+// Modelli OpenRouter curati — i piu' famosi e affidabili, ordinati per
+// rapporto qualita/prezzo. Per l'admin sono tutti selezionabili; gli utenti
+// normali ricevono i modelli associati al loro tier di generazione.
 const commonModels = [
-  "anthropic/claude-sonnet-4.5",     // top quality design + code
-  "openai/gpt-5",                     // top quality design + code
-  "google/gemini-2.5-pro",            // ottimo design, buon coding
-  "anthropic/claude-haiku-4.5",       // veloce, design buono
-  "openai/gpt-5-mini",                // veloce, design buono
-  "deepseek/deepseek-v4-pro",         // economico, design meccanico
-  "qwen/qwen3-coder",                 // economico, coding focus
-  "moonshotai/kimi-k2.6",             // alternativa cinese
+  // TIER PREMIUM (top design + code)
+  "anthropic/claude-sonnet-4.5",
+  "openai/gpt-5",
+  "google/gemini-2.5-pro",
+  // TIER PRO (veloce + buona qualita)
+  "anthropic/claude-haiku-4.5",
+  "openai/gpt-5-mini",
+  "x-ai/grok-4-fast",
+  // TIER MEDIA (economico ma decente)
+  "moonshotai/kimi-k2.6",
+  "google/gemini-2.5-flash",
+  "mistralai/mistral-large-2",
+  // TIER BASE (economico, coding focus)
+  "deepseek/deepseek-v4-pro",
+  "qwen/qwen3-coder",
+  "meta-llama/llama-4-maverick",
 ];
+
+// Mapping tier di generazione ↔ modelli per fase.
+// Il tier viene scelto dall'utente al momento della creazione dell'app.
+// L'orchestratore usa il modello giusto per la fase giusta.
+const GENERATION_TIERS = {
+  base: {
+    label: "Base",
+    description: "App funzionante, design pulito ma essenziale",
+    color: "#10b981",
+    estCost: { min: 0.10, max: 0.25 },
+    models: {
+      sdd: "deepseek/deepseek-v4-pro",
+      backend: "deepseek/deepseek-v4-pro",
+      frontend: "deepseek/deepseek-v4-pro",
+      review: null,
+    },
+  },
+  media: {
+    label: "Media",
+    description: "Frontend curato con Kimi (specializzato in design)",
+    color: "#3b82f6",
+    estCost: { min: 0.25, max: 0.45 },
+    models: {
+      sdd: "deepseek/deepseek-v4-pro",
+      backend: "deepseek/deepseek-v4-pro",
+      frontend: "moonshotai/kimi-k2.6",
+      review: null,
+    },
+  },
+  pro: {
+    label: "Pro",
+    description: "Frontend + revisione design con Claude Haiku 4.5",
+    color: "#8b5cf6",
+    estCost: { min: 0.50, max: 0.90 },
+    models: {
+      sdd: "deepseek/deepseek-v4-pro",
+      backend: "deepseek/deepseek-v4-pro",
+      frontend: "anthropic/claude-haiku-4.5",
+      review: "anthropic/claude-haiku-4.5",
+    },
+  },
+  premium: {
+    label: "Premium",
+    description: "Tutto Claude Sonnet 4.5 + review GPT-5",
+    color: "#f59e0b",
+    estCost: { min: 1.50, max: 3.50 },
+    models: {
+      sdd: "anthropic/claude-sonnet-4.5",
+      backend: "anthropic/claude-sonnet-4.5",
+      frontend: "anthropic/claude-sonnet-4.5",
+      review: "openai/gpt-5",
+    },
+  },
+};
+
+function getTierModels(tier) {
+  const t = String(tier || "base").toLowerCase();
+  return GENERATION_TIERS[t] ? GENERATION_TIERS[t].models : GENERATION_TIERS.base.models;
+}
 
 const app = express();
 app.use((req, res, next) => {
@@ -287,6 +353,25 @@ app.post("/api/settings", async (req, res) => {
   stored.updatedAt = new Date().toISOString();
   await saveUsersStore(store);
   res.json(settings);
+});
+
+// Endpoint pubblico: ritorna i tier di generazione disponibili con i loro
+// metadati (label, descrizione, costo stimato, colore). Niente API key,
+// niente segreti. L'UI lo usa per popolare il selettore tier alla creazione
+// di una nuova app.
+app.get("/api/generation-tiers", (req, res) => {
+  const out = {};
+  for (const [key, t] of Object.entries(GENERATION_TIERS)) {
+    out[key] = {
+      key,
+      label: t.label,
+      description: t.description,
+      color: t.color,
+      estCost: t.estCost,
+      hasReview: !!t.models.review,
+    };
+  }
+  res.json({ tiers: out });
 });
 
 app.post("/api/check-openrouter", async (req, res) => {
@@ -532,6 +617,19 @@ app.post("/api/generate", async (req, res) => {
     return;
   }
 
+  // Tier di generazione: chi sceglie quale combinazione di modelli usare.
+  // Default "base" (DeepSeek). Solo l'admin puo' attualmente scegliere tier
+  // superiori finche' non agganciamo i tier ai piani di abbonamento.
+  const requestedTier = String(req.body.generationTier || "").trim().toLowerCase();
+  const validTiers = ["base", "media", "pro", "premium"];
+  const generationTier = validTiers.includes(requestedTier) ? requestedTier : "base";
+  if (!isAdminUser(user) && generationTier !== "base") {
+    // Per ora: utenti non-admin vincolati a "base". Quando aggiungeremo
+    // l'abbonamento Premium, qui controlleremo l'eligibilita'.
+    // TODO: sbloccare tier in base al piano sottoscritto.
+  }
+  const effectiveTier = isAdminUser(user) ? generationTier : "base";
+
   if (!target) {
     target = {
       id: `app-${Date.now()}`,
@@ -543,6 +641,7 @@ app.post("/api/generate", async (req, res) => {
       createdAt: now,
       updatedAt: now,
       model,
+      generationTier: effectiveTier,
       prompt,
       status: "building",
       phase: "intake",
@@ -553,6 +652,9 @@ app.post("/api/generate", async (req, res) => {
     };
     apps.unshift(target);
     await createInitialWorkspace(target, prompt);
+  } else if (effectiveTier !== "base" && !target.generationTier) {
+    // App esistente: aggiorna il tier se l'admin lo cambia
+    target.generationTier = effectiveTier;
   }
 
   if (target.autopilot?.running || runningJobs.has(jobKey(user.id, target.id))) {
@@ -1718,29 +1820,62 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
 
 async function runInitialOrchestration({ target, apiKey, model, userPrompt, onProgress, shouldStop }) {
   const systemPrompt = buildOrchestratorSystemPrompt();
+  // Modelli per fase basati sul tier scelto dall'utente. Fallback al modello
+  // globale (admin override) se il tier non specifica nulla.
+  const tier = target.generationTier || "base";
+  const tierModels = getTierModels(tier);
+  const modelFor = (phaseKey) => tierModels[phaseKey] || model;
+
+  // Inizializza tracking costi per fase
+  target.tokenUsage = target.tokenUsage || {};
+  target.generationTier = tier;
+
   const phases = [
     {
       label: "specifiche progetto",
       phaseNum: 1,
+      key: "sdd",
       maxTokens: 10000,
+      model: modelFor("sdd"),
       getPrompt: async () => buildInitialSpecsPrompt(userPrompt),
       expectedFiles: [".lc/spec/sdd.md", ".lc/spec/architecture.md", ".lc/spec/tasks.md", "README.md"],
     },
     {
       label: "parte server",
       phaseNum: 2,
+      key: "backend",
       maxTokens: 12000,
+      model: modelFor("backend"),
       getPrompt: async () => buildInitialBackendPrompt(userPrompt, await loadProjectMemory(target)),
       expectedFiles: ["backend/app/main.py", "backend/requirements.txt", "backend/.env.example"],
     },
     {
       label: "interfaccia utente",
       phaseNum: 3,
+      key: "frontend",
       maxTokens: 14000,
+      model: modelFor("frontend"),
       getPrompt: async () => buildInitialFrontendPrompt(userPrompt, await loadProjectMemory(target)),
       expectedFiles: ["frontend/src/App.jsx", "frontend/package.json", "preview/index.html"],
     },
   ];
+
+  // Tier Pro/Premium: aggiungi una fase finale di Design Review.
+  // Un modello diverso (con gusto estetico) rilegge i file frontend, individua
+  // problemi visivi (contrasti, layout, leggibilita') e propone correzioni.
+  const reviewModel = modelFor("review");
+  if (reviewModel) {
+    phases.push({
+      label: "design review",
+      phaseNum: 4,
+      key: "review",
+      maxTokens: 14000,
+      model: reviewModel,
+      isReview: true,
+      getPrompt: async () => buildDesignReviewPrompt(target),
+      expectedFiles: [],
+    });
+  }
 
   const touched = [];
 
@@ -1755,27 +1890,52 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       };
     }
 
-    const aiText = await callOpenRouter({
+    const phaseStart = Date.now();
+    const aiResult = await callOpenRouter({
       apiKey,
-      model,
+      model: phase.model || model,
       systemPrompt,
       userPrompt: await phase.getPrompt(),
       maxTokens: phase.maxTokens,
       timeoutMs: openRouterTimeoutMs,
+      returnUsage: true,
     });
+    const aiText = typeof aiResult === "string" ? aiResult : aiResult.text;
+    const usage = typeof aiResult === "object" ? aiResult.usage : null;
+
+    // Salva tracking costi della fase (token + ms + modello)
+    target.tokenUsage[phase.key] = {
+      model: phase.model || model,
+      promptTokens: usage?.prompt_tokens || 0,
+      completionTokens: usage?.completion_tokens || 0,
+      totalTokens: usage?.total_tokens || 0,
+      durationMs: Date.now() - phaseStart,
+      at: new Date().toISOString(),
+    };
+
     const operations = parseOperations(aiText);
     if (!operations.length) {
+      // Per la fase di design review, accettiamo che non ci siano modifiche
+      // (significa che il design e' gia' OK secondo il reviewer).
+      if (phase.isReview) {
+        appendOperationalLog(target, `Design review (${phase.model}): nessuna modifica suggerita, design accettato.`);
+        await onProgress?.(phase.label);
+        continue;
+      }
       throw new Error(
-        enrichedErrorMessage(`Fase ${phase.phaseNum}/3 (${phase.label})`, aiText, phase.expectedFiles),
+        enrichedErrorMessage(`Fase ${phase.phaseNum} (${phase.label})`, aiText, phase.expectedFiles),
       );
     }
 
     const result = await applyOperations(target, operations);
     if (result.errors.length) {
-      throw new Error(`Fase ${phase.phaseNum}/3 (${phase.label}): operazioni file non valide: ${result.errors.join("; ")}`);
+      throw new Error(`Fase ${phase.phaseNum} (${phase.label}): operazioni file non valide: ${result.errors.join("; ")}`);
     }
 
     touched.push(...result.created, ...result.updated);
+    if (phase.isReview && result.updated.length > 0) {
+      appendOperationalLog(target, `Design review applicato: ${result.updated.length} file frontend migliorati.`);
+    }
     await refreshProjectState(target);
     target.updatedAt = new Date().toISOString();
     await onProgress?.(phase.label);
@@ -2162,6 +2322,60 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "",
     "Aggiorna il piano dei task completati in questa fase.",
     "Restituisci solo blocchi file.",
+  ].join("\n");
+}
+
+// Prompt per la fase di Design Review (tier Pro/Premium).
+// Il reviewer riceve TUTTI i file frontend gia' generati e deve trovare
+// problemi visivi e correggerli, senza riprogettare da zero.
+async function buildDesignReviewPrompt(target) {
+  const root = projectRoot(target);
+  const allFiles = await listProjectFiles(root);
+  const frontendFiles = allFiles.filter(
+    (f) =>
+      f.startsWith("frontend/src/") ||
+      f === "frontend/tailwind.config.js" ||
+      f === "frontend/index.html",
+  );
+
+  let bundle = "";
+  for (const relPath of frontendFiles) {
+    const content = await readProjectFile(target, relPath);
+    if (!content) continue;
+    bundle += `### FILE: ${relPath}\n\`\`\`\n${content}\n\`\`\`\n\n`;
+  }
+
+  return [
+    "Sei un SENIOR DESIGNER con gusto estetico raffinato (stile Linear, Stripe, Vercel, Notion).",
+    "Ti consegno tutto il frontend di un'app React+Tailwind appena generata da un altro modello AI.",
+    "Il tuo UNICO compito: trovare problemi VISIVI e correggerli. NON cambiare la logica, NON aggiungere features, NON riscrivere da zero.",
+    "",
+    "PROBLEMI DA CACCIARE (con priorita assoluta):",
+    "1. Contrasti sbagliati: text-white su bg-white, text-gray-300 sul bianco, text-gray-500 su bg-gray-100, ecc. Tutto deve essere LEGGIBILE.",
+    "2. Sfondi piatti bianchi puri (bg-white sul wrapper esterno): sostituisci con bg-slate-50 o bg-gradient-to-br from-slate-50 to-indigo-50.",
+    "3. Card senza bordo E senza shadow: aggiungi border border-slate-200 oppure shadow-sm.",
+    "4. Input senza background o senza border visibili: aggiungi bg-white border border-slate-300.",
+    "5. Spacing troppo compresso: padding minimo p-6 sulle card, py-12 sulle sezioni hero.",
+    "6. Mancanza di hover/focus states sui pulsanti e link: aggiungi hover:bg-... transition-colors duration-200.",
+    "7. Gerarchia tipografica piatta: titoli text-2xl/3xl font-bold tracking-tight, sottotitoli text-sm text-slate-500.",
+    "8. KPI con numeri piccoli o colori spenti: numeri text-3xl/4xl font-bold text-indigo-600 (mai text-gray-200).",
+    "9. Empty states minimal: icona grande in cerchio bg-slate-100, titolo bold, paragrafo grigio, eventuale CTA.",
+    "10. Mancanza di un look 'wow': aggiungi micro-decorazioni dove utile (gradient testo sui titoli hero, badge colorati, separatori sottili).",
+    "",
+    "REGOLE OPERATIVE:",
+    "- Restituisci SOLO i file che hai effettivamente modificato, nel formato standard (blocco file).",
+    "- Se TUTTO il frontend e' gia' impeccabile, restituisci ZERO file (niente blocchi). Questo segnala 'design accettato'.",
+    "- NON cambiare il package.json (le dipendenze sono giuste).",
+    "- NON cambiare la logica JavaScript (stato, useEffect, fetch).",
+    "- NON cambiare i nomi delle funzioni esportate.",
+    "- Cambia SOLO classi Tailwind, struttura JSX visuale, contenuti testuali decorativi, palette tailwind.config.js, custom CSS in index.css.",
+    "- Lavora come un occhio esperto che pulisce a fine giornata, non come un nuovo sviluppatore.",
+    "",
+    "Ecco tutti i file frontend correnti:",
+    "",
+    bundle,
+    "",
+    "Adesso applica le tue migliorie. Buon lavoro.",
   ].join("\n");
 }
 
@@ -2885,7 +3099,9 @@ async function callOpenRouterOnce({
       throw new Error(`OpenRouter ha restituito JSON non valido o troncato: ${raw.slice(0, 220)}`);
     }
 
-    return data.choices?.[0]?.message?.content || "";
+    const text = data.choices?.[0]?.message?.content || "";
+    const usage = data.usage || null;
+    return { text, usage };
   } finally {
     if (timeout) clearTimeout(timeout);
   }
@@ -2901,7 +3117,10 @@ async function callOpenRouter(params) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
     try {
-      return await callOpenRouterOnce(params);
+      const result = await callOpenRouterOnce(params);
+      // Retro-compat: se il chiamante non ha chiesto returnUsage, ritorna
+      // direttamente il testo come prima.
+      return params.returnUsage ? result : result.text;
     } catch (err) {
       if (err?.name === "AbortError") throw err; // timeout — no retry
       if (err?.httpStatus && err.httpStatus < 429) throw err; // 400/401/403 — no retry
@@ -3370,6 +3589,28 @@ function publicApp(appData) {
     : null;
   const pricing = computeAppPricing(appData);
 
+  // Calcolo costo totale generazione (stima EUR) dal tokenUsage salvato.
+  // Tariffe semplificate al kilo-token in EUR (medie). Per dettaglio admin.
+  const TOKEN_PRICES_EUR_PER_K = {
+    "anthropic/claude-sonnet-4.5": { in: 0.003, out: 0.015 },
+    "anthropic/claude-haiku-4.5":  { in: 0.001, out: 0.005 },
+    "openai/gpt-5":                { in: 0.003, out: 0.015 },
+    "openai/gpt-5-mini":           { in: 0.0006, out: 0.003 },
+    "google/gemini-2.5-pro":       { in: 0.002, out: 0.010 },
+    "google/gemini-2.5-flash":     { in: 0.0003, out: 0.0015 },
+    "deepseek/deepseek-v4-pro":    { in: 0.0003, out: 0.0014 },
+    "moonshotai/kimi-k2.6":        { in: 0.0006, out: 0.002 },
+    "qwen/qwen3-coder":            { in: 0.0004, out: 0.0014 },
+    "x-ai/grok-4-fast":            { in: 0.0008, out: 0.0030 },
+  };
+  let totalCostEur = 0;
+  const usage = appData.tokenUsage || {};
+  for (const phaseKey of Object.keys(usage)) {
+    const u = usage[phaseKey];
+    const prices = TOKEN_PRICES_EUR_PER_K[u.model] || { in: 0.001, out: 0.003 };
+    totalCostEur += (u.promptTokens / 1000) * prices.in + (u.completionTokens / 1000) * prices.out;
+  }
+
   return {
     ...safe,
     lifecycle,
@@ -3378,6 +3619,9 @@ function publicApp(appData) {
     pricing,
     sourceLocked: !isAppExported(appData),
     licenseRequested: appData.licenseRequested || false,
+    generationTier: appData.generationTier || "base",
+    tokenUsage: usage,
+    generationCostEur: Number(totalCostEur.toFixed(4)),
     appUrl,
     autopilot: sanitizeAutopilotForClient(appData.autopilot),
     html: appData.html || "",
