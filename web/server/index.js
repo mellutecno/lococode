@@ -27,7 +27,7 @@ const legacyConfigPath = path.join(repoDir, "user_data", "config.json");
 await loadEnvFile(path.join(rootDir, ".env"));
 
 const port = Number(process.env.LOCOCODE_API_PORT || 8787);
-const openRouterTimeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS || 10 * 60 * 1000);
+const openRouterTimeoutMs = Number(process.env.OPENROUTER_TIMEOUT_MS || 30 * 60 * 1000); // 30 min: DeepSeek puo' essere lento su output lunghi
 const usersPath = path.join(dataDir, "users.json");
 const authSecret = process.env.LOCOCODE_AUTH_SECRET || "lococode-local-auth-secret";
 const loginTokenTtlMs = Number(process.env.LOCOCODE_LOGIN_TOKEN_TTL_MS || 24 * 60 * 60 * 1000);
