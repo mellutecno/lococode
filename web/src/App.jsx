@@ -78,7 +78,7 @@ export default function App() {
   );
 
   async function handleDeleteApp(appId, appName) {
-    if (!window.confirm(`Eliminare il progetto "${appName}"?
+    if (!window.confirm(`Eliminare l'app "${appName}"?
 Questa azione è irreversibile.`)) return;
     setBusy(true);
     try {
@@ -185,7 +185,7 @@ Questa azione è irreversibile.`)) return;
     if (currentUser) return true;
     setAuthOpen(true);
     setStatus("Accesso richiesto");
-    setError("Inserisci email e token per lavorare sui tuoi progetti.");
+    setError("Inserisci email e token per lavorare sul tuo workspace.");
     return false;
   }
 
@@ -293,8 +293,8 @@ Questa azione è irreversibile.`)) return;
     if (!cleanPrompt || busy) return;
     const cleanProjectName = String(name || "").trim();
     if (!appId && !cleanProjectName) {
-      setError("Inserisci un nome progetto prima di avviare la generazione.");
-      setStatus("Nome progetto mancante");
+      setError("Inserisci un nome per l'app prima di avviare la generazione.");
+      setStatus("Nome app mancante");
       return;
     }
     const chosenModel = overrideModel || model;
@@ -568,7 +568,7 @@ function Rail({ activeView, setActiveView }) {
   return (
     <nav className="rail">
       <img className="rail-logo" src="/lococode_logo.png" alt="LocoCode" />
-      <NavButton icon={FolderKanban} label="Progetti" active={activeView === "projects"} onClick={() => setActiveView("projects")} />
+      <NavButton icon={FolderKanban} label="Workspace" active={activeView === "projects"} onClick={() => setActiveView("projects")} />
       <NavButton icon={Workflow} label="Lavoro" active={activeView === "chat"} onClick={() => setActiveView("chat")} title="LocoCode" />
       <NavButton icon={ClipboardList} label="Task" active={activeView === "tasks"} onClick={() => setActiveView("tasks")} />
       <NavButton icon={FileStack} label="Piano" active={activeView === "sdd"} onClick={() => setActiveView("sdd")} />
@@ -605,7 +605,7 @@ function AuthModal({ email, setEmail, token, setToken, step, setStep, message, b
         <div className="auth-icon">
           {enteringToken ? <KeyRound size={28} /> : <Mail size={28} />}
         </div>
-        <h2>Accedi ai tuoi progetti</h2>
+        <h2>Accedi al tuo workspace</h2>
         <p>
           {enteringToken
             ? "Inserisci email e token gia ricevuto. Non ne genero uno nuovo."
@@ -669,23 +669,23 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
         <div className="projects-head">
           <div>
             <span>Area lavoro</span>
-            <h1>Progetti</h1>
+            <h1>Workspace</h1>
           </div>
           <button className="primary" onClick={() => setActiveView("apps")}>
             <Plus size={20} />
-            <span>Nuovo progetto</span>
+            <span>Nuova app</span>
           </button>
         </div>
         <label className="project-search">
           <Search size={22} />
-          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Cerca progetti" />
+          <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Cerca nel workspace" />
         </label>
 
         <div className="project-grid">
           {!currentUser && (
             <button className="project-tile auth-item" onClick={onAuth}>
               <strong>Accedi con token</strong>
-              <span>Inserisci email e token per vedere i tuoi progetti.</span>
+              <span>Inserisci email e token per vedere il tuo workspace.</span>
             </button>
           )}
           {apps.map((app) => (
@@ -711,7 +711,7 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
                   </a>
                 )}
                 {onDeleteApp && (
-                  <button className="tile-icon-btn danger" title="Elimina progetto" onClick={(e) => { e.stopPropagation(); onDeleteApp(app.id, app.name); }}>
+                  <button className="tile-icon-btn danger" title="Elimina app" onClick={(e) => { e.stopPropagation(); onDeleteApp(app.id, app.name); }}>
                     <Trash2 size={14} />
                   </button>
                 )}
@@ -721,8 +721,8 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
           {currentUser && !apps.length && (
             <div className="projects-empty-state">
               <div className="projects-empty-icon"><FolderKanban size={36} /></div>
-              <strong>Nessun progetto ancora</strong>
-              <span>Crea il tuo primo progetto con il pulsante "Nuovo progetto"</span>
+              <strong>Nessuna app ancora</strong>
+              <span>Crea la tua prima app con il pulsante "Nuova app"</span>
             </div>
           )}
         </div>
@@ -750,12 +750,12 @@ function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLog
         : activeView === "help"
           ? "Aiuto"
           : activeView === "projects"
-            ? "I tuoi progetti"
-            : "Nuovo progetto";
+            ? "Il tuo workspace"
+            : "Nuova app";
 
   const viewLabel = {
-    projects: "Progetti",
-    apps: "Nuovo progetto",
+    projects: "Workspace",
+    apps: "Nuova app",
     chat: "LocoCode",
     tasks: "Task progetto",
     sdd: "Piano progetto",
@@ -813,7 +813,7 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
         <h1>Crea la tua web app</h1>
         <p className="hero-sub">Descrivi cosa vuoi costruire — LocoCode genera backend, frontend e database pronti all'uso.</p>
         <label className="project-name-field">
-          <span>Nome progetto</span>
+          <span>Nome app</span>
           <input
             value={projectName}
             onChange={(event) => setProjectName(event.target.value)}
@@ -932,8 +932,8 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
   if (!app) {
     return (
       <div className="empty-state">
-        <h1>Nessun progetto selezionato</h1>
-        <p>Crea un progetto dal prompt iniziale per avviare il flusso LocoCode.</p>
+        <h1>Nessuna app selezionata</h1>
+        <p>Crea un'app dal prompt iniziale per avviare il flusso LocoCode.</p>
       </div>
     );
   }
@@ -971,8 +971,8 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
             <button className="secondary-action compact" onClick={() => setCompletedDetailsOpen(true)}>
               Gestisci
             </button>
-            <button className="secondary-action compact icon-only" onClick={onBackToProjects} title="Torna ai progetti">
-              ‹ Progetti
+            <button className="secondary-action compact icon-only" onClick={onBackToProjects} title="Torna al workspace">
+              ‹ Workspace
             </button>
           </div>
         </article>
@@ -1053,7 +1053,7 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
           model={app.model}
           setModel={() => {}}
           busy={busy}
-          placeholder="Chiedi una modifica al progetto selezionato..."
+          placeholder="Chiedi una modifica all'app selezionata..."
           onSubmit={onSend}
           showModel={false}
         />
@@ -1265,9 +1265,9 @@ function isProjectComplete(app) {
 function projectTaskState(app) {
   if (!app) {
     return {
-      header: "Nessun progetto selezionato",
+      header: "Nessuna app selezionata",
       kicker: "Stato",
-      label: "Nessun progetto selezionato",
+      label: "Nessuna app selezionata",
       meta: "",
       short: "Pronto",
       doneCount: 0,
@@ -1456,8 +1456,8 @@ function WorkspaceShell({ app, title, subtitle, children }) {
   if (!app) {
     return (
       <div className="empty-state">
-        <h1>Nessun progetto selezionato</h1>
-        <p>Seleziona un progetto dal menu laterale.</p>
+        <h1>Nessuna app selezionata</h1>
+        <p>Seleziona un'app dal menu laterale.</p>
       </div>
     );
   }
@@ -1604,7 +1604,7 @@ function LogWorkspace({ app, status, error, onClearLogs, busy }) {
   if (!app) {
     return (
       <WorkspaceShell app={null} title="Registro attività" subtitle="">
-        <div className="panel-empty"><strong>Nessun progetto selezionato</strong></div>
+        <div className="panel-empty"><strong>Nessuna app selezionata</strong></div>
       </WorkspaceShell>
     );
   }
@@ -1831,7 +1831,7 @@ function FilesPanel({ app }) {
     <section className="file-browser">
       <div className="file-summary">
         <strong>{files.length} file</strong>
-        <span>Cartella progetto: {app.storagePath || "web/data/projects"}</span>
+        <span>Cartella app: {app.storagePath || "web/data/projects"}</span>
       </div>
       <div className="file-list">
         {files.map((file) => (
@@ -1843,7 +1843,7 @@ function FilesPanel({ app }) {
         {!files.length && (
           <div className="panel-empty">
             <strong>Nessun file generato</strong>
-            <span>Quando avvii un progetto, qui vedrai specifiche, frontend, backend, configurazioni e preview.</span>
+            <span>Quando avvii un'app, qui vedrai specifiche, frontend, backend, configurazioni e preview.</span>
           </div>
         )}
       </div>
@@ -1867,7 +1867,7 @@ function DataPanel({ app }) {
         </article>
         <article>
           <FolderKanban size={22} />
-          <strong>Progetti utente</strong>
+          <strong>Workspace utente</strong>
           <span>In produzione saranno collegati a login, token o account utente.</span>
         </article>
         <article>
@@ -1984,7 +1984,7 @@ function HelpView() {
     {
       icon: Plus,
       title: "1. Descrivi l'app",
-      text: "Dai un nome al progetto e scrivi cosa deve fare la web app. LocoCode prepara il piano e costruisce una prima versione reale.",
+      text: "Dai un nome all'app e scrivi cosa deve fare. LocoCode prepara il piano e costruisce una prima versione reale.",
     },
     {
       icon: Workflow,
