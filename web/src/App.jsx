@@ -980,40 +980,40 @@ function PricingCard({ app, onPurchaseTier }) {
     {
       key: "hosted_lococode_api",
       title: "Hosting LocoCode (full)",
-      tagline: "L'app gira sui nostri server. SE la tua app usa AI durante l'uso (chatbot, riassunti, ecc.), le chiavi le forniamo noi.",
+      tagline: "L'app gira sui nostri server. URL pubblico: lococode.mellutecno.it/app/tua-app. Servizi cloud inclusi se l'app li richiede.",
       price: app.pricing.plans.hosted_lococode_api,
       cta: "Abbonati",
       featured: true,
       features: [
         "Hosting + dominio lococode.mellutecno.it",
         "Backup automatici",
-        "Chiavi AI incluse SE l'app le richiede",
+        "Pacchetto servizi cloud incluso (se l'app li usa)",
         "Aggiornamenti illimitati al codice",
       ],
     },
     {
       key: "hosted_user_api",
       title: "Hosting LocoCode (BYO keys)",
-      tagline: "L'app gira sui nostri server. SE la tua app usa AI durante l'uso, le chiavi le metti tu (provider a tua scelta).",
+      tagline: "L'app gira sui nostri server. URL: lococode.mellutecno.it/app/tua-app. Le tue chiavi servizi se l'app li usa.",
       price: app.pricing.plans.hosted_user_api,
       cta: "Abbonati",
       features: [
         "Hosting + dominio lococode.mellutecno.it",
         "Backup automatici",
-        "Chiavi AI a tuo carico SE servono (non in tutte le app)",
+        "Chiavi servizi cloud a tuo carico (solo se l'app li usa)",
         "Aggiornamenti illimitati al codice",
       ],
     },
     {
       key: "exported",
       title: "Esporta tutto",
-      tagline: "Scarichi tutto il codice e lo metti dove vuoi: server, chiavi e gestione completamente tue.",
+      tagline: "Scarichi tutto e lo metti sul TUO dominio (es. miaazienda.it). Server, chiavi e gestione completamente tue.",
       price: app.pricing.plans.exported,
       cta: "Acquista codice",
       features: [
         "Codice sorgente completo + script deploy",
-        "Hosting a tuo carico",
-        "Chiavi AI a tuo carico SE servono",
+        "Tuo dominio personalizzato, tuo hosting",
+        "Chiavi servizi cloud a tuo carico (solo se l'app li usa)",
         "Pagamento una tantum, nessun vincolo",
       ],
     },
@@ -2209,43 +2209,37 @@ function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiC
 
         {isAdmin && (
           <div className="shared-key-banner admin">
-            <strong>👑 Account amministratore</strong> — accesso completo a chiavi AI, modello e impostazioni avanzate.
+            <strong>👑 Account amministratore</strong> — accesso completo a configurazioni avanzate e tutti i tier di generazione.
           </div>
         )}
 
-        {available && !isAdmin && (
-          <div className={`shared-key-banner ${trialExpired ? "expired" : trialActive ? "active" : "subscribed"}`}>
-            {isSubscribed && <><strong>Abbonato</strong> — stai usando le chiavi AI condivise LocoCode.</>}
-            {trialActive && <><strong>Trial attivo</strong> — chiavi condivise disponibili per {trialDaysLeft} {trialDaysLeft === 1 ? "giorno" : "giorni"} ancora. Nessuna configurazione richiesta.</>}
-            {trialExpired && <><strong>Trial scaduto.</strong> Abbonati per continuare a usare le chiavi condivise.</>}
-            {!trialActive && !trialExpired && !isSubscribed && <>Chiavi condivise disponibili.</>}
+        {!isAdmin && (
+          <div className="shared-key-banner active">
+            <strong>Tutto incluso</strong> — i servizi cloud necessari sono già forniti da LocoCode. Niente da configurare.
           </div>
         )}
 
-        {canSetApiKey ? (
+        {canSetApiKey && (
           <label>
-            La tua API key {isAdmin ? <span className="settings-optional">(admin — accesso libero)</span> : <span className="settings-optional">(piano Hosting + chiavi tue)</span>}
+            La tua chiave servizi cloud {isAdmin ? <span className="settings-optional">(admin — accesso libero)</span> : <span className="settings-optional">(piano Hosting + chiavi tue)</span>}
             <input
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}
               type="password"
-              placeholder={using ? "Lascia vuoto per usare le chiavi condivise" : "Incolla qui la tua API key"}
+              placeholder={using ? "Lascia vuoto per usare quelle condivise" : "Incolla qui la tua chiave"}
             />
           </label>
-        ) : (
-          <div className="settings-locked">
-            <strong>🔒 API key personale bloccata</strong>
-            <p>
-              Per usare le tue chiavi AI personali devi prima attivare il piano <strong>Hosting + chiavi tue</strong>
-              {" "}su almeno una delle tue app. Apri un'app dal Workspace e scegli il piano dalla pricing card.
-            </p>
-          </div>
         )}
 
-        <label>
-          Modello predefinito {!isAdmin && <span className="settings-optional">(disponibile con qualsiasi piano)</span>}
-          <ModelSelect value={model} onChange={setModel} />
-        </label>
+        {/* Selettore modello visibile SOLO all'admin: gli utenti normali sono
+            vincolati al tier scelto in fase di generazione, il modello non e'
+            modificabile in nessun caso. */}
+        {isAdmin && (
+          <label>
+            Modello predefinito <span className="settings-optional">(admin)</span>
+            <ModelSelect value={model} onChange={setModel} />
+          </label>
+        )}
         <label>
           Lingua interfaccia
           <select className="model-input" value="it" disabled>
