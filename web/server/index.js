@@ -50,9 +50,19 @@ const runningJobs = new Map();
 const frontendBuilds = new Map();
 const previewBuildTimers = new Map(); // debounce timer per incrementale live-preview
 
+// Modelli disponibili — ordinati per qualita visiva sul frontend.
+// Claude e GPT generalmente generano UI piu belle perche hanno "gusto" estetico
+// migliore. DeepSeek e ottimo per la logica e costa meno, ma applica Tailwind
+// in modo piu meccanico (testi senza contrasto, ecc).
 const commonModels = [
-  "deepseek/deepseek-v4-pro",
-  "moonshotai/kimi-k2.6",
+  "anthropic/claude-sonnet-4.5",     // top quality design + code
+  "openai/gpt-5",                     // top quality design + code
+  "google/gemini-2.5-pro",            // ottimo design, buon coding
+  "anthropic/claude-haiku-4.5",       // veloce, design buono
+  "openai/gpt-5-mini",                // veloce, design buono
+  "deepseek/deepseek-v4-pro",         // economico, design meccanico
+  "qwen/qwen3-coder",                 // economico, coding focus
+  "moonshotai/kimi-k2.6",             // alternativa cinese
 ];
 
 const app = express();
@@ -252,6 +262,21 @@ app.post("/api/settings", async (req, res) => {
   if (!stored) {
     res.status(401).json({ error: "Sessione non valida." });
     return;
+  }
+
+  // Gate sul cambio API key: solo admin o chi ha almeno un'app sul piano
+  // "hosted_user_api" puo' impostare la propria chiave. Gli altri utenti
+  // usano le chiavi condivise LocoCode finche' non scelgono un piano.
+  const wantsToSetApiKey = String(req.body.openrouterApiKey || "").trim().length > 0;
+  if (wantsToSetApiKey) {
+    const apps = await loadApps(stored);
+    const hasUserApiPlan = apps.some((a) => normalizeLifecycle(a.lifecycle) === "hosted_user_api");
+    if (!isAdminUser(stored) && !hasUserApiPlan) {
+      res.status(403).json({
+        error: "Per inserire le tue chiavi AI personali devi prima sottoscrivere il piano \"Hosting + chiavi tue\" su almeno un'app.",
+      });
+      return;
+    }
   }
 
   const settings = {
@@ -2040,6 +2065,16 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "",
     "QUALITA' VISIVA OBBLIGATORIA — il frontend DEVE essere bellissimo, moderno e curato come Linear, Stripe Dashboard, Vercel, Notion, Raycast, Arc Browser. Un utente DEVE volerla usare subito e dire 'wow, e bella'. Niente stile bootstrap anni 2010, niente sfondi pure white piatti, niente layout banali.",
     "USA TAILWIND CSS con classi utilitarie direttamente nei JSX. Ogni componente deve avere classi Tailwind complete e dettagliate.",
+    "REGOLE ANTI-PASTROCCHIO (violazione = lavoro da rifare):",
+    "1. CONTRASTO TESTO: ogni testo DEVE avere contrasto sufficiente sullo sfondo. MAI text-white su bg-white/bg-gray-50/bg-slate-50. MAI text-gray-300/400 su bg-white. Pattern sicuri: text-slate-900 su bg-white, text-slate-100 su bg-slate-900. Per testi secondari: text-slate-600 (non andare oltre text-slate-500 per il body, mai text-slate-300 sul bianco).",
+    "2. SFONDO PAGINA: usa SEMPRE bg-slate-50 o bg-gray-50 sul wrapper piu esterno, MAI bg-white piatto. Le card vanno bg-white DENTRO uno sfondo bg-slate-50 cosi staccano. Per landing/hero: bg-gradient-to-br from-slate-50 to-indigo-50 oppure from-indigo-50 via-white to-purple-50.",
+    "3. INPUT/FORM: input DEVE avere background bianco bg-white E border border-slate-300, mai bg-transparent senza border. Placeholder text-slate-400. Focus: focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500.",
+    "4. PULSANTI: primario bg-indigo-600 text-white (mai gradient appena visibili). Secondario bg-white border border-slate-300 text-slate-700. Disabled disabled:opacity-50.",
+    "5. NUMERI BIG: testi grandi tipo KPI usano text-3xl/4xl font-bold text-indigo-600 (o slate-900). MAI text-gray-200/300 perche scompaiono.",
+    "6. BORDI: ogni card DEVE avere o border border-slate-200 oppure shadow-sm. Mai card senza bordo E senza shadow su fondo chiaro: scompare.",
+    "7. STATI HOVER: sempre hover:bg-slate-50 sulle card cliccabili, hover:bg-indigo-700 sui CTA. Senza hover l'app sembra morta.",
+    "8. SPACING: padding generoso (p-6/p-8 sulle card, py-12/16 sulle sezioni hero). Niente compatto.",
+    "",
     "ISPIRAZIONE VISIVA OBBLIGATORIA — copia questi pattern che funzionano:",
     "- Backgrounds: NIENTE bg-white piatto. Usa bg-gradient-to-br from-slate-50 to-slate-100, o bg-slate-50 con sezioni in bg-white card. Per hero/landing: gradient pastello indigo-50 -> purple-50 -> white.",
     "- Accent gradients: per pulsanti primari, badge importanti, hero text: bg-gradient-to-r from-indigo-600 to-purple-600 (testo: bg-clip-text text-transparent quando usato su testo).",
@@ -3092,12 +3127,19 @@ async function ensureUserStorage(user) {
   }
 }
 
+function isAdminUser(user) {
+  if (!user?.email) return false;
+  const adminEmail = (process.env.LOCOCODE_ADMIN_EMAIL || "mellucciantonio@gmail.com").trim().toLowerCase();
+  return user.email.trim().toLowerCase() === adminEmail;
+}
+
 function publicUser(user) {
   return {
     id: user.id,
     email: user.email,
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt || "",
+    isAdmin: isAdminUser(user),
   };
 }
 

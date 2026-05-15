@@ -560,6 +560,8 @@ Questa azione è irreversibile.`)) return;
             onTest={testApiConnection}
             apiCheck={apiCheck}
             sharedKeyInfo={sharedKeyInfo}
+            currentUser={currentUser}
+            apps={apps}
           />
         )}
 
@@ -2079,36 +2081,58 @@ function SddPanel({ app }) {
   );
 }
 
-function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiCheck, sharedKeyInfo }) {
+function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiCheck, sharedKeyInfo, currentUser, apps }) {
   const { available, using, trialDaysLeft, isSubscribed } = sharedKeyInfo || {};
   const trialExpired = trialDaysLeft !== null && trialDaysLeft === 0 && !isSubscribed;
   const trialActive = available && using && trialDaysLeft > 0 && !isSubscribed;
+  const isAdmin = currentUser?.isAdmin === true;
+  const hasUserApiPlan = Array.isArray(apps) && apps.some((a) => a.lifecycle === "hosted_user_api");
+  // Solo admin o utenti con almeno un'app su piano "Hosting + chiavi tue"
+  // possono effettivamente impostare/cambiare la propria API key.
+  const canSetApiKey = isAdmin || hasUserApiPlan;
 
   return (
     <div className="settings-view">
       <section className="settings-card">
         <h1>Impostazioni</h1>
 
-        {available && (
+        {isAdmin && (
+          <div className="shared-key-banner admin">
+            <strong>👑 Account amministratore</strong> — accesso completo a chiavi AI, modello e impostazioni avanzate.
+          </div>
+        )}
+
+        {available && !isAdmin && (
           <div className={`shared-key-banner ${trialExpired ? "expired" : trialActive ? "active" : "subscribed"}`}>
             {isSubscribed && <><strong>Abbonato</strong> — stai usando le chiavi AI condivise LocoCode.</>}
             {trialActive && <><strong>Trial attivo</strong> — chiavi condivise disponibili per {trialDaysLeft} {trialDaysLeft === 1 ? "giorno" : "giorni"} ancora. Nessuna configurazione richiesta.</>}
-            {trialExpired && <><strong>Trial scaduto.</strong> Abbonati per continuare a usare le chiavi condivise, oppure inserisci la tua API key.</>}
+            {trialExpired && <><strong>Trial scaduto.</strong> Abbonati per continuare a usare le chiavi condivise.</>}
             {!trialActive && !trialExpired && !isSubscribed && <>Chiavi condivise disponibili.</>}
           </div>
         )}
 
+        {canSetApiKey ? (
+          <label>
+            La tua API key {isAdmin ? <span className="settings-optional">(admin — accesso libero)</span> : <span className="settings-optional">(piano Hosting + chiavi tue)</span>}
+            <input
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              type="password"
+              placeholder={using ? "Lascia vuoto per usare le chiavi condivise" : "Incolla qui la tua API key"}
+            />
+          </label>
+        ) : (
+          <div className="settings-locked">
+            <strong>🔒 API key personale bloccata</strong>
+            <p>
+              Per usare le tue chiavi AI personali devi prima attivare il piano <strong>Hosting + chiavi tue</strong>
+              {" "}su almeno una delle tue app. Apri un'app dal Workspace e scegli il piano dalla pricing card.
+            </p>
+          </div>
+        )}
+
         <label>
-          La tua API key <span className="settings-optional">(opzionale — sovrascrive le chiavi condivise)</span>
-          <input
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            type="password"
-            placeholder={using ? "Lascia vuoto per usare le chiavi condivise" : "Incolla qui la tua API key"}
-          />
-        </label>
-        <label>
-          Modello predefinito
+          Modello predefinito {!isAdmin && <span className="settings-optional">(disponibile con qualsiasi piano)</span>}
           <ModelSelect value={model} onChange={setModel} />
         </label>
         <label>
@@ -2118,7 +2142,7 @@ function SettingsView({ apiKey, setApiKey, model, setModel, onSave, onTest, apiC
           </select>
         </label>
         <div className="settings-actions">
-          <button className="secondary-action" onClick={onTest}>Test API</button>
+          {canSetApiKey && <button className="secondary-action" onClick={onTest}>Test API</button>}
           <button className="primary" onClick={onSave}>Salva impostazioni</button>
         </div>
         {apiCheck && <p className="api-check">{apiCheck}</p>}

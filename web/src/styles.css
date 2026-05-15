@@ -3,13 +3,14 @@
 
 /* ─── Design tokens — palette professionale ─────────────────── */
 :root {
-  /* Backgrounds: tre livelli di profondita, tonalita slate-blue raffinata */
-  --bg:              #e7eaf3;          /* stage piu esterno */
-  --stage:           #eef0f7;          /* main content area */
-  --surface:         #ffffff;          /* card primarie */
-  --surface-2:       #f7f8fc;          /* card secondarie / hover off */
-  --surface-3:       #eef0f7;          /* superfici disabilitate */
-  --surface-hover:   #fafbfe;
+  /* Backgrounds: palette tinta blu-viola, mai bianco puro su superfici */
+  --bg:              #d8ddef;          /* stage piu esterno: blu chiaro saturo */
+  --stage:           #dee2f1;          /* main content area: leggermente piu chiaro */
+  --surface:         #f5f6fb;          /* card primarie: bianco-blu tinto, non puro */
+  --surface-2:       #ebeef7;          /* card secondarie / hover off */
+  --surface-3:       #dfe3f0;          /* superfici disabilitate */
+  --surface-hover:   #eef1f9;
+  --surface-elevated: #fafbff;         /* solo modali e dropdown elevati */
 
   /* Ink: testo, tonalita slate raffinata (non puro nero) */
   --ink:             #0b1020;
@@ -2247,6 +2248,23 @@ a.primary { text-decoration: none; }
 .shared-key-banner.subscribed strong { color: var(--success); }
 .shared-key-banner.expired { background: var(--danger-soft); border-color: rgba(220,38,38,0.22); color: var(--ink-2); }
 .shared-key-banner.expired strong { color: var(--danger); }
+.shared-key-banner.admin {
+  background: linear-gradient(135deg, rgba(245,158,11,0.10) 0%, rgba(217,119,6,0.06) 100%);
+  border-color: rgba(217,119,6,0.30);
+  color: var(--ink);
+}
+.shared-key-banner.admin strong { color: var(--warning); font-size: 14px; }
+
+.settings-locked {
+  padding: 18px 20px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(91,62,232,0.06) 0%, rgba(168,85,247,0.03) 100%);
+  border: 1px dashed var(--line-accent);
+  display: grid;
+  gap: 6px;
+}
+.settings-locked strong { color: var(--ink); font-size: 14px; }
+.settings-locked p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
 
 .api-check {
   margin: 0;
