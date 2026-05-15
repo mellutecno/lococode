@@ -737,6 +737,37 @@ app.get("/apps/:id/:token/*splat", publicAppRequest);
 app.get("/app/:slug", publicAppSlugRequest);
 app.get("/app/:slug/*splat", publicAppSlugRequest);
 
+// Endpoint pubblico: l'app generata interroga qui lo stato del trial.
+// Risponde JSON con { lifecycle, trialDaysLeft, expired, name }. Nessun auth.
+app.get("/api/public/app-status/:slug", async (req, res) => {
+  const slug = String(req.params.slug || "").trim().toLowerCase();
+  if (!slug) {
+    res.status(400).json({ error: "Slug mancante." });
+    return;
+  }
+  const found = await findPublicAppBySlug(slug);
+  if (!found) {
+    res.status(404).json({ error: "App non trovata." });
+    return;
+  }
+  const appData = found.target;
+  const now = new Date();
+  const expiresAt = appData.trialExpiresAt ? new Date(appData.trialExpiresAt) : null;
+  const isActive = appData.lifecycle === "active";
+  const expired = !isActive && expiresAt && expiresAt < now;
+  const trialDaysLeft =
+    isActive || !expiresAt ? null : Math.max(0, Math.ceil((expiresAt - now) / 86400000));
+  res.set("Cache-Control", "no-store");
+  res.json({
+    name: appData.name || "",
+    lifecycle: appData.lifecycle || "trial",
+    isActive,
+    expired: !!expired,
+    trialDaysLeft,
+    trialExpiresAt: appData.trialExpiresAt || null,
+  });
+});
+
 async function livePreviewRequest(req, res) {
   const user = await requireUser(req, res);
   if (!user) return;

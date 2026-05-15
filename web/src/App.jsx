@@ -977,19 +977,22 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
           </div>
         </article>
         {showTrialBanner && (
-          <div className={`trial-banner ${trialExpired ? "expired" : ""}`}>
+          <div className={`trial-banner ${trialExpired ? "expired" : ""} ${trialDaysLeft <= 1 ? "warning" : ""}`}>
             <div className="trial-banner-text">
-              {trialExpired
-                ? <><strong>Trial scaduto.</strong> L'app non è più accessibile pubblicamente.</>
-                : <><strong>Trial attivo</strong> — {trialDaysLeft} {trialDaysLeft === 1 ? "giorno rimanente" : "giorni rimanenti"}. Dopo la scadenza l'accesso pubblico verrà bloccato.</>
-              }
+              {trialExpired ? (
+                <><strong>Trial scaduto.</strong> L'app non è più accessibile pubblicamente. Attiva la licenza permanente per riabilitarla.</>
+              ) : trialDaysLeft === 1 ? (
+                <><strong>Ultimo giorno di trial!</strong> Da domani l'app non sarà più utilizzabile. Attiva ora la licenza permanente per non perdere l'accesso.</>
+              ) : (
+                <><strong>Trial attivo</strong> — {trialDaysLeft} giorni rimanenti. Attiva la licenza permanente prima della scadenza.</>
+              )}
             </div>
             {!app.licenseRequested ? (
               <button className="primary compact" onClick={() => onRequestLicense(app.id)}>
-                Richiedi licenza permanente
+                Attiva licenza permanente
               </button>
             ) : (
-              <span className="trial-requested">✓ Richiesta inviata</span>
+              <span className="trial-requested">✓ Richiesta inviata — ti contatteremo a breve</span>
             )}
           </div>
         )}
