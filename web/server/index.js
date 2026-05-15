@@ -2755,12 +2755,13 @@ async function buildFrontendPreview(target) {
   // path assoluti, altrimenti senza slash finale nell'URL il browser cerca /app/assets/...
   const slug = appPublicSlug(target);
   const base = slug ? `/app/${slug}/` : "./";
-  // VITE_API_URL allineato allo slug pubblico: il backend e' proxato a
-  // /app/{slug}/api/ sia da nginx che da LocoCode (vedi proxyAppApiRequest).
-  // Fallback al vecchio path se non c'e' slug (retro-compat).
+  // VITE_API_URL = la BASE dell'app, SENZA /api finale. I codici delle app
+  // generate dai vari modelli AI scrivono fetch(API + '/api/auth/login')
+  // mettendo loro stessi /api/ nell'endpoint. Quindi qui passiamo solo lo
+  // slug, il proxy /app/:slug/api/* matcha la rotta e inoltra al backend.
   const apiUrl = slug
-    ? `/app/${slug}/api`
-    : `/apps/${target.id}/${target.appToken || target.demoToken || ""}/api`;
+    ? `/app/${slug}`
+    : `/apps/${target.id}/${target.appToken || target.demoToken || ""}`;
 
   // Build come SUBPROCESS dalla cartella del frontend: cosi CWD e corretta e
   // PostCSS/Tailwind risolvono i config e i content path senza ambiguita.
