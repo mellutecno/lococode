@@ -2785,6 +2785,17 @@ async function ensureFrontendDependencies(frontendDirPath) {
 
   // --- Patch file di configurazione build (sempre, anche se npm install e gia aggiornato) ---
 
+  // vite.config.js: SEMPRE sovrascritto. Kimi/DeepSeek a volte lo lasciano
+  // vuoto o senza plugin react, e senza il plugin React JSX compila a
+  // React.createElement (sintassi vecchia) che richiede React globale
+  // -> errore "React is not defined" all'esecuzione.
+  const viteConfigPath = path.join(frontendDirPath, "vite.config.js");
+  await fs.writeFile(
+    viteConfigPath,
+    `import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n  server: { host: '127.0.0.1', port: 5174 }\n})\n`,
+    "utf8",
+  );
+
   // postcss.config.js: SEMPRE sovrascritto con formato ESM (i package.json generati
   // sono "type": "module", quindi module.exports causerebbe un crash). E pura
   // infrastruttura di build, non contiene personalizzazioni da preservare.
