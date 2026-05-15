@@ -9,18 +9,24 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  FileCode,
   FileStack,
   FolderKanban,
   KeyRound,
   LayoutDashboard,
+  Lock,
   LogOut,
   Mail,
   Maximize2,
+  Monitor,
   Plus,
+  RotateCw,
   Search,
   Send,
   SlidersHorizontal,
+  Smartphone,
   Sparkles,
+  Tablet,
   Trash2,
   Workflow,
   X,
@@ -1405,67 +1411,147 @@ function OperationLog({ app, status, error, compact = false }) {
 
 function ProjectPanelContent({ projectPanel, app, fullscreen = false }) {
   if (projectPanel === "preview") {
-    const previewUrl = app ? livePreviewUrl(app) : "";
-    const isBuilding = app?.autopilot?.running || app?.status === "building";
-    const buildVersion = app?.preview?.buildVersion || 0;
-
-    return (
-      <div className={`phone-preview ${fullscreen ? "phone-preview-fullscreen" : ""}`}>
-        {isBuilding && (
-          <div className="preview-building-badge">
-            <span className="spin" style={{ display: "inline-block", width: 12, height: 12 }}>⟳</span>
-            {buildVersion > 0 ? `Preview v${buildVersion} — aggiornamento in corso…` : "Costruzione app in corso…"}
-          </div>
-        )}
-        <div className="phone-device" aria-label="Applicazione">
-          {/* Status bar */}
-          <div className="phone-statusbar">
-            <span className="phone-status-time">9:41</span>
-            <div className="phone-dynamic-island" />
-            <div className="phone-status-icons">
-              {/* Signal */}
-              <svg width="17" height="12" viewBox="0 0 17 12" fill="#1c1c1e">
-                <rect x="0" y="7" width="3" height="5" rx="0.5" opacity="0.35"/>
-                <rect x="4.5" y="4.5" width="3" height="7.5" rx="0.5" opacity="0.55"/>
-                <rect x="9" y="2" width="3" height="10" rx="0.5" opacity="0.75"/>
-                <rect x="13.5" y="0" width="3" height="12" rx="0.5"/>
-              </svg>
-              {/* WiFi */}
-              <svg width="16" height="12" viewBox="0 0 16 12" fill="#1c1c1e">
-                <path d="M8 9.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>
-                <path d="M8 5.5C9.9 5.5 11.6 6.3 12.8 7.5l1.4-1.4C12.6 4.4 10.4 3.5 8 3.5s-4.6.9-6.2 2.6L3.2 7.5C4.4 6.3 6.1 5.5 8 5.5z" opacity="0.65"/>
-                <path d="M8 1.5C11 1.5 13.7 2.7 15.6 4.7L17 3.3C14.7 1 11.5 0 8 0S1.3 1 -1 3.3L.4 4.7C2.3 2.7 5 1.5 8 1.5z" opacity="0.35"/>
-              </svg>
-              {/* Battery */}
-              <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-                <rect x="0.5" y="0.5" width="21" height="11" rx="2.5" stroke="#1c1c1e" strokeOpacity="0.35"/>
-                <rect x="22" y="3.5" width="2.5" height="5" rx="1.25" fill="#1c1c1e" fillOpacity="0.35"/>
-                <rect x="2" y="2" width="16" height="8" rx="1.5" fill="#1c1c1e"/>
-              </svg>
-            </div>
-          </div>
-          {/* Screen */}
-          <div className="phone-screen">
-            {previewUrl ? (
-              <iframe
-                key={`${app.id}-v${buildVersion}-${app.preview?.hasLiveBuild ? "live" : "fallback"}`}
-                title="App"
-                src={previewUrl}
-              />
-            ) : (
-              <iframe title="App" srcDoc={emptyPreviewHtml()} />
-            )}
-          </div>
-          {/* Home indicator */}
-          <div className="phone-home-bar" />
-        </div>
-      </div>
-    );
+    return <BrowserPreview app={app} fullscreen={fullscreen} />;
   }
 
   if (projectPanel === "sdd") return <SddDocumentsPanel app={app} fullscreen={fullscreen} />;
   if (projectPanel === "files") return <FilesPanel app={app} />;
   return <SddDocumentsPanel app={app} fullscreen={fullscreen} />;
+}
+
+// Preview stile Lovable/v0/Bolt: browser frame con URL bar, device toggle,
+// e building state live durante la generazione.
+function BrowserPreview({ app, fullscreen = false }) {
+  const [device, setDevice] = useState("desktop"); // desktop | tablet | mobile
+  const [iframeKey, setIframeKey] = useState(0);
+  const previewUrl = app ? livePreviewUrl(app) : "";
+  const isBuilding = app?.autopilot?.running || app?.status === "building";
+  const buildVersion = app?.preview?.buildVersion || 0;
+  const publicUrl = app?.appUrl || "";
+  const displayUrl = publicUrl
+    ? publicUrl.replace(/^https?:\/\//, "")
+    : (isBuilding ? "in costruzione…" : "preview locale");
+
+  const handleRefresh = () => setIframeKey((k) => k + 1);
+
+  return (
+    <div className={`browser-preview ${fullscreen ? "browser-preview-fullscreen" : ""}`}>
+      <div className="browser-toolbar">
+        <div className="browser-traffic-lights">
+          <span className="browser-dot browser-dot-red" />
+          <span className="browser-dot browser-dot-yellow" />
+          <span className="browser-dot browser-dot-green" />
+        </div>
+        <div className={`browser-url-bar ${isBuilding ? "is-building" : ""}`}>
+          {isBuilding ? <Sparkles size={11} className="spin-slow" /> : <Lock size={11} />}
+          <span className="browser-url-text">{displayUrl}</span>
+          {isBuilding && <span className="browser-url-progress" />}
+        </div>
+        <div className="browser-toolbar-actions">
+          <div className="device-toggle">
+            <button
+              className={device === "desktop" ? "active" : ""}
+              onClick={() => setDevice("desktop")}
+              aria-label="Desktop"
+              title="Desktop"
+            >
+              <Monitor size={14} />
+            </button>
+            <button
+              className={device === "tablet" ? "active" : ""}
+              onClick={() => setDevice("tablet")}
+              aria-label="Tablet"
+              title="Tablet"
+            >
+              <Tablet size={14} />
+            </button>
+            <button
+              className={device === "mobile" ? "active" : ""}
+              onClick={() => setDevice("mobile")}
+              aria-label="Mobile"
+              title="Mobile"
+            >
+              <Smartphone size={14} />
+            </button>
+          </div>
+          <button
+            className="browser-action-btn"
+            onClick={handleRefresh}
+            aria-label="Aggiorna"
+            title="Aggiorna"
+            disabled={!previewUrl}
+          >
+            <RotateCw size={14} />
+          </button>
+          {publicUrl && (
+            <a
+              className="browser-action-btn"
+              href={publicUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Apri in nuova scheda"
+              title="Apri in nuova scheda"
+            >
+              <ExternalLink size={14} />
+            </a>
+          )}
+        </div>
+      </div>
+      <div className={`browser-viewport device-${device}`}>
+        <div className="browser-viewport-inner">
+          {isBuilding && (!previewUrl || buildVersion === 0) ? (
+            <BuildingState app={app} />
+          ) : previewUrl ? (
+            <iframe
+              key={`${app.id}-v${buildVersion}-${iframeKey}-${app.preview?.hasLiveBuild ? "live" : "fallback"}`}
+              title="App"
+              src={previewUrl}
+            />
+          ) : (
+            <iframe title="App" srcDoc={emptyPreviewHtml()} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Stato di caricamento durante la generazione: mostra l'attività live
+// (ultimi 5 messaggi del log autopilot) come un terminale stile Bolt.
+function BuildingState({ app }) {
+  const taskState = projectTaskState(app);
+  const log = Array.isArray(app?.autopilot?.log)
+    ? app.autopilot.log
+        .filter((entry) => isUsefulOperation(entry.message))
+        .filter((entry, i, arr) => i === 0 || cleanOperationText(entry.message) !== cleanOperationText(arr[i - 1].message))
+        .slice(-5)
+    : [];
+  const fileCount = app?.fileCount || (Array.isArray(app?.files) ? app.files.length : 0);
+  return (
+    <div className="building-state">
+      <div className="building-orb">
+        <div className="building-orb-pulse" />
+        <Sparkles size={28} className="spin-slow" />
+      </div>
+      <h3 className="building-title">Stiamo costruendo la tua app</h3>
+      <p className="building-subtitle">{taskState.short || "Pianificazione in corso…"}</p>
+      {fileCount > 0 && (
+        <div className="building-files-badge">
+          <FileCode size={12} /> {fileCount} file creati finora
+        </div>
+      )}
+      {log.length > 0 && (
+        <div className="building-log">
+          {log.map((entry, i) => (
+            <div className="building-log-line" key={`${entry.at}-${i}`} style={{ opacity: 0.3 + (i / log.length) * 0.7 }}>
+              <span className="building-log-time">{formatShortTime(entry.at)}</span>
+              <span className="building-log-text">{cleanOperationText(entry.message, 90)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function panelTitle(projectPanel, app) {
