@@ -1058,9 +1058,58 @@ app.get("/api/apps/:id/live-preview", livePreviewRequest);
 app.get("/api/apps/:id/live-preview/*splat", livePreviewRequest);
 app.get("/apps/:id/:token", publicAppRequest);
 app.get("/apps/:id/:token/*splat", publicAppRequest);
+// Proxy API per app pubblica: /app/{slug}/api/* viene inoltrato al backend
+// FastAPI dell'app sulla sua porta dedicata (127.0.0.1:appData.backendPort).
+// Va PRIMA delle rotte generiche /app/:slug per matchare per primo.
+app.all("/app/:slug/api/*splat", proxyAppApiRequest);
+app.all("/app/:slug/api", proxyAppApiRequest);
+
 // URL pubblica leggibile: /apps/nome-app-a8f756 o /apps/nome-app-a8f756/*
 app.get("/app/:slug", publicAppSlugRequest);
 app.get("/app/:slug/*splat", publicAppSlugRequest);
+
+async function proxyAppApiRequest(req, res) {
+  const slug = String(req.params.slug || "").trim().toLowerCase();
+  const found = await findPublicAppBySlug(slug);
+  if (!found) {
+    res.status(404).json({ error: "App non trovata." });
+    return;
+  }
+  const port = found.target.backendPort;
+  if (!port) {
+    res.status(503).json({ error: "Backend dell'app non ancora avviato." });
+    return;
+  }
+  // Calcola il path da girare al backend: tutto cio' che viene dopo /app/{slug}/api
+  // Es: /app/foo-123/api/auth/login -> /api/auth/login (il backend monta /api/*)
+  const subPath = req.url.replace(/^\/app\/[^/]+\/api/, "/api") || "/api";
+  const target = `http://127.0.0.1:${port}${subPath}`;
+
+  try {
+    const headers = { ...req.headers };
+    delete headers["host"];
+    delete headers["content-length"];
+    const body = ["GET", "HEAD"].includes(req.method)
+      ? undefined
+      : JSON.stringify(req.body || {});
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers: { ...headers, "content-type": "application/json" },
+      body,
+    });
+    res.status(upstream.status);
+    upstream.headers.forEach((value, key) => {
+      if (!["content-length", "transfer-encoding", "connection"].includes(key.toLowerCase())) {
+        res.setHeader(key, value);
+      }
+    });
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.send(buf);
+  } catch (err) {
+    console.warn(`[proxy] errore ${target}:`, err.message);
+    res.status(502).json({ error: "Backend non raggiungibile." });
+  }
+}
 
 // Endpoint pubblico: l'app generata interroga qui lo stato del trial.
 // Risponde JSON con { lifecycle, trialDaysLeft, expired, name }. Nessun auth.
@@ -1367,8 +1416,10 @@ async function writeAppNginxConf(target, port) {
   const token = target.appToken || target.demoToken || "";
   if (!token) return;
   await fs.mkdir(APPS_NGINX_DIR, { recursive: true });
+  const slug = appPublicSlug(target);
   const lines = [
     `# App: ${target.name} (${target.id})`,
+    // Path vecchio (retro-compat)
     `location /apps/${target.id}/${token}/api/ {`,
     `    proxy_pass http://127.0.0.1:${port}/;`,
     `    proxy_http_version 1.1;`,
@@ -1379,6 +1430,21 @@ async function writeAppNginxConf(target, port) {
     `    proxy_set_header X-Forwarded-Proto $scheme;`,
     `}`,
   ];
+  // Path nuovo: /app/{slug}/api/* mantiene il prefisso /api/ verso il backend
+  if (slug) {
+    lines.push(
+      ``,
+      `location /app/${slug}/api/ {`,
+      `    proxy_pass http://127.0.0.1:${port}/api/;`,
+      `    proxy_http_version 1.1;`,
+      `    proxy_read_timeout 120s;`,
+      `    proxy_set_header Host $host;`,
+      `    proxy_set_header X-Real-IP $remote_addr;`,
+      `    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`,
+      `    proxy_set_header X-Forwarded-Proto $scheme;`,
+      `}`,
+    );
+  }
   await fs.writeFile(
     path.join(APPS_NGINX_DIR, `${target.id}.conf`),
     lines.join("\n") + "\n",
@@ -1401,6 +1467,42 @@ async function reloadNginx() {
   }
 }
 
+// Mapping import Python -> nome pacchetto pip. DeepSeek tende a importare
+// moduli senza aggiungere il pacchetto a requirements.txt. Questi sono i
+// "soliti" che spesso mancano.
+const PYTHON_IMPORT_TO_PIP = {
+  jwt: "PyJWT==2.8.0",
+  jose: "python-jose[cryptography]==3.3.0",
+  dotenv: "python-dotenv==1.0.0",
+  email_validator: "email-validator==2.1.0",
+  bcrypt: "bcrypt==4.0.1",
+  passlib: "passlib[bcrypt]==1.7.4",
+  itsdangerous: "itsdangerous==2.1.2",
+  httpx: "httpx==0.25.2",
+  multipart: "python-multipart==0.0.6",
+  aiosqlite: "aiosqlite==0.19.0",
+};
+
+async function scanMissingPythonImports(backendPath) {
+  const found = new Set();
+  async function walk(dir) {
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const e of entries) {
+      if (e.name === "venv" || e.name === "__pycache__" || e.name.startsWith(".")) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) await walk(full);
+      else if (e.name.endsWith(".py")) {
+        const txt = await fs.readFile(full, "utf8").catch(() => "");
+        for (const m of txt.matchAll(/^\s*(?:from|import)\s+([a-zA-Z_][\w]*)/gm)) {
+          found.add(m[1]);
+        }
+      }
+    }
+  }
+  await walk(backendPath);
+  return [...found];
+}
+
 async function deployBackend(target) {
   const root = projectRoot(target);
   const backendPath = path.join(root, "backend");
@@ -1414,19 +1516,36 @@ async function deployBackend(target) {
 
   const port = await allocatePort(target.id);
   const venvPath = path.join(backendPath, "venv");
+  const venvPython = path.join(venvPath, "bin", "python");
+  const pipBin = path.join(venvPath, "bin", "pip");
+  const uvicornBin = path.join(venvPath, "bin", "uvicorn");
   const pm2Name = `lococode-app-${target.id}`;
 
   console.log(`[deploy] Build backend ${target.id} porta ${port}`);
 
+  // 1) venv + requirements.txt
   await execFileAsync("python3", ["-m", "venv", venvPath]);
-  const pipBin = path.join(venvPath, "bin", "pip");
   await execFileAsync(pipBin, ["install", "--quiet", "--no-cache-dir", "-r", reqFile]);
 
+  // 2) Scan import sorgenti e installa moduli "mancanti" tipici di DeepSeek
+  const imports = await scanMissingPythonImports(backendPath);
+  const extra = [];
+  for (const imp of imports) {
+    if (PYTHON_IMPORT_TO_PIP[imp]) extra.push(PYTHON_IMPORT_TO_PIP[imp]);
+  }
+  if (extra.length) {
+    console.log(`[deploy] Installo moduli auto-rilevati per ${target.id}: ${extra.join(", ")}`);
+    await execFileAsync(pipBin, ["install", "--quiet", "--no-cache-dir", ...extra]).catch((e) => {
+      console.warn(`[deploy] auto-install fallito (continuo): ${e.message}`);
+    });
+  }
+
+  // 3) Avvio PM2 con interpreter del venv (altrimenti uvicorn non trova i pacchetti)
   await execFileAsync("pm2", ["delete", pm2Name]).catch(() => {});
-  const uvicornBin = path.join(venvPath, "bin", "uvicorn");
   await execFileAsync("pm2", [
     "start", uvicornBin,
     "--name", pm2Name,
+    "--interpreter", venvPython,
     "--",
     "app.main:app",
     "--host", "127.0.0.1",
@@ -1434,8 +1553,21 @@ async function deployBackend(target) {
   ], { cwd: backendPath });
   await execFileAsync("pm2", ["save"]);
 
-  await writeAppNginxConf(target, port);
-  await reloadNginx();
+  // 4) Salva la porta sull'app (necessario al proxy /app/{slug}/api/*)
+  target.backendPort = port;
+
+  // 5) Nginx (compatibilita' col vecchio path)
+  await writeAppNginxConf(target, port).catch((e) => console.warn(`[deploy] nginx: ${e.message}`));
+  await reloadNginx().catch((e) => console.warn(`[deploy] nginx reload: ${e.message}`));
+
+  // 6) Smoke test: aspetta che il backend risponda
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 600));
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/`);
+      if (res.status < 500) break;
+    } catch {}
+  }
 
   console.log(`[deploy] Backend ${target.id} attivo porta ${port}`);
   return port;
@@ -2164,6 +2296,26 @@ function buildInitialBackendPrompt(initialPrompt, projectMemory) {
     "REGOLA D'ORO: main.py DEVE essere completo e funzionante anche se devi tagliare gli altri. NIENTE FILE VUOTI.",
     "",
     "backend/app/main.py deve includere FastAPI con CORS (allow_origins=['*']), endpoint GET / health check, modelli Pydantic completi, inizializzazione SQLite con tabelle e dati di esempio realistici precaricati al primo avvio, e API CRUD complete coerenti con il progetto.",
+    "",
+    "ROUTE PREFIX OBBLIGATORIO: tutti gli endpoint API DEVONO essere sotto il prefisso /api/. Esempi: POST /api/auth/login, GET /api/lists, POST /api/items. MAI mettere endpoint a /auth/login o /lists. Il backend e' montato dietro un proxy /app/{slug}/api/* quindi DEVE rispondere su /api/*.",
+    "",
+    "REQUIREMENTS.TXT — REGOLA FERREA: ogni 'import X' nel codice Python DEVE avere il pacchetto giusto in requirements.txt. Mapping tipici da rispettare:",
+    "  import jwt          -> PyJWT==2.8.0",
+    "  import jose / from jose -> python-jose[cryptography]==3.3.0",
+    "  from dotenv import -> python-dotenv==1.0.0",
+    "  from email_validator -> email-validator==2.1.0",
+    "  import bcrypt       -> bcrypt==4.0.1",
+    "  from passlib       -> passlib[bcrypt]==1.7.4",
+    "  from sqlalchemy    -> sqlalchemy==2.0.23",
+    "  import aiosqlite   -> aiosqlite==0.19.0",
+    "  from fastapi       -> fastapi==0.104.1 + uvicorn==0.24.0",
+    "  from pydantic      -> pydantic==2.5.2",
+    "  from itsdangerous  -> itsdangerous==2.1.2",
+    "  import httpx       -> httpx==0.25.2",
+    "  import requests    -> requests==2.31.0",
+    "ATTENZIONE: PyJWT e python-jose sono DIVERSI. Se importi 'jwt' metti PyJWT. Se importi 'jose' metti python-jose.",
+    "Includi SEMPRE in requirements.txt anche python-dotenv anche se non lo importi direttamente — molti template lo aspettano.",
+    "",
     "deploy/lococode.json deve descrivere nome servizio, porta suggerita, comando backend, comando build frontend, percorso SQLite, credenziali di prova, chiave provvisoria, chiave di attivazione mensile e API esterne richieste.",
     "Il backend deve gestire una chiave di attivazione iniziale precaricata e predisporre una chiave definitiva con scadenza mensile per l'abbonamento.",
     "Se sono necessarie API esterne, crea endpoint SQLite per salvare le chiavi. Se mancano, restituisci dati di esempio e messaggi chiari, non errori bloccanti.",
@@ -2252,10 +2404,10 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "DEVI SEMPRE includere tailwind.config.js, postcss.config.js e @tailwind base/components/utilities in src/index.css.",
     "LIBRERIE VIETATE — non aggiungere mai a dependencies: @heroicons/react, @headlessui/react, @radix-ui/*, framer-motion, react-router-dom, react-router, recharts, chart.js, date-fns, moment, lodash, axios, react-query, @tanstack/*, zustand, jotai, redux.",
     "ICONE: usa SOLO lucide-react. NON importare @heroicons/react o qualsiasi altro pacchetto icone. lucide-react e gia installato e disponibile.",
-    "PER LA NAVIGAZIONE: usa React useState per mostrare/nascondere sezioni (es. setPage('clienti')), non react-router.",
+    "PER LA NAVIGAZIONE: usa React useState per mostrare/nascondere pagine (es. setPage('login')), non react-router. L'app viene servita dentro /app/{slug}/ quindi MAI navigare a path assoluti tipo '/login' o '/dashboard': cambieresti URL al dominio principale e finiresti fuori dall'app. Resta sempre in-page con state.",
     "PER LE DATE: usa new Date().toLocaleDateString('it-IT') nativo, non date-fns.",
     "PER I GRAFICI: usa SVG inline o barre CSS pure, non recharts o chart.js.",
-    "PER LE CHIAMATE API: usa fetch() nativo del browser, non axios.",
+    "PER LE CHIAMATE API — FONDAMENTALE: usa SEMPRE const API = import.meta.env.VITE_API_URL; poi fetch(`${API}/auth/login`, ...). MAI fetch('/api/auth/login', ...) — questo finirebbe sul dominio principale LocoCode, non sul tuo backend. VITE_API_URL viene iniettato da LocoCode al build e punta esattamente al tuo backend.",
     "lucide-react e gia disponibile come alias del server e puo essere importato normalmente.",
     "",
     "BANNER TRIAL OBBLIGATORIO — devi creare frontend/src/components/TrialBanner.jsx con ESATTAMENTE questo contenuto (poi montalo in App.jsx come primo figlio del root, prima di qualsiasi altro layout):",
@@ -2577,7 +2729,12 @@ async function buildFrontendPreview(target) {
   // path assoluti, altrimenti senza slash finale nell'URL il browser cerca /app/assets/...
   const slug = appPublicSlug(target);
   const base = slug ? `/app/${slug}/` : "./";
-  const apiUrl = `/apps/${target.id}/${target.appToken || target.demoToken || ""}/api`;
+  // VITE_API_URL allineato allo slug pubblico: il backend e' proxato a
+  // /app/{slug}/api/ sia da nginx che da LocoCode (vedi proxyAppApiRequest).
+  // Fallback al vecchio path se non c'e' slug (retro-compat).
+  const apiUrl = slug
+    ? `/app/${slug}/api`
+    : `/apps/${target.id}/${target.appToken || target.demoToken || ""}/api`;
 
   // Build come SUBPROCESS dalla cartella del frontend: cosi CWD e corretta e
   // PostCSS/Tailwind risolvono i config e i content path senza ambiguita.
@@ -3649,6 +3806,8 @@ function publicApp(appData) {
     generationTier: appData.generationTier || "base",
     tokenUsage: usage,
     generationCostEur: Number(totalCostEur.toFixed(4)),
+    backendPort: appData.backendPort || null,
+    backendOnline: !!appData.backendPort,
     appUrl,
     autopilot: sanitizeAutopilotForClient(appData.autopilot),
     html: appData.html || "",
