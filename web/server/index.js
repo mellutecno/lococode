@@ -2042,32 +2042,26 @@ async function buildFrontendPreview(target) {
 
   await ensureFrontendDependencies(frontendDirPath);
   await fs.mkdir(outDir, { recursive: true });
-  await viteBuild({
-    root: frontendDirPath,
-    base: "./",
-    configFile: false,
-    publicDir: false,
-    logLevel: "silent",
-    plugins: [react()],
-    resolve: {
-      alias: {
-        react: path.join(rootDir, "node_modules/react"),
-        "react-dom": path.join(rootDir, "node_modules/react-dom"),
-        "react-dom/client": path.join(rootDir, "node_modules/react-dom/client"),
-        "lucide-react": path.join(rootDir, "node_modules/lucide-react"),
-      },
+
+  // Base assoluto: l'app e servita su /app/{slug}/, quindi gli asset DEVONO usare
+  // path assoluti, altrimenti senza slash finale nell'URL il browser cerca /app/assets/...
+  const slug = appPublicSlug(target);
+  const base = slug ? `/app/${slug}/` : "./";
+  const apiUrl = `/apps/${target.id}/${target.appToken || target.demoToken || ""}/api`;
+
+  // Build come SUBPROCESS dalla cartella del frontend: cosi CWD e corretta e
+  // PostCSS/Tailwind risolvono i config e i content path senza ambiguita.
+  // Il build in-process falliva perche girava dalla CWD del server LocoCode.
+  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  await execFileAsync(
+    npmCommand,
+    ["exec", "--no", "--", "vite", "build", "--base", base, "--outDir", outDir, "--emptyOutDir", "--logLevel", "warn"],
+    {
+      cwd: frontendDirPath,
+      env: { ...process.env, VITE_API_URL: apiUrl },
+      maxBuffer: 1024 * 1024 * 32,
     },
-    define: {
-      "import.meta.env.VITE_API_URL": JSON.stringify(
-        `/apps/${target.id}/${target.appToken || target.demoToken || ""}/api`
-      ),
-    },
-    build: {
-      outDir,
-      emptyOutDir: true,
-      sourcemap: false,
-    },
-  });
+  );
 
   return exists(distIndex);
 }
@@ -2077,25 +2071,32 @@ async function ensureFrontendDependencies(frontendDirPath) {
   const nodeModulesPath = path.join(frontendDirPath, "node_modules");
   const markerPath = path.join(nodeModulesPath, ".lococode-install.json");
 
-  // --- Patch file di configurazione mancanti (sempre, anche se npm install e gia aggiornato) ---
+  // --- Patch file di configurazione build (sempre, anche se npm install e gia aggiornato) ---
 
-  // Auto-crea postcss.config.js se mancante (necessario per Tailwind nel build Vite in-process)
+  // postcss.config.js: SEMPRE sovrascritto con formato ESM (i package.json generati
+  // sono "type": "module", quindi module.exports causerebbe un crash). E pura
+  // infrastruttura di build, non contiene personalizzazioni da preservare.
   const postcssConfigPath = path.join(frontendDirPath, "postcss.config.js");
-  if (!(await exists(postcssConfigPath))) {
-    await fs.writeFile(
-      postcssConfigPath,
-      `module.exports = {\n  plugins: {\n    tailwindcss: {},\n    autoprefixer: {},\n  },\n};\n`,
-      "utf8",
-    );
-    console.log(`[build] Auto-creato postcss.config.js per ${path.basename(frontendDirPath)}`);
-  }
+  await fs.writeFile(
+    postcssConfigPath,
+    `export default {\n  plugins: {\n    tailwindcss: {},\n    autoprefixer: {},\n  },\n};\n`,
+    "utf8",
+  );
+  // Rimuove eventuali varianti .cjs/.mjs che confonderebbero la risoluzione
+  await fs.rm(path.join(frontendDirPath, "postcss.config.cjs"), { force: true }).catch(() => {});
+  await fs.rm(path.join(frontendDirPath, "postcss.config.mjs"), { force: true }).catch(() => {});
 
-  // Auto-crea tailwind.config.js se mancante
+  // tailwind.config.js: se mancante lo creiamo con content path ASSOLUTI (robusti
+  // a qualunque CWD). Se esiste gia (generato dall'AI con il suo tema), lo lasciamo:
+  // il build gira come subprocess dalla cartella frontend, quindi i path relativi
+  // come './src/**/*' si risolvono correttamente.
   const tailwindConfigPath = path.join(frontendDirPath, "tailwind.config.js");
   if (!(await exists(tailwindConfigPath))) {
+    const absHtml = JSON.stringify(path.join(frontendDirPath, "index.html"));
+    const absSrc = JSON.stringify(path.join(frontendDirPath, "src/**/*.{js,jsx,ts,tsx}"));
     await fs.writeFile(
       tailwindConfigPath,
-      `/** @type {import('tailwindcss').Config} */\nmodule.exports = {\n  content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],\n  theme: { extend: {} },\n  plugins: [],\n};\n`,
+      `/** @type {import('tailwindcss').Config} */\nexport default {\n  content: [${absHtml}, ${absSrc}],\n  darkMode: 'class',\n  theme: { extend: {} },\n  plugins: [],\n};\n`,
       "utf8",
     );
     console.log(`[build] Auto-creato tailwind.config.js per ${path.basename(frontendDirPath)}`);
