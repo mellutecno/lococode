@@ -2779,3 +2779,208 @@ a.primary { text-decoration: none; }
   .auth-card h2 { font-size: 24px; }
   .fullscreen-card > .sdd-documents { grid-template-columns: 1fr; overflow: auto; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK THEME OVERRIDE — Linear/Vercel/Arc style.
+   Sovrascrive le token a tinta lavanda chiara con un dark navy ricco
+   + glass scuro + accenti viola/indigo. Posizionato in fondo per
+   cascade priority — vince sui valori dichiarati prima.
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  --bg:              #0a0e1a;
+  --stage:           #0e1326;
+  --surface:         rgba(255, 255, 255, 0.045);
+  --surface-2:       rgba(255, 255, 255, 0.028);
+  --surface-3:       rgba(255, 255, 255, 0.018);
+  --surface-hover:   rgba(255, 255, 255, 0.085);
+  --surface-solid:   #161b30;
+  --surface-elevated: rgba(22, 28, 50, 0.94);
+
+  --ink:             #e7e9f2;
+  --ink-2:           #c8ccdc;
+  --ink-3:           #9aa0b8;
+  --muted:           #6f7592;
+  --muted-2:         #555a76;
+
+  --line:            rgba(255, 255, 255, 0.07);
+  --line-strong:     rgba(255, 255, 255, 0.14);
+  --line-accent:     rgba(124, 90, 240, 0.42);
+
+  --accent:          #7c5af0;
+  --accent-2:        #a855f7;
+  --accent-hover:    #9067ff;
+  --accent-active:   #6b48dc;
+  --accent-soft:     rgba(124, 90, 240, 0.14);
+  --accent-soft-2:   rgba(124, 90, 240, 0.26);
+  --accent-ink:      #d4c5ff;
+
+  --success:         #10b981;
+  --success-2:       #059669;
+  --success-soft:    rgba(16, 185, 129, 0.14);
+  --success-soft-2:  rgba(16, 185, 129, 0.22);
+  --danger:          #f43f5e;
+  --danger-2:        #e11d48;
+  --danger-soft:     rgba(244, 63, 94, 0.14);
+  --warning:         #f59e0b;
+  --warning-soft:    rgba(245, 158, 11, 0.14);
+  --info:            #38bdf8;
+  --info-soft:       rgba(56, 189, 248, 0.14);
+
+  --shadow-xs:       0 1px 2px rgba(0, 0, 0, 0.30);
+  --shadow-soft:     0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.30);
+  --shadow:          0 1px 3px rgba(0, 0, 0, 0.45), 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-md:       0 2px 6px rgba(0, 0, 0, 0.50), 0 12px 36px rgba(0, 0, 0, 0.55);
+  --shadow-lg:       0 4px 12px rgba(0, 0, 0, 0.55), 0 24px 60px rgba(0, 0, 0, 0.65);
+  --shadow-accent:   0 4px 24px rgba(124, 90, 240, 0.45);
+  --shadow-accent-strong: 0 6px 32px rgba(124, 90, 240, 0.60);
+
+  --ring-accent:     0 0 0 3px rgba(124, 90, 240, 0.30);
+  --ring-danger:     0 0 0 3px rgba(244, 63, 94, 0.30);
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* Main stage: navy profondo con aurore viola/blu */
+.main-stage {
+  background:
+    radial-gradient(ellipse 1100px 500px at 85% -5%, rgba(168, 85, 247, 0.22) 0%, transparent 55%),
+    radial-gradient(ellipse 900px 450px at -10% 15%, rgba(91, 62, 232, 0.24) 0%, transparent 55%),
+    radial-gradient(ellipse 700px 400px at 50% 110%, rgba(56, 189, 248, 0.10) 0%, transparent 55%),
+    linear-gradient(160deg, #0a0e1a 0%, #0d1126 50%, #0a0f22 100%);
+}
+.main-stage::before {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  opacity: 0.55;
+}
+.main-stage::after {
+  background:
+    radial-gradient(circle at 30% 40%, rgba(168, 85, 247, 0.16) 0%, transparent 35%),
+    radial-gradient(circle at 70% 60%, rgba(56, 189, 248, 0.12) 0%, transparent 35%);
+  opacity: 0.85;
+}
+
+/* App header: dark glass */
+.app-header {
+  background: rgba(14, 19, 38, 0.72);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 4px 24px rgba(0, 0, 0, 0.40);
+}
+
+/* Projects card: glass scuro grande */
+.projects-card {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 16px 48px rgba(0, 0, 0, 0.50),
+    0 4px 12px rgba(0, 0, 0, 0.30);
+}
+
+/* Search bar */
+.project-search {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 4px 16px rgba(0, 0, 0, 0.30);
+}
+.project-search:focus-within {
+  border-color: rgba(124, 90, 240, 0.55);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 0 0 3px rgba(124, 90, 240, 0.28),
+    0 6px 20px rgba(124, 90, 240, 0.25);
+}
+
+/* Project tile: glass scuro hover-glow */
+.project-tile {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-left: 3px solid rgba(124, 90, 240, 0.60);
+  background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 8px 24px rgba(0, 0, 0, 0.40),
+    0 2px 6px rgba(0, 0, 0, 0.25);
+}
+.project-tile:hover {
+  background: linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.03) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 12px 32px rgba(0, 0, 0, 0.50),
+    0 0 0 1px rgba(124, 90, 240, 0.30);
+}
+
+/* Completed project row: glass scuro con tint viola */
+.completed-project-row {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    linear-gradient(135deg, rgba(124, 90, 240, 0.16) 0%, rgba(168, 85, 247, 0.10) 50%, rgba(255, 255, 255, 0.03) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 12px 36px rgba(0, 0, 0, 0.45);
+}
+
+/* Data grid placeholder / cards */
+.data-grid article {
+  background: linear-gradient(145deg, rgba(255,255,255,0.045) 0%, rgba(124, 90, 240, 0.06) 100%);
+  border-color: var(--line);
+}
+
+/* Modal/dropdown background */
+.app-modal-overlay, .modal-overlay {
+  background: rgba(5, 8, 18, 0.65);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+}
+
+/* Input/textarea/select dark */
+input[type="text"], input[type="email"], input[type="password"],
+input[type="search"], input[type="url"], input[type="number"],
+textarea, select {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.10);
+  color: var(--ink);
+}
+input[type="text"]:focus, input[type="email"]:focus, input[type="password"]:focus,
+input[type="search"]:focus, input[type="url"]:focus, input[type="number"]:focus,
+textarea:focus, select:focus {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--accent);
+  box-shadow: var(--ring-accent);
+}
+input::placeholder, textarea::placeholder { color: var(--muted); }
+
+/* Settings/auth/help: superfici dark */
+.settings-card, .auth-card, .help-card, .help-view section, .settings-section {
+  background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+/* Tier card e pricing card */
+.tier-card, .pricing-card, .plan-card {
+  background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(124, 90, 240, 0.06) 100%);
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 12px 36px rgba(0, 0, 0, 0.40);
+}
+
+/* Readonly settings boxes */
+.settings-readonly {
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: var(--ink-2);
+}
+
+/* Phone preview chrome: torna ad essere bianca solo dove serve (frame iPhone) */
+.phone-home-bar { background: #fff; }
+
