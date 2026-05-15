@@ -2433,6 +2433,7 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "PER LE DATE: usa new Date().toLocaleDateString('it-IT') nativo, non date-fns.",
     "PER I GRAFICI: usa SVG inline o barre CSS pure, non recharts o chart.js.",
     "PER LE CHIAMATE API — FONDAMENTALE: usa SEMPRE const API = import.meta.env.VITE_API_URL; poi fetch(`${API}/auth/login`, ...). MAI fetch('/api/auth/login', ...) — questo finirebbe sul dominio principale LocoCode, non sul tuo backend. VITE_API_URL viene iniettato da LocoCode al build e punta esattamente al tuo backend.",
+    "VIETATO assolutamente il fallback || 'http://localhost:8000' o simili — in produzione VITE_API_URL e' SEMPRE settato. Se proprio vuoi un fallback per dev locale usa || '' (stringa vuota), MAI URL hardcoded che farebbero crashare l'app in produzione.",
     "lucide-react e gia disponibile come alias del server e puo essere importato normalmente.",
     "",
     "BANNER TRIAL OBBLIGATORIO — devi creare frontend/src/components/TrialBanner.jsx con ESATTAMENTE questo contenuto (poi montalo in App.jsx come primo figlio del root, prima di qualsiasi altro layout):",
