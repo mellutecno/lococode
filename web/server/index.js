@@ -3117,12 +3117,52 @@ async function loadSettings(user = null) {
 }
 
 async function loadUsersStore() {
-  const data = await readJson(usersPath);
+  const data = await readJsonWithBackup(usersPath, "users");
   return { users: Array.isArray(data?.users) ? data.users : [] };
 }
 
+// Legge un JSON. Se mancante/corrotto/vuoto sulla chiave richiesta, prova
+// il backup .bak. Cosi' se atomicWriteJson e' stato interrotto, recuperiamo.
+async function readJsonWithBackup(filePath, expectedKey) {
+  const data = await readJson(filePath);
+  if (Array.isArray(data?.[expectedKey])) return data;
+  // Main file vuoto/corrotto, prova backup
+  const bakPath = `${filePath}.bak`;
+  const bak = await readJson(bakPath);
+  if (Array.isArray(bak?.[expectedKey])) {
+    console.warn(`[recovery] ${filePath} vuoto/corrotto — ripristino da ${bakPath} (${bak[expectedKey].length} item)`);
+    // Ripristina il main dal backup
+    try {
+      await fs.copyFile(bakPath, filePath);
+    } catch {}
+    return bak;
+  }
+  return data || {};
+}
+
 async function saveUsersStore(store) {
-  await fs.writeFile(usersPath, JSON.stringify({ users: store.users || [] }, null, 2), "utf8");
+  await atomicWriteJson(usersPath, { users: store.users || [] });
+}
+
+// Scrittura atomica: scrivi su .tmp, poi rename atomico al file finale.
+// Cosi' se il processo viene killato a meta', il file originale resta intatto.
+// Tiene anche un backup .bak del precedente per recovery in caso di disastro.
+async function atomicWriteJson(targetPath, data) {
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  const tmpPath = `${targetPath}.tmp.${process.pid}.${Date.now()}`;
+  const bakPath = `${targetPath}.bak`;
+  const content = JSON.stringify(data, null, 2);
+
+  // Step 1: scrivi su file temporaneo (puo' essere troncato, non ci interessa)
+  await fs.writeFile(tmpPath, content, "utf8");
+
+  // Step 2: backup del file corrente (se esiste) prima di sovrascriverlo
+  try {
+    await fs.copyFile(targetPath, bakPath);
+  } catch {} // ignore se non esiste
+
+  // Step 3: rename atomico — su POSIX e' una singola syscall, mai parziale
+  await fs.rename(tmpPath, targetPath);
 }
 
 async function getSessionUser(req) {
@@ -3359,14 +3399,14 @@ async function sendLoginTokenEmail(email, token) {
 }
 
 async function loadApps(user = null) {
-  const data = await readJson(user ? userAppsPath(user.id) : appsPath);
+  const targetPath = user ? userAppsPath(user.id) : appsPath;
+  const data = await readJsonWithBackup(targetPath, "apps");
   return Array.isArray(data?.apps) ? data.apps : [];
 }
 
 async function saveApps(apps, user = null) {
   const targetPath = user ? userAppsPath(user.id) : appsPath;
-  await fs.mkdir(path.dirname(targetPath), { recursive: true });
-  await fs.writeFile(targetPath, JSON.stringify({ apps }, null, 2), "utf8");
+  await atomicWriteJson(targetPath, { apps });
 }
 
 async function findPublicApp(appId, token) {
