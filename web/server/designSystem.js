@@ -625,33 +625,33 @@ button[class*="bg-gradient"] .text-white,
    FIX: forziamo le low-opacity white card a sfondo SOLIDO scuro (niente
    trasparenza). Cosi' qualunque sfondo del page passi attraverso,
    le card sono SEMPRE leggibili e i text-white/N risaltano. */
-.bg-white\/5,
-.bg-white\/10,
-.bg-white\/15,
-.bg-white\/20,
-.bg-white\/25,
-.bg-white\/30 {
+.bg-white\\/5,
+.bg-white\\/10,
+.bg-white\\/15,
+.bg-white\\/20,
+.bg-white\\/25,
+.bg-white\\/30 {
   background-color: #1a1f33 !important;  /* solido dark navy/purple */
   background-image: linear-gradient(135deg, rgba(124,90,240,0.08) 0%, rgba(255,255,255,0.02) 100%) !important;
 }
 /* Bordo: rafforziamo i border-white/N a opacita' maggiore per definirsi sul dark */
-.border-white\/5  { border-color: rgba(255, 255, 255, 0.12) !important; }
-.border-white\/10 { border-color: rgba(255, 255, 255, 0.16) !important; }
-.border-white\/15 { border-color: rgba(255, 255, 255, 0.20) !important; }
-.border-white\/20 { border-color: rgba(255, 255, 255, 0.22) !important; }
-.border-white\/30 { border-color: rgba(255, 255, 255, 0.28) !important; }
+.border-white\\/5  { border-color: rgba(255, 255, 255, 0.12) !important; }
+.border-white\\/10 { border-color: rgba(255, 255, 255, 0.16) !important; }
+.border-white\\/15 { border-color: rgba(255, 255, 255, 0.20) !important; }
+.border-white\\/20 { border-color: rgba(255, 255, 255, 0.22) !important; }
+.border-white\\/30 { border-color: rgba(255, 255, 255, 0.28) !important; }
 
 /* Quando l'AI usa text-white pieno o text-white/X dentro un container,
    garantiamo che resti chiaro (non sovrascritto da nessun'altra regola). */
 .text-white { color: #ffffff !important; }
-.text-white\/90 { color: rgba(255, 255, 255, 0.92) !important; }
-.text-white\/80 { color: rgba(255, 255, 255, 0.86) !important; }
-.text-white\/70 { color: rgba(255, 255, 255, 0.80) !important; }
-.text-white\/60 { color: rgba(255, 255, 255, 0.75) !important; }
-.text-white\/50 { color: rgba(255, 255, 255, 0.70) !important; }
-.text-white\/40 { color: rgba(255, 255, 255, 0.65) !important; }
-.placeholder-white\/50::placeholder { color: rgba(255, 255, 255, 0.65) !important; }
-.placeholder-white\/40::placeholder { color: rgba(255, 255, 255, 0.60) !important; }
+.text-white\\/90 { color: rgba(255, 255, 255, 0.92) !important; }
+.text-white\\/80 { color: rgba(255, 255, 255, 0.86) !important; }
+.text-white\\/70 { color: rgba(255, 255, 255, 0.80) !important; }
+.text-white\\/60 { color: rgba(255, 255, 255, 0.75) !important; }
+.text-white\\/50 { color: rgba(255, 255, 255, 0.70) !important; }
+.text-white\\/40 { color: rgba(255, 255, 255, 0.65) !important; }
+.placeholder-white\\/50::placeholder { color: rgba(255, 255, 255, 0.65) !important; }
+.placeholder-white\\/40::placeholder { color: rgba(255, 255, 255, 0.60) !important; }
 `;
 
 const TAILWIND_CONFIG = (absHtml, absSrc) => `/** @type {import('tailwindcss').Config} */
