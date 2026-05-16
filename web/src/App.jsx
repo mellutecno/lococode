@@ -1094,9 +1094,13 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
 // Form dedicato alla creazione di siti web (vetrina statica). Differenza dal
 // flusso web app: niente tier selector visibile (tutti i siti usano lo stesso
 // pipeline ridotto), e campi guidati per business invece di prompt libero.
+// FILOSOFIA: solo NOME e CITTA' sono obbligatori. Tutto il resto (tel, indirizzo,
+// orari, menu, foto) viene CERCATO AUTOMATICAMENTE sul web. L'utente compila
+// extra solo se VUOLE forzare un valore specifico.
 function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
   const [businessName, setBusinessName] = useState("");
   const [businessType, setBusinessType] = useState("pizzeria");
+  const [customType, setCustomType] = useState("");
   const [city, setCity] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -1113,23 +1117,29 @@ function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
     { value: "officina", label: "Officina / Carrozzeria" },
     { value: "studio", label: "Studio professionale" },
     { value: "palestra", label: "Palestra / Centro sportivo" },
-    { value: "altro", label: "Altra attività" },
+    { value: "hotel", label: "Hotel / B&B" },
+    { value: "negozio", label: "Negozio / Boutique" },
+    { value: "altro", label: "Altro (specifica)…" },
   ];
 
   const canSubmit = businessName.trim().length > 0 && city.trim().length > 0 && !busy;
+  const isCustomType = businessType === "altro";
 
   function buildPrompt() {
-    const typeLabel = businessTypes.find((t) => t.value === businessType)?.label || businessType;
+    const typeLabel = isCustomType && customType.trim()
+      ? customType.trim()
+      : businessTypes.find((t) => t.value === businessType)?.label || businessType;
     const lines = [
       `Sito web vetrina per: ${businessName.trim()} (${typeLabel}) a ${city.trim()}.`,
     ];
-    if (phone.trim()) lines.push(`Telefono: ${phone.trim()}.`);
-    if (address.trim()) lines.push(`Indirizzo: ${address.trim()}.`);
-    if (description.trim()) lines.push(`Descrizione fornita dal titolare: ${description.trim()}`);
+    if (phone.trim()) lines.push(`Telefono (fornito dal titolare): ${phone.trim()}.`);
+    if (address.trim()) lines.push(`Indirizzo (fornito dal titolare): ${address.trim()}.`);
+    if (description.trim()) lines.push(`Note del titolare: ${description.trim()}`);
     lines.push(
       "",
-      "Sezioni obbligatorie: Hero con call-to-action, Chi siamo, Menu/Servizi (con almeno 6 voci credibili per il tipo di attività), Galleria (4-6 foto placeholder coerenti), Contatti con telefono cliccabile + mappa Google embed dell'indirizzo, Footer con orari.",
-      "Niente login, niente backend, niente database. Sito puramente vetrina, multipagina o single-page lungo.",
+      "IMPORTANTE: cerca su Google/Maps/Tripadvisor/Facebook/sito ufficiale dell'attivita' TUTTE le info disponibili: indirizzo completo, telefono, orari (giorni e fasce), descrizione reale, menu/servizi/prezzi, foto vere del locale (interno/esterno/piatti), titolare/chef se presente, recensioni. Usa i dati REALI trovati come fonte primaria; se trovi un'info diversa da quella che ti ha dato il titolare, preferisci quella REALE (la web search e' verificata).",
+      "Sezioni obbligatorie del sito: Hero con call-to-action, Chi siamo (con storia reale se trovata), Menu/Servizi (voci REALI con prezzi), Galleria (foto REALI scaricate dal sito ufficiale o Unsplash come fallback), Contatti con telefono cliccabile + mappa Google embed dell'indirizzo reale, Footer con orari REALI.",
+      "Niente login, niente backend, niente database. Sito puramente vetrina, single-page con scroll fluido.",
     );
     return lines.join("\n");
   }
@@ -1140,7 +1150,9 @@ function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
         <button className="back-link" onClick={onBackToProjects}>← Torna al workspace</button>
         <div className="hero-badge"><Globe size={12} /> Sito web vetrina</div>
         <h1>Crea il sito della tua attività</h1>
-        <p className="hero-sub">Dimmi nome, tipo e città. Costruisco un sito vetrina bellissimo con menu, contatti, mappa e galleria — niente login né database, solo presenza online curata.</p>
+        <p className="hero-sub">
+          Compila <strong>solo Nome e Città</strong>. Tutto il resto (telefono, indirizzo, orari, menu, foto del locale) lo cerchiamo noi automaticamente sul web — devi solo specificare cosa NON vuoi che troviamo.
+        </p>
 
         <div className="website-form">
           <label className="project-name-field">
@@ -1148,8 +1160,9 @@ function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
             <input
               value={businessName}
               onChange={(e) => setBusinessName(e.target.value)}
-              placeholder="Esempio: Pizzeria Da Mario"
+              placeholder="Esempio: Pizzeria Il Mago Quattro"
             />
+            <small className="field-helper">Più è preciso, meglio troviamo info reali sul web.</small>
           </label>
 
           <div className="website-form-row">
@@ -1164,40 +1177,59 @@ function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
               <input
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                placeholder="Esempio: Salerno"
+                placeholder="Esempio: Casorate Primo"
               />
             </label>
           </div>
 
+          {isCustomType && (
+            <label className="project-name-field">
+              <span>Specifica il tipo di attività *</span>
+              <input
+                value={customType}
+                onChange={(e) => setCustomType(e.target.value)}
+                placeholder="Es: Erboristeria, Lavanderia, Veterinario, Tatuatore..."
+              />
+            </label>
+          )}
+
           <div className="website-form-row">
             <label className="project-name-field">
-              <span>Telefono</span>
+              <span>Telefono <em className="field-optional">(facoltativo — lo cerchiamo)</em></span>
               <input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="089 123 456"
+                placeholder="Lascia vuoto: lo trovi sul web"
               />
             </label>
             <label className="project-name-field">
-              <span>Indirizzo</span>
+              <span>Indirizzo <em className="field-optional">(facoltativo — lo cerchiamo)</em></span>
               <input
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="Via Roma 12"
+                placeholder="Lascia vuoto: lo cerchiamo noi"
               />
             </label>
           </div>
 
           <label className="project-name-field">
-            <span>Note libere per il sito (opzionale)</span>
+            <span>Note libere <em className="field-optional">(facoltativo)</em></span>
             <textarea
               className="website-textarea"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Es: specialità pizza napoletana cotta in forno a legna, ambiente familiare, orari 18-24 chiuso lunedì..."
-              rows={4}
+              placeholder="Vuoi richiedere qualcosa di specifico? Es: 'metti in evidenza la pizza margherita doc' oppure 'aggiungi una sezione eventi' oppure 'non mostrare i prezzi'..."
+              rows={3}
             />
           </label>
+
+          <div className="website-search-banner">
+            <span>🔎</span>
+            <div>
+              <strong>La ricerca web parte appena clicchi</strong>
+              <p>Cercheremo automaticamente su Google, Maps, Tripadvisor, Facebook, sito ufficiale: orari, contatti, menu, foto reali del locale, recensioni. Costo della ricerca incluso, nessun sovrapprezzo.</p>
+            </div>
+          </div>
 
           <button
             className="primary website-submit"
@@ -1208,7 +1240,7 @@ function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
               kind: "website",
             })}
           >
-            {busy ? <><Sparkles className="spin" size={18} /> Generazione in corso…</> : <><Globe size={18} /> Crea sito web</>}
+            {busy ? <><Sparkles className="spin" size={18} /> Cerco info e creo…</> : <><Globe size={18} /> Cerca info e crea il sito</>}
           </button>
         </div>
       </section>

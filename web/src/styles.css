@@ -3960,3 +3960,54 @@ select option:hover {
 }
 .back-link:hover { color: var(--ink); }
 
+/* Helper text sotto i campi (es: "lascia vuoto: lo cerchiamo noi") */
+.field-helper {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  font-style: normal;
+}
+/* Etichetta inline "(facoltativo)" accanto al nome del campo */
+.field-optional {
+  font-size: 11px;
+  font-weight: 500;
+  font-style: normal;
+  color: var(--muted-2);
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 4px;
+}
+
+/* Banner che rassicura: "stiamo cercando per te le info reali" */
+.website-search-banner {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.10) 0%, rgba(99, 102, 241, 0.06) 100%);
+  border: 1px solid rgba(14, 165, 233, 0.25);
+  margin: 6px 0 4px;
+}
+.website-search-banner > span:first-child {
+  font-size: 24px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.website-search-banner strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #7dd3fc;
+  margin-bottom: 4px;
+}
+.website-search-banner p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
