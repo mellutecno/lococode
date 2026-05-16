@@ -1497,8 +1497,18 @@ const PYTHON_IMPORT_TO_PIP = {
   aiosqlite: "aiosqlite==0.19.0",
 };
 
+// Pattern Python "impliciti": tipi/classi usate nel codice che richiedono
+// pacchetti extra non sempre ovvi dall'import. Es: pydantic.EmailStr richiede
+// email-validator come dipendenza transitiva, ma "email_validator" non appare
+// in nessun import diretto -> backend crasha all'avvio.
+const PYTHON_IMPLICIT_DEPS = [
+  { pattern: /\bEmailStr\b/, pkg: "email-validator>=2.0" },
+  { pattern: /\bHttpUrl\b|\bAnyUrl\b|\bPostgresDsn\b/, pkg: "email-validator>=2.0" },
+];
+
 async function scanMissingPythonImports(backendPath) {
   const found = new Set();
+  const implicit = new Set();
   async function walk(dir) {
     const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
     for (const e of entries) {
@@ -1510,11 +1520,14 @@ async function scanMissingPythonImports(backendPath) {
         for (const m of txt.matchAll(/^\s*(?:from|import)\s+([a-zA-Z_][\w]*)/gm)) {
           found.add(m[1]);
         }
+        for (const { pattern, pkg } of PYTHON_IMPLICIT_DEPS) {
+          if (pattern.test(txt)) implicit.add(pkg);
+        }
       }
     }
   }
   await walk(backendPath);
-  return [...found];
+  return { imports: [...found], implicitPackages: [...implicit] };
 }
 
 async function deployBackend(target) {
@@ -1541,12 +1554,13 @@ async function deployBackend(target) {
   await execFileAsync("python3", ["-m", "venv", venvPath]);
   await execFileAsync(pipBin, ["install", "--quiet", "--no-cache-dir", "-r", reqFile]);
 
-  // 2) Scan import sorgenti e installa moduli "mancanti" tipici di DeepSeek
-  const imports = await scanMissingPythonImports(backendPath);
+  // 2) Scan import + pattern impliciti, installa moduli mancanti
+  const { imports, implicitPackages } = await scanMissingPythonImports(backendPath);
   const extra = [];
   for (const imp of imports) {
     if (PYTHON_IMPORT_TO_PIP[imp]) extra.push(PYTHON_IMPORT_TO_PIP[imp]);
   }
+  for (const pkg of implicitPackages) extra.push(pkg);
   if (extra.length) {
     console.log(`[deploy] Installo moduli auto-rilevati per ${target.id}: ${extra.join(", ")}`);
     await execFileAsync(pipBin, ["install", "--quiet", "--no-cache-dir", ...extra]).catch((e) => {
