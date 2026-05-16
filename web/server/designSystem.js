@@ -569,9 +569,23 @@ body::after {
 #root { position: relative; z-index: 1; }
 
 /* ═══════════════════════════════════════════════════════════════
-   3. WRAPPER FULL COVERAGE — qualunque min-h-screen DEVE essere w-full
+   3. WRAPPER FULL COVERAGE + KILL AI GRADIENT — qualunque min-h-screen
+   DEVE essere w-full E avere bg TRASPARENTE (cosi' si vede solo il body
+   bg dark uniforme, niente cornici/gradient saturi del wrapper AI che
+   l'utente percepisce come "frame" intorno al contenuto).
    ═══════════════════════════════════════════════════════════════ */
-[class*="min-h-screen"] { width: 100% !important; }
+[class*="min-h-screen"] {
+  width: 100% !important;
+}
+[class*="min-h-screen"][class*="bg-gradient"],
+[class*="min-h-screen"][class*="bg-indigo-"],
+[class*="min-h-screen"][class*="bg-purple-"],
+[class*="min-h-screen"][class*="bg-slate-9"],
+[class*="min-h-screen"][class*="bg-slate-8"],
+[class*="min-h-screen"][class*="bg-gray-9"] {
+  background: transparent !important;
+  background-image: none !important;
+}
 
 /* ═══════════════════════════════════════════════════════════════
    4. TIPOGRAFIA
