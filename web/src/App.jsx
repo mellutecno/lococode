@@ -733,7 +733,7 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
           </div>
           {!isEmpty && (
             <div className="projects-head-actions">
-              <button className="secondary compact" onClick={() => setActiveView("website")}>
+              <button className="primary primary-blue" onClick={() => setActiveView("website")}>
                 <Globe size={18} />
                 <span>Nuovo sito</span>
               </button>

@@ -1728,11 +1728,101 @@ async function runPostGenerationPipeline(target, apps, user) {
     }
   }
 
+  // 3b) Auth smoke test: se la app ha endpoint di auth, prova register+login
+  //     end-to-end con credenziali fittizie. Se fallisce -> bug nel codice
+  //     generato (es. condizione if(!token || view==='login') che blocca
+  //     register, o frontend che chiama path sbagliati).
+  let authOk = null; // null = non applicabile (no auth), true = ok, false = rotto
+  let authReport = null;
+  if (backendPort && target.kind !== "website") {
+    try {
+      authOk = await runAuthSmokeTest(target, backendPort);
+      authReport = authOk ? "register+login OK" : "auth endpoints non rispondono come atteso";
+      appendOperationalLog(target, `${authOk ? "✓" : "⚠"} Auth smoke test: ${authReport}`);
+    } catch (err) {
+      authOk = false;
+      authReport = err.message.slice(0, 200);
+      appendOperationalLog(target, `⚠ Auth smoke test fallito: ${authReport}`);
+    }
+    target.authSmokeTest = { ok: authOk, report: authReport, testedAt: new Date().toISOString() };
+    await saveApps(apps, user).catch(() => {});
+  }
+
   // 4) Email utente con risultato finale
   const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
-  await notifyUserAppReady(user, target, { frontendOk, backendPort, smokeOk, elapsedSec }).catch((err) =>
+  await notifyUserAppReady(user, target, { frontendOk, backendPort, smokeOk, authOk, authReport, elapsedSec }).catch((err) =>
     console.warn(`[notify] email ${appId}:`, err.message),
   );
+}
+
+// Auth smoke test: tenta register di un utente fittizio, poi login con le
+// stesse credenziali. Cerca di adattarsi a piccole varianti di schema
+// (display_name opzionale, name vs username vs full_name).
+async function runAuthSmokeTest(target, backendPort) {
+  // Verifica che gli endpoint esistano nell'openapi
+  let openapi;
+  try {
+    const r = await fetch(`http://127.0.0.1:${backendPort}/openapi.json`);
+    if (!r.ok) return null; // nessun openapi -> non FastAPI standard, skip
+    openapi = await r.json();
+  } catch {
+    return null;
+  }
+  const paths = Object.keys(openapi.paths || {});
+  const registerPath = paths.find((p) => /\/auth\/register/i.test(p));
+  const loginPath = paths.find((p) => /\/auth\/(login|sign[-_]?in|token)/i.test(p));
+  if (!registerPath || !loginPath) return null; // app senza auth -> skip
+
+  const ts = Date.now();
+  const testEmail = `smoke_${ts}@lococode.test`;
+  const testPassword = "SmokeTest123!";
+
+  // Scopri quali campi vuole il register dal suo schema
+  const registerOp = openapi.paths[registerPath].post;
+  const schemaRef = registerOp?.requestBody?.content?.["application/json"]?.schema?.$ref;
+  const schemaName = schemaRef ? schemaRef.split("/").pop() : null;
+  const schema = schemaName ? openapi.components?.schemas?.[schemaName] : null;
+  const fields = schema?.properties ? Object.keys(schema.properties) : ["email", "password"];
+
+  // Costruisci payload con i nomi dei campi visti nello schema
+  const payload = {};
+  for (const f of fields) {
+    const lower = f.toLowerCase();
+    if (/email/.test(lower)) payload[f] = testEmail;
+    else if (/password|pwd/.test(lower)) payload[f] = testPassword;
+    else if (/name|nick|user/.test(lower)) payload[f] = "SmokeTester";
+    else if (/phone/.test(lower)) payload[f] = "+39 333 1234567";
+    else payload[f] = "test";
+  }
+
+  // 1) Register
+  const regRes = await fetch(`http://127.0.0.1:${backendPort}${registerPath}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!regRes.ok && regRes.status !== 409) { // 409 = già esistente, accettabile
+    const txt = await regRes.text().catch(() => "");
+    throw new Error(`register HTTP ${regRes.status}: ${txt.slice(0, 200)}`);
+  }
+
+  // 2) Login con le stesse credenziali
+  // (alcuni endpoint usano username invece di email)
+  const loginPayloads = [
+    { email: testEmail, password: testPassword },
+    { username: testEmail, password: testPassword },
+  ];
+  let loginOk = false;
+  for (const lp of loginPayloads) {
+    const r = await fetch(`http://127.0.0.1:${backendPort}${loginPath}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(lp),
+    });
+    if (r.ok) { loginOk = true; break; }
+  }
+  if (!loginOk) throw new Error("login fallito con tutte le varianti di payload");
+  return true;
 }
 
 // Manda email all'utente quando l'app e' pronta (o quasi).
@@ -1752,7 +1842,9 @@ async function notifyUserAppReady(user, target, status) {
 
   const slug = target.publicSlug || appPublicSlug(target);
   const appUrl = appUrlForApp(target);
-  const allOk = status.frontendOk && status.backendPort && status.smokeOk;
+  // authOk: true=passed, false=failed, null=not applicable (no auth or website)
+  const authPassed = status.authOk !== false; // null o true = ok
+  const allOk = status.frontendOk && status.backendPort && status.smokeOk && authPassed;
   const subject = allOk
     ? `✓ La tua app "${target.name}" è online!`
     : `⚠ App "${target.name}" generata con avvisi`;
@@ -1792,6 +1884,7 @@ async function notifyUserAppReady(user, target, status) {
            <li>Frontend: ${status.frontendOk ? "✓ OK" : "⚠ problema build"}</li>
            <li>Backend: ${status.backendPort ? `✓ porta ${status.backendPort}` : "⚠ non deployato"}</li>
            <li>Smoke test: ${status.smokeOk ? "✓ OK" : "⚠ controllo fallito"}</li>
+           ${status.authOk === false ? `<li style="color:#b45309">⚠ Auth: ${escapeHtml(status.authReport || "register/login non funziona")}</li>` : status.authOk === true ? `<li>Auth: ✓ register+login verificati</li>` : ""}
          </ul>
          <p style="margin-top:20px"><a href="${appUrl}">${appUrl}</a></p>
        </div>
@@ -2133,6 +2226,24 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   const tier = target.generationTier || "base";
   const isWebsite = target.kind === "website";
 
+  // Web search per siti vetrina: chiamiamo un modello "online" (Perplexity
+  // Sonar) per cercare info reali sull'attivita': telefono, indirizzo, orari,
+  // link foto reali. Questo arricchimento e' usato come contesto extra per la
+  // generazione. Costa ~€0.01 ma evita info inventate.
+  let webEnrichment = "";
+  if (isWebsite) {
+    try {
+      onProgress?.({ phase: "web-search", message: "Ricerca info reali sull'attivita' sul web..." });
+      webEnrichment = await searchBusinessInfo(userPrompt, apiKey);
+      if (webEnrichment) {
+        appendOperationalLog(target, "✓ Info reali trovate sul web.");
+      }
+    } catch (err) {
+      console.warn(`[web-search] fallita per ${target.id}: ${err.message}`);
+      appendOperationalLog(target, `⚠ Web search fallita (continuo con info utente): ${err.message.slice(0, 120)}`);
+    }
+  }
+
   // In modalita' "sito web vetrina" il prompt viene arricchito con istruzioni
   // tassative: niente backend, niente database, solo frontend statico. Il
   // backend phase viene saltato del tutto piu' sotto.
@@ -2151,6 +2262,13 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
         "- Foto: placeholder Unsplash con query coerente (es. https://source.unsplash.com/featured/?pizza,restaurant). NON Lorem Picsum.",
         "═══════════════════════════════════════",
         "",
+        ...(webEnrichment ? [
+          "═══ INFO REALI TROVATE SUL WEB ═══",
+          "Le seguenti informazioni sull'attivita' sono state recuperate da una ricerca web reale (telefono, indirizzo, orari, foto). USA QUESTE INFO come fonte primaria — sono verificate. Solo se mancano usa quelle del titolare.",
+          webEnrichment,
+          "═══════════════════════════════════════",
+          "",
+        ] : []),
         "Richiesta titolare:",
       ].join("\n") + "\n"
     : "";
@@ -2629,6 +2747,23 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "PER LE CHIAMATE API — FONDAMENTALE: usa SEMPRE const API = import.meta.env.VITE_API_URL; poi fetch(`${API}/api/auth/login`, ...). MAI fetch('/api/auth/login', ...) — questo finirebbe sul dominio principale LocoCode, non sul tuo backend. VITE_API_URL viene iniettato da LocoCode al build e punta esattamente al tuo backend.",
     "VIETATO assolutamente il fallback || 'http://localhost:8000' o simili — in produzione VITE_API_URL e' SEMPRE settato. Se proprio vuoi un fallback per dev locale usa || '' (stringa vuota), MAI URL hardcoded che farebbero crashare l'app in produzione.",
     "BUG STORICO DA EVITARE: NON usare React Context per passare API_URL. I componenti LoginPage/RegisterPage vengono spesso renderizzati FUORI dal Provider (utente non loggato = no context) -> useContext ritorna null -> API_URL='' -> fetch a path relativo -> chiamata al dominio LocoCode invece che al backend dell'app. SOLUZIONE: in OGNI componente che fa fetch, leggi direttamente `const API_URL = import.meta.env.VITE_API_URL || '';` come variabile locale. NIENTE Context per le URL API.",
+    "",
+    "BUG STORICO #2 — ROUTING LOGIN/REGISTER:",
+    "Quando hai un single-component App con stato `view` (login/register/dashboard) e l'utente non e' loggato, e' VIETATA questa condizione:",
+    "  if (!token || view === 'login') { /* mostra login */ }   <-- SBAGLIATO",
+    "Motivo: l'utente clicca 'Registrati' -> setView('register'), ma `!token` e' ancora true (non si e' registrato) -> la condizione resta TRUE -> resta bloccato sulla login.",
+    "REGOLA: tratta SEMPRE i view come switch espliciti, e il `!token` come redirect SOLO quando view non e' una vista pubblica:",
+    "  if (view === 'register') return <RegisterForm/>;",
+    "  if (view === 'activation') return <ActivationForm/>;",
+    "  if (!token || view === 'login') return <LoginForm/>;",
+    "Nota l'ordine: register/activation PRIMA del fallback login. Le vista pubbliche (register/activation/reset-password) DEVONO essere sempre raggiungibili anche senza token.",
+    "ANCORA MEGLIO: usa il componente AuthLayout fornito dal design system (`./components/ui`) — gestisce gia' login/register/forgot in modo corretto con uno stato `mode` interno. Esempio:",
+    "  import { AuthLayout, Input, Button } from './components/ui';",
+    "  function LoginPage({ onLogin }) { return <AuthLayout title='Bentornato' subtitle='Accedi'>...</AuthLayout>; }",
+    "  function RegisterPage({ onRegister }) { return <AuthLayout title='Crea account' subtitle='Iniziamo'>...</AuthLayout>; }",
+    "E nello switch usa: {view === 'login' && <LoginPage .../>} {view === 'register' && <RegisterPage .../>}",
+    "Cosi' eviti il bug della condizione doppia che blocca register.",
+    "",
     "lucide-react e gia disponibile come alias del server e puo essere importato normalmente.",
     "",
     "BANNER TRIAL OBBLIGATORIO — devi creare frontend/src/components/TrialBanner.jsx con ESATTAMENTE questo contenuto (poi montalo in App.jsx come primo figlio del root, prima di qualsiasi altro layout):",
@@ -3559,6 +3694,69 @@ async function applyOperations(target, operations) {
   return result;
 }
 
+// Ricerca info reali su un'attivita' usando un modello "online" di OpenRouter
+// che ha accesso al web (Perplexity Sonar). Estrae: telefono, indirizzo, orari,
+// menu/servizi, foto link reali. Costo ~€0.005 per query. Tempo ~5-10s.
+// Ritorna stringa formattata pronta per essere inclusa nel prompt, oppure ""
+// se non e' riuscito a trovare info.
+async function searchBusinessInfo(userPrompt, apiKey) {
+  if (!apiKey) return "";
+  const systemPrompt = "Sei un assistente di ricerca web. Cerca su Google/Maps informazioni reali e verificabili sull'attivita' commerciale descritta. Ritorna SOLO i dati strutturati che trovi davvero — niente inventato. Se non trovi un dato, ometti la riga corrispondente.";
+  const askPrompt = `Trovami le informazioni reali su questa attivita' commerciale (cerca su Google, Google Maps, Pagine Gialle, sito ufficiale se esiste):
+
+${userPrompt}
+
+Rispondi ESATTAMENTE in questo formato (ometti le righe che non trovi, NON inventare):
+
+NOME UFFICIALE: ...
+INDIRIZZO: ... (via, numero civico, citta', CAP)
+TELEFONO: ...
+ORARI: ... (giorni e fasce orarie)
+SITO/PAGINA FB: ...
+DESCRIZIONE: ... (1-2 frasi dalla loro presentazione reale)
+MENU/SERVIZI TIPICI: ... (5-8 voci REALI che servono, prezzi se trovati)
+FOTO REALI: ... (URL Google Maps photos, Instagram, sito ufficiale — uno per riga, fino a 6)
+RECENSIONI: ... (nota: rating medio e 1-2 frasi di review reali)
+
+Se non trovi NULLA di reale sull'attivita' (perche' troppo piccola o nuova) rispondi solo: NO_INFO_FOUND`;
+
+  // Modello online di Perplexity via OpenRouter. Sonar-small e' il piu'
+  // economico, fa search reale. Timeout 25s.
+  const ac = new AbortController();
+  const timeoutId = setTimeout(() => ac.abort(), 30000);
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://lococode.mellutecno.it",
+        "X-Title": "LocoCode website builder",
+      },
+      body: JSON.stringify({
+        model: "perplexity/sonar",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: askPrompt },
+        ],
+        max_tokens: 1500,
+        temperature: 0.2,
+      }),
+      signal: ac.signal,
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    const content = String(data?.choices?.[0]?.message?.content || "").trim();
+    if (!content || /^NO[_ ]INFO[_ ]FOUND/i.test(content)) return "";
+    return content;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function callOpenRouterOnce({
   apiKey,
   model,
@@ -4211,6 +4409,7 @@ function publicApp(appData) {
     generationTier: appData.generationTier || "base",
     tokenUsage: usage,
     generationCostEur: Number(totalCostEur.toFixed(4)),
+    authSmokeTest: appData.authSmokeTest || null,
     backendPort: appData.backendPort || null,
     backendOnline: !!appData.backendPort,
     appUrl,

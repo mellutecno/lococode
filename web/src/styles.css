@@ -3455,6 +3455,17 @@ select option:hover {
   border-color: var(--line-strong);
 }
 
+/* Bottone "Nuovo sito": stesso peso di "Nuova web app" ma blu/teal
+   (coerente con la card sito dello stato vuoto) */
+.primary.primary-blue {
+  background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%) !important;
+  box-shadow: 0 8px 24px rgba(14, 165, 233, 0.35) !important;
+}
+.primary.primary-blue:hover {
+  box-shadow: 0 10px 28px rgba(14, 165, 233, 0.50) !important;
+  transform: translateY(-1px);
+}
+
 /* Project tile: badge piccolo "Web app" / "Sito web" in alto */
 .project-tile-kind-badge {
   display: inline-flex;
