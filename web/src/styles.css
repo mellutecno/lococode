@@ -3310,6 +3310,72 @@ select option:hover {
   color: var(--ink-2);
 }
 
+/* ─── FLOATING / MODAL CONTAINERS — bg solido ──────────────────
+   Tutti gli elementi "floating" (dropdown utente, modali fullscreen,
+   card auth login/register) usavano var(--surface) trasparente al 4.5%,
+   diventando invisibili sopra il page bg dark. Forziamo a fondo solido
+   scuro con backdrop blur per estetica vetro. */
+
+.user-menu-dropdown {
+  background: rgba(20, 24, 44, 0.96) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 16px 48px rgba(0, 0, 0, 0.55),
+    0 4px 12px rgba(0, 0, 0, 0.35) !important;
+  padding: 8px !important;
+}
+.user-menu-email {
+  color: var(--ink-2) !important;
+  font-weight: 500 !important;
+  font-size: 12px !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+.user-menu-logout {
+  color: #ff8a99 !important;
+  font-weight: 600 !important;
+}
+.user-menu-logout:hover {
+  background: rgba(244, 63, 94, 0.18) !important;
+  color: #ffb1bb !important;
+}
+
+/* Auth card (login/register dialog) */
+.auth-card {
+  background: rgba(20, 24, 44, 0.96) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 32px 80px rgba(0, 0, 0, 0.55),
+    0 8px 24px rgba(0, 0, 0, 0.35) !important;
+}
+.auth-card h2 { color: var(--ink) !important; }
+.auth-card p { color: var(--ink-3) !important; }
+.auth-card label { color: var(--ink) !important; }
+.auth-card input {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: var(--ink) !important;
+}
+.auth-overlay {
+  background: rgba(5, 8, 18, 0.70) !important;
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+}
+
+/* Fullscreen card (preview / sdd / files in fullscreen mode) */
+.fullscreen-card {
+  background: rgba(20, 24, 44, 0.96) !important;
+  border-color: rgba(255, 255, 255, 0.10) !important;
+  box-shadow:
+    0 32px 100px rgba(0, 0, 0, 0.65),
+    0 8px 24px rgba(0, 0, 0, 0.40) !important;
+}
+
 /* Phone preview chrome: torna ad essere bianca solo dove serve (frame iPhone) */
 .phone-home-bar { background: #fff; }
 
