@@ -604,6 +604,13 @@ Questa azione è irreversibile.`)) return;
           />
         )}
 
+        {activeView === "chat" && selectedApp?.paymentFlow?.status === "estimate_pending" && (
+          <AnalyzingView
+            app={selectedApp}
+            onBackToProjects={() => setActiveView("projects")}
+          />
+        )}
+
         {activeView === "chat" && selectedApp?.paymentFlow?.status === "awaiting_payment" && (
           <EstimateView
             app={selectedApp}
@@ -614,7 +621,7 @@ Questa azione è irreversibile.`)) return;
           />
         )}
 
-        {activeView === "chat" && selectedApp?.paymentFlow?.status !== "awaiting_payment" && (
+        {activeView === "chat" && !["estimate_pending", "awaiting_payment"].includes(selectedApp?.paymentFlow?.status) && (
           <ChatView
             app={selectedApp}
             chatPrompt={chatPrompt}
@@ -1340,6 +1347,50 @@ function PricingCard({ app, onPurchaseTier }) {
       </div>
       <p className="pricing-footnote">* In modalità sandbox il pagamento è simulato. La conferma sblocca il piano immediatamente. PayPal Live disponibile a breve.</p>
     </section>
+  );
+}
+
+// Vista "stiamo analizzando": mostrata mentre il SDD gira, prima del preventivo.
+// Status app: estimate_pending + autopilot.running. Spiega all'utente in maniera
+// chiara che NON sta succedendo nulla di costoso e che il prezzo arrivera' presto.
+function AnalyzingView({ app, onBackToProjects }) {
+  const log = Array.isArray(app?.autopilot?.log)
+    ? app.autopilot.log.slice(-3)
+    : [];
+  return (
+    <div className="estimate-view">
+      <button className="back-link" onClick={onBackToProjects}>← Torna al workspace</button>
+      <div className="estimate-card analyzing-card">
+        <div className="estimate-header">
+          <div className="analyzing-orb">
+            <Sparkles size={28} className="spin-slow" />
+            <div className="analyzing-orb-pulse" />
+          </div>
+          <h1>Stiamo analizzando la tua idea</h1>
+          <p className="estimate-subtitle">
+            Il sistema sta studiando il tuo prompt per capire la complessità e calcolare il prezzo finale.
+            <br />Ci vogliono circa 1-2 minuti.
+            <br /><strong>Nessun addebito</strong> — vedrai il preventivo prima di decidere.
+          </p>
+        </div>
+        <div className="analyzing-steps">
+          <div className="analyzing-step done"><span>✓</span> App creata in workspace</div>
+          <div className="analyzing-step active"><span className="dot-pulse" /> Analisi requisiti e complessità</div>
+          <div className="analyzing-step"><span /> Preventivo pronto</div>
+          <div className="analyzing-step"><span /> Generazione (solo dopo conferma)</div>
+        </div>
+        {log.length > 0 && (
+          <div className="analyzing-log">
+            {log.map((entry, i) => (
+              <div key={i} className="analyzing-log-line">
+                <span className="analyzing-log-time">{formatShortTime(entry.at)}</span>
+                <span>{(entry.message || "").slice(0, 110)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

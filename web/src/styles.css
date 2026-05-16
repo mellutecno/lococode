@@ -3726,6 +3726,103 @@ select option:hover {
   color: var(--muted-2);
 }
 
+/* ─── AnalyzingView (durante SDD) ─── */
+.analyzing-card {
+  background: linear-gradient(140deg, rgba(124, 90, 240, 0.14) 0%, rgba(56, 189, 248, 0.06) 100%);
+}
+.analyzing-orb {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(124, 90, 240, 0.30) 0%, rgba(168, 85, 247, 0.18) 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 50px rgba(124, 90, 240, 0.50);
+}
+.analyzing-orb-pulse {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid rgba(168, 85, 247, 0.50);
+  animation: building-pulse 1.8s ease-out infinite;
+}
+.analyzing-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+}
+.analyzing-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.analyzing-step > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.analyzing-step.done {
+  color: #34d399;
+}
+.analyzing-step.done > span:first-child {
+  background: rgba(16, 185, 129, 0.20);
+  border-color: rgba(16, 185, 129, 0.50);
+  color: #34d399;
+}
+.analyzing-step.active {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.analyzing-step.active > span:first-child {
+  background: rgba(124, 90, 240, 0.20);
+  border-color: var(--accent);
+  position: relative;
+}
+.dot-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
+@keyframes dot-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.analyzing-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+.analyzing-log-line {
+  display: grid;
+  grid-template-columns: 50px 1fr;
+  gap: 8px;
+}
+.analyzing-log-time {
+  color: var(--muted-2);
+}
+
 /* Bottone "Nuovo sito": stesso peso di "Nuova web app" ma blu/teal
    (coerente con la card sito dello stato vuoto) */
 .primary.primary-blue {

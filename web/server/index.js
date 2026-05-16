@@ -4554,10 +4554,14 @@ function computeAppPricing(appData) {
     exportOneShot = 99;
   }
 
-  // Prezzo pagato per creazione dell'app, in base al tier scelto dall'utente
-  // (NON dal tier finale: l'utente paga per cosa ha CHIESTO).
+  // Prezzo EFFETTIVAMENTE pagato per la creazione: priorita' al nuovo flusso
+  // pricing (dinamico, calcolato post-SDD sulla complessita' reale). Se manca
+  // (es. app legacy generata prima del flusso pricing, o admin), usa il
+  // prezzo statico del tier scelto.
   const genTier = String(appData.generationTier || "base").toLowerCase();
-  const generationFeeEur = GENERATION_FEES[genTier] ?? GENERATION_FEES.base;
+  const paidEur = Number(appData.pricing?.priceEur || 0);
+  const isPaid = appData.pricing?.status === "paid" && paidEur > 0;
+  const generationFeeEur = isPaid ? paidEur : (GENERATION_FEES[genTier] ?? GENERATION_FEES.base);
 
   // Sconto: il prezzo di creazione viene SCALATO dal primo mese di abbonamento
   // o dal pagamento export, MA solo se l'utente passa effettivamente al pagato.
