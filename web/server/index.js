@@ -3979,13 +3979,17 @@ async function scrapeWebsiteImages(siteUrl) {
     }
 
     // Filtra le immagini "vere" (foto del locale/menu/persone)
+    const SKIP_KEYWORDS = /(^|[_\-\.\/])(logo|favicon|icon|sprite|placeholder|spacer|loader|spinner|arrow|chevron|bullet|divider|separator|badge|stamp|seal|button|btn|thumb-)([_\-\.\d]|$)/i;
     const photos = [...found].filter((url) => {
       const lower = url.toLowerCase();
-      // Esclude: loghi, icone, sprite, pixel tracking, placeholder
-      if (/\b(logo|favicon|icon|sprite|placeholder|spacer|tracking|pixel|loader|spinner|arrow|chevron)\b/.test(lower)) return false;
-      if (/\b1x1\b|\bw-\d{1,2}\b|\bh-\d{1,2}\b/.test(lower)) return false;
-      // Esclude social widgets / pubblicita'
-      if (/google.*tag|googleadservices|doubleclick|facebook\.com\/tr|fbcdn.*ad|analytics/.test(lower)) return false;
+      const fileName = lower.split("/").pop() || "";
+      // Esclude pattern noti di non-foto (loghi/icone/sprite)
+      if (SKIP_KEYWORDS.test(fileName)) return false;
+      if (SKIP_KEYWORDS.test(lower)) return false;
+      // Esclude micro dimensioni embed in URL/path (es. /16x16/, /32x32/)
+      if (/\/\d{1,3}x\d{1,3}\//.test(lower)) return false;
+      // Esclude social widgets / pubblicita' / tracker
+      if (/google.*tag|googleadservices|doubleclick|facebook\.com\/tr|fbcdn.*\/ad|analytics|gtm/.test(lower)) return false;
       // Accetta solo estensioni foto vere
       if (!/\.(jpe?g|png|webp|avif)(\?|#|$)/i.test(lower)) return false;
       return true;
