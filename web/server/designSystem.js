@@ -622,20 +622,24 @@ button[class*="bg-gradient"] .text-white,
    Quando la pagina ha sfondo SCURO (gradient indigo/purple/slate-900):
      bg-white/10 sopra dark diventa una tinta CHIARA del page bg
      -> text-white/60 sopra diventa quasi invisibile
-   FIX: trasformiamo le low-opacity white card in DARK glass card.
-   Cosi' le text-white/X dell'AI rimangono leggibili (chiaro su scuro).
-   Affecta solo opacita' basse (5-30%) = pattern "glass". */
+   FIX: forziamo le low-opacity white card a sfondo SOLIDO scuro (niente
+   trasparenza). Cosi' qualunque sfondo del page passi attraverso,
+   le card sono SEMPRE leggibili e i text-white/N risaltano. */
 .bg-white\/5,
 .bg-white\/10,
 .bg-white\/15,
 .bg-white\/20,
 .bg-white\/25,
 .bg-white\/30 {
-  background-color: rgba(15, 23, 42, 0.55) !important;
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  background-color: #1a1f33 !important;  /* solido dark navy/purple */
+  background-image: linear-gradient(135deg, rgba(124,90,240,0.08) 0%, rgba(255,255,255,0.02) 100%) !important;
 }
-/* I border bianchi a bassa opacita' restano (sono solo decorativi) */
+/* Bordo: rafforziamo i border-white/N a opacita' maggiore per definirsi sul dark */
+.border-white\/5  { border-color: rgba(255, 255, 255, 0.12) !important; }
+.border-white\/10 { border-color: rgba(255, 255, 255, 0.16) !important; }
+.border-white\/15 { border-color: rgba(255, 255, 255, 0.20) !important; }
+.border-white\/20 { border-color: rgba(255, 255, 255, 0.22) !important; }
+.border-white\/30 { border-color: rgba(255, 255, 255, 0.28) !important; }
 
 /* Quando l'AI usa text-white pieno o text-white/X dentro un container,
    garantiamo che resti chiaro (non sovrascritto da nessun'altra regola). */
