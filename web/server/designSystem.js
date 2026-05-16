@@ -510,15 +510,68 @@ const THEME_CSS = `/* LocoCode Design System base styles. NON modificare a mano.
 }
 
 html, body, #root {
-  height: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
 }
 
 body {
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #0f172a;
-  background-color: #f8fafc;
+  font-feature-settings: "cv01", "cv03", "cv04", "cv11", "ss03";
+  letter-spacing: -0.005em;
+  color: #e7e9f2;
+  background-color: #0a0e1a;
+  background-image:
+    radial-gradient(ellipse 1100px 600px at 85% -10%, rgba(168, 85, 247, 0.20) 0%, transparent 60%),
+    radial-gradient(ellipse 900px 500px at -10% 20%, rgba(91, 62, 232, 0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 800px 500px at 50% 110%, rgba(56, 189, 248, 0.10) 0%, transparent 55%),
+    linear-gradient(160deg, #0a0e1a 0%, #0d1126 50%, #0a0f22 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+/* Dot pattern overlay sottile per dare textura */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: -1px -1px;
+  z-index: 0;
+  opacity: 0.6;
+  mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.7) 0%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.7) 0%, transparent 75%);
+}
+/* Aurora animata */
+body::after {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 25% 35%, rgba(168, 85, 247, 0.14) 0%, transparent 35%),
+    radial-gradient(circle at 75% 65%, rgba(56, 189, 248, 0.10) 0%, transparent 35%);
+  filter: blur(80px);
+  animation: lc-aurora 26s ease-in-out infinite alternate;
+  opacity: 0.7;
+  z-index: 0;
+}
+@keyframes lc-aurora {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  50%  { transform: translate(6%, -3%) rotate(6deg); }
+  100% { transform: translate(-4%, 5%) rotate(-5deg); }
+}
+/* I contenuti React stanno SOPRA aurora/pattern */
+#root { position: relative; z-index: 1; }
+
+h1, h2, h3, h4 {
+  letter-spacing: -0.02em;
+  font-weight: 700;
 }
 
 /* Scrollbar piu' elegante */
