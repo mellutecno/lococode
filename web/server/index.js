@@ -896,9 +896,10 @@ app.post("/api/apps/:id/confirm-payment", async (req, res) => {
   res.json({ app: publicApp(target), resumed: true });
 });
 
-// Annulla il preventivo (cancellazione dell'app pre-pagamento). L'utente non
-// paga niente, l'app viene marcata "cancelled" (puo' essere cancellata fisicamente
-// in un secondo momento).
+// Annulla il preventivo = CANCELLA L'APP COMPLETAMENTE. Nessun mezzo-stato:
+// l'utente che annulla vuole liberarsi dell'app, non vederla nel workspace
+// con un fantomatico "Riprendi". Riusiamo il flusso DELETE per essere
+// coerenti (stop autopilot, rimuovi entry, kill backend, cancella cartella).
 app.post("/api/apps/:id/cancel-estimate", async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
@@ -906,14 +907,43 @@ app.post("/api/apps/:id/cancel-estimate", async (req, res) => {
   const target = apps.find((item) => item.id === req.params.id);
   if (!target) { res.status(404).json({ error: "App non trovata." }); return; }
 
-  const now = new Date().toISOString();
-  target.pricing = { ...(target.pricing || {}), status: "cancelled", cancelledAt: now };
-  target.status = "cancelled";
-  target.updatedAt = now;
-  appendOperationalLog(target, "✗ Preventivo annullato dall'utente. Nessun addebito.");
-  await saveApps(apps, user);
-  res.json({ app: publicApp(target), cancelled: true });
+  const result = await deleteAppCompletely({ user, apps, target, reason: "cancel-estimate" });
+  res.json({ deleted: true, cancelled: true, id: result.id, name: result.name });
 });
+
+// Helper condiviso: cancella un'app in tutti i suoi pezzi (stato, cartella,
+// backend, runtime). Chiamato sia dal DELETE che dal cancel-estimate.
+async function deleteAppCompletely({ user, apps, target, reason = "delete" }) {
+  const appId = target.id;
+  const appName = target.name || appId;
+  console.log(`[${reason}] Avvio eliminazione app "${appName}" (${appId})`);
+
+  if (target.autopilot) {
+    target.autopilot.stopRequested = true;
+    target.autopilot.running = false;
+  }
+  const runningKey = jobKey(user.id, appId);
+  if (runningJobs.has(runningKey)) {
+    runningJobs.delete(runningKey);
+    console.log(`[${reason}] Rimosso job in-memory per ${appId}`);
+  }
+
+  const updatedApps = apps.filter((item) => item.id !== appId);
+  await saveApps(updatedApps, user);
+
+  await stopBackend(appId).catch((e) => console.warn(`[${reason}] stopBackend ${appId}:`, e.message));
+
+  const root = projectRoot(target);
+  try {
+    await fs.rm(root, { recursive: true, force: true });
+    console.log(`[${reason}] Cartella progetto rimossa: ${root}`);
+  } catch (err) {
+    console.warn(`[${reason}] Errore eliminando cartella ${root}:`, err.message);
+  }
+
+  console.log(`[${reason}] Eliminazione completata per "${appName}"`);
+  return { id: appId, name: appName };
+}
 
 app.post("/api/apps/:id/stop", async (req, res) => {
   const user = await requireUser(req, res);
@@ -973,52 +1003,11 @@ app.delete("/api/apps/:id/logs", async (req, res) => {
 app.delete("/api/apps/:id", async (req, res) => {
   const user = await requireUser(req, res);
   if (!user) return;
-
   const apps = await loadApps(user);
   const target = apps.find((item) => item.id === req.params.id);
-
-  if (!target) {
-    res.status(404).json({ error: "App non trovata." });
-    return;
-  }
-
-  const appId = target.id;
-  const appName = target.name || appId;
-  console.log(`[delete] Avvio eliminazione app "${appName}" (${appId})`);
-
-  // 1. Stoppa autopilot in corso e rimuovi job dalla mappa in-memory
-  if (target.autopilot) {
-    target.autopilot.stopRequested = true;
-    target.autopilot.running = false;
-  }
-  const runningKey = jobKey(user.id, appId);
-  if (runningJobs.has(runningKey)) {
-    runningJobs.delete(runningKey);
-    console.log(`[delete] Rimosso job in-memory per ${appId}`);
-  }
-
-  // 2. Rimuovi entry da apps.json (la app sparisce immediatamente dall'UI)
-  const updatedApps = apps.filter((item) => item.id !== appId);
-  await saveApps(updatedApps, user);
-
-  // 3. Ferma backend Python (uvicorn/pm2) e rimuovi config nginx dedicata
-  await stopBackend(appId).catch((e) => console.warn(`[delete] stopBackend ${appId}:`, e.message));
-
-  // 4. Elimina cartella progetto (frontend, backend, .lococode_runtime, dist, .lc, deploy...)
-  const root = projectRoot(target);
-  try {
-    await fs.rm(root, { recursive: true, force: true });
-    console.log(`[delete] Cartella progetto rimossa: ${root}`);
-  } catch (err) {
-    console.warn(`[delete] Errore eliminando cartella ${root}:`, err.message);
-  }
-
-  // 5. Invalida eventuali alias/redirect su nginx (slug pubblico)
-  // La cartella .lococode_runtime/frontend-dist viene gia rimossa dal passo 4,
-  // quindi /app/{slug} risponde 404 al prossimo hit.
-
-  console.log(`[delete] Eliminazione completata per "${appName}"`);
-  res.json({ deleted: true, id: appId, name: appName });
+  if (!target) { res.status(404).json({ error: "App non trovata." }); return; }
+  const result = await deleteAppCompletely({ user, apps, target, reason: "delete" });
+  res.json({ deleted: true, id: result.id, name: result.name });
 });
 
 // ─── Acquisto / PayPal (sandbox/mock) ─────────────────────────────
