@@ -2446,8 +2446,16 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
         "═══════════════════════════════════════",
         "",
         ...(webEnrichment ? [
-          "═══ INFO REALI TROVATE SUL WEB ═══",
-          "Le seguenti informazioni sull'attivita' sono state recuperate da una ricerca web reale (telefono, indirizzo, orari, foto). USA QUESTE INFO come fonte primaria — sono verificate. Solo se mancano usa quelle del titolare.",
+          "═══ INFO REALI TROVATE SUL WEB (USA QUESTE — NON INVENTARE) ═══",
+          "Le seguenti informazioni sull'attivita' sono state recuperate da una ricerca web reale e dallo scraping del sito ufficiale.",
+          "REGOLE TASSATIVE:",
+          "- TELEFONO/INDIRIZZO/ORARI: USA ESATTAMENTE quelli qui sotto. NIENTE numeri inventati.",
+          "- TITOLARE/DESCRIZIONE: USA quelli reali, non frasi generiche tipo 'tradizione di famiglia'.",
+          "- MENU/PIATTI: USA le voci REALI con i loro nomi specifici e prezzi se presenti.",
+          "- FOTO: USA gli URL elencati sotto 'FOTO ESTRATTE DAL SITO UFFICIALE' DIRETTAMENTE in <img src=\"URL_QUI\" />. Sono URL verificati che esistono davvero. NON usare Unsplash o source.unsplash se hai foto reali disponibili.",
+          "- LINK SOCIAL (Facebook/Instagram): metti i link nei contatti come <a href> reali.",
+          "Solo se un dato manca completamente dalle info qui sotto, usa quello che ha fornito il titolare nel suo prompt.",
+          "",
           webEnrichment,
           "═══════════════════════════════════════",
           "",
@@ -3932,15 +3940,134 @@ async function applyOperations(target, operations) {
   return result;
 }
 
+// Scraping HTML del sito ufficiale per estrarre URL diretti delle immagini.
+// L'AI poi le usera' come <img src="..."> nel sito vetrina. Filtriamo loghi,
+// icone, sprite per tenere solo foto reali del locale/cibo/persone.
+async function scrapeWebsiteImages(siteUrl) {
+  if (!siteUrl) return [];
+  try {
+    const ac = new AbortController();
+    const timeoutId = setTimeout(() => ac.abort(), 8000);
+    const r = await fetch(siteUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; LocoCodeBot/1.0)" },
+      signal: ac.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!r.ok) return [];
+    const html = await r.text();
+    const base = new URL(siteUrl);
+    const found = new Set();
+
+    // 1) Tag <img src="...">
+    for (const m of html.matchAll(/<img[^>]+(?:src|data-src|data-lazy-src)=["']([^"']+)["']/gi)) {
+      try { found.add(new URL(m[1], base).href); } catch {}
+    }
+    // 2) srcset (prendi la prima URL)
+    for (const m of html.matchAll(/srcset=["']([^"']+)["']/gi)) {
+      const first = m[1].split(",")[0]?.trim().split(/\s+/)[0];
+      if (first) {
+        try { found.add(new URL(first, base).href); } catch {}
+      }
+    }
+    // 3) og:image / twitter:image
+    for (const m of html.matchAll(/<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]+content=["']([^"']+)["']/gi)) {
+      try { found.add(new URL(m[1], base).href); } catch {}
+    }
+    // 4) background-image: url(...) inline style
+    for (const m of html.matchAll(/background-image:\s*url\(['"]?([^'")]+)['"]?\)/gi)) {
+      try { found.add(new URL(m[1], base).href); } catch {}
+    }
+
+    // Filtra le immagini "vere" (foto del locale/menu/persone)
+    const photos = [...found].filter((url) => {
+      const lower = url.toLowerCase();
+      // Esclude: loghi, icone, sprite, pixel tracking, placeholder
+      if (/\b(logo|favicon|icon|sprite|placeholder|spacer|tracking|pixel|loader|spinner|arrow|chevron)\b/.test(lower)) return false;
+      if (/\b1x1\b|\bw-\d{1,2}\b|\bh-\d{1,2}\b/.test(lower)) return false;
+      // Esclude social widgets / pubblicita'
+      if (/google.*tag|googleadservices|doubleclick|facebook\.com\/tr|fbcdn.*ad|analytics/.test(lower)) return false;
+      // Accetta solo estensioni foto vere
+      if (!/\.(jpe?g|png|webp|avif)(\?|#|$)/i.test(lower)) return false;
+      return true;
+    });
+
+    // Limita a 8 immagini "diverse" (deduplicazione semplice per nome file)
+    const dedupedByName = [];
+    const seenNames = new Set();
+    for (const url of photos) {
+      const fname = url.split("/").pop()?.split("?")[0] || url;
+      if (seenNames.has(fname)) continue;
+      seenNames.add(fname);
+      dedupedByName.push(url);
+      if (dedupedByName.length >= 8) break;
+    }
+    return dedupedByName;
+  } catch (err) {
+    console.warn(`[scrape] ${siteUrl}: ${err.message}`);
+    return [];
+  }
+}
+
+// Estrae URL del "sito ufficiale" da una risposta perplexity. Cerca prima
+// nelle annotations (citazioni), poi nel testo. Preferisce domini che hanno
+// il nome del business nel dominio (es. pizzeriabrandi.com) oppure il primo
+// non social/non aggregator.
+function pickOfficialSiteUrl(perplexityData, businessHint = "") {
+  const annotations = perplexityData?.choices?.[0]?.message?.annotations || [];
+  const citationUrls = annotations
+    .map((a) => a?.url_citation?.url)
+    .filter(Boolean);
+  const textContent = perplexityData?.choices?.[0]?.message?.content || "";
+  const urlsInText = [...textContent.matchAll(/https?:\/\/[^\s\)\]\"<>]+/g)].map((m) => m[0]);
+  const allUrls = [...new Set([...citationUrls, ...urlsInText])];
+
+  // Pattern aggregator/social da escludere come "sito ufficiale"
+  const AGGREGATOR_PATTERNS = [
+    /yelp\.com/i, /tripadvisor\./i, /thefork\./i, /thefork\b/i, /50toppizza\./i,
+    /facebook\.com/i, /instagram\.com/i, /tiktok\.com/i, /twitter\.com/i, /x\.com/i,
+    /youtube\.com/i, /linkedin\.com/i, /google\.[a-z]+\/maps/i,
+    /paginegialle\./i, /paginebianche\./i, /misterimprese\./i, /opentable\./i,
+    /thefork\./i, /restaurant.*guru/i, /booking\.com/i, /\.wikipedia\./i,
+  ];
+
+  // Normalizza hint (nome business) per matching
+  const hintWords = String(businessHint).toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4);
+
+  // Scoring: + match nome business nel dominio, - se aggregator
+  const scored = allUrls.map((url) => {
+    let score = 0;
+    if (AGGREGATOR_PATTERNS.some((p) => p.test(url))) score -= 100;
+    try {
+      const u = new URL(url);
+      const host = u.hostname.toLowerCase();
+      // bonus per nome business nel dominio
+      for (const w of hintWords) {
+        if (host.includes(w)) score += 10;
+      }
+      // homepage o radice = preferita
+      if (u.pathname === "/" || u.pathname === "" || u.pathname.length < 10) score += 3;
+    } catch { score -= 50; }
+    return { url, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored.find((s) => s.score > -50);
+  return best?.url || "";
+}
+
 // Ricerca info reali su un'attivita' usando un modello "online" di OpenRouter
 // che ha accesso al web (Perplexity Sonar). Estrae: telefono, indirizzo, orari,
 // menu/servizi, foto link reali. Costo ~€0.005 per query. Tempo ~5-10s.
+// Inoltre se trova un sito ufficiale fa scraping HTML per estrarre URL foto
+// reali del locale (gallery, hero, og:image, ecc.).
 // Ritorna stringa formattata pronta per essere inclusa nel prompt, oppure ""
 // se non e' riuscito a trovare info.
 async function searchBusinessInfo(userPrompt, apiKey) {
   if (!apiKey) return "";
   const systemPrompt = "Sei un assistente di ricerca web. Cerca su Google/Maps informazioni reali e verificabili sull'attivita' commerciale descritta. Ritorna SOLO i dati strutturati che trovi davvero — niente inventato. Se non trovi un dato, ometti la riga corrispondente.";
-  const askPrompt = `Trovami le informazioni reali su questa attivita' commerciale (cerca su Google, Google Maps, Pagine Gialle, sito ufficiale se esiste):
+  const askPrompt = `Trovami le informazioni reali su questa attivita' commerciale (cerca su Google, Google Maps, Pagine Gialle, sito ufficiale, Facebook, Instagram, Tripadvisor):
 
 ${userPrompt}
 
@@ -3950,18 +4077,22 @@ NOME UFFICIALE: ...
 INDIRIZZO: ... (via, numero civico, citta', CAP)
 TELEFONO: ...
 ORARI: ... (giorni e fasce orarie)
-SITO/PAGINA FB: ...
-DESCRIZIONE: ... (1-2 frasi dalla loro presentazione reale)
-MENU/SERVIZI TIPICI: ... (5-8 voci REALI che servono, prezzi se trovati)
-FOTO REALI: ... (URL Google Maps photos, Instagram, sito ufficiale — uno per riga, fino a 6)
-RECENSIONI: ... (nota: rating medio e 1-2 frasi di review reali)
+SITO UFFICIALE: ... (URL homepage del sito proprio, NON aggregatori tipo Yelp)
+PAGINA FACEBOOK: ... (URL pagina FB pubblica se esiste)
+PAGINA INSTAGRAM: ... (URL profilo IG pubblico se esiste)
+TITOLARE: ... (nome del titolare o chef se presente nelle info pubbliche)
+DESCRIZIONE: ... (2-3 frasi dalla loro presentazione reale)
+MENU/SERVIZI TIPICI: ... (5-8 voci REALI con prezzi se trovati, una per riga con trattino iniziale)
+FOTO REALI: ... (URL DIRETTI a immagini .jpg/.png che hai trovato — dal sito ufficiale, Tripadvisor uploaded photos, Instagram posts — una per riga, fino a 6)
+RECENSIONI: ... (rating medio e 2 frasi di review reali tra virgolette)
 
 Se non trovi NULLA di reale sull'attivita' (perche' troppo piccola o nuova) rispondi solo: NO_INFO_FOUND`;
 
   // Modello online di Perplexity via OpenRouter. Sonar-small e' il piu'
-  // economico, fa search reale. Timeout 25s.
+  // economico, fa search reale. Timeout 30s.
   const ac = new AbortController();
   const timeoutId = setTimeout(() => ac.abort(), 30000);
+  let perplexityData = null;
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -3977,7 +4108,7 @@ Se non trovi NULLA di reale sull'attivita' (perche' troppo piccola o nuova) risp
           { role: "system", content: systemPrompt },
           { role: "user", content: askPrompt },
         ],
-        max_tokens: 1500,
+        max_tokens: 1800,
         temperature: 0.2,
       }),
       signal: ac.signal,
@@ -3986,13 +4117,32 @@ Se non trovi NULLA di reale sull'attivita' (perche' troppo piccola o nuova) risp
       const t = await res.text().catch(() => "");
       throw new Error(`HTTP ${res.status}: ${t.slice(0, 200)}`);
     }
-    const data = await res.json();
-    const content = String(data?.choices?.[0]?.message?.content || "").trim();
-    if (!content || /^NO[_ ]INFO[_ ]FOUND/i.test(content)) return "";
-    return content;
+    perplexityData = await res.json();
   } finally {
     clearTimeout(timeoutId);
   }
+
+  const content = String(perplexityData?.choices?.[0]?.message?.content || "").trim();
+  if (!content || /^NO[_ ]INFO[_ ]FOUND/i.test(content)) return "";
+
+  // Tentativo di scraping del sito ufficiale per estrarre foto vere
+  const officialSiteUrl = pickOfficialSiteUrl(perplexityData, userPrompt);
+  let scrapedPhotos = [];
+  if (officialSiteUrl) {
+    console.log(`[web-search] Sito ufficiale trovato: ${officialSiteUrl} — scraping foto...`);
+    scrapedPhotos = await scrapeWebsiteImages(officialSiteUrl);
+    if (scrapedPhotos.length > 0) {
+      console.log(`[web-search] ${scrapedPhotos.length} foto estratte dal sito ufficiale.`);
+    }
+  }
+
+  // Costruzione output finale: risposta perplexity + foto scrapate
+  let output = content;
+  if (scrapedPhotos.length > 0) {
+    output += "\n\nFOTO ESTRATTE DAL SITO UFFICIALE (questi URL sono VERIFICATI, USA QUESTI in <img src='...'> nel sito vetrina):\n";
+    output += scrapedPhotos.map((u) => `- ${u}`).join("\n");
+  }
+  return output;
 }
 
 async function callOpenRouterOnce({
