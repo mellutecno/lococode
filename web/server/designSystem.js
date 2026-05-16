@@ -69,13 +69,15 @@ const CARD_JSX = `import React from 'react';
 
 const VARIANTS = {
   glass:
-    'bg-white/70 backdrop-blur-xl border border-white/60 shadow-xl ring-1 ring-slate-200/50',
+    'bg-slate-900/60 backdrop-blur-xl border border-white/10 shadow-xl ring-1 ring-white/5 text-slate-100',
   elevated:
-    'bg-white border border-slate-200 shadow-lg',
+    'bg-slate-900/80 border border-white/10 shadow-lg text-slate-100',
   plain:
-    'bg-white border border-slate-200 shadow-sm',
+    'bg-slate-900/50 border border-white/10 shadow-sm text-slate-100',
   dark:
-    'bg-slate-900/80 backdrop-blur-xl border border-slate-700/60 shadow-xl text-slate-100',
+    'bg-slate-950/80 backdrop-blur-xl border border-white/10 shadow-xl text-slate-100',
+  light:
+    'bg-white border border-slate-200 shadow-lg text-slate-900',
 };
 
 export function Card({
@@ -106,9 +108,9 @@ export function CardHeader({ title, subtitle, action, className = '' }) {
     <div className={['flex items-start justify-between mb-4', className].join(' ')}>
       <div className="min-w-0">
         {title ? (
-          <h3 className="text-lg font-bold tracking-tight text-slate-900 truncate">{title}</h3>
+          <h3 className="text-lg font-bold tracking-tight text-white truncate">{title}</h3>
         ) : null}
-        {subtitle ? <p className="text-sm text-slate-500 mt-0.5">{subtitle}</p> : null}
+        {subtitle ? <p className="text-sm text-slate-400 mt-0.5">{subtitle}</p> : null}
       </div>
       {action ? <div className="flex-shrink-0 ml-3">{action}</div> : null}
     </div>
@@ -349,23 +351,24 @@ const AUTH_LAYOUT_JSX = `import React from 'react';
 
 export function AuthLayout({ title, subtitle, children, footer }) {
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden bg-gradient-to-br from-slate-50 via-white to-indigo-50">
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-300/40 blur-3xl pointer-events-none" />
-      <div className="absolute bottom-[-15%] right-[-10%] w-[45%] h-[45%] rounded-full bg-purple-300/40 blur-3xl pointer-events-none" />
-      <div className="absolute top-[30%] right-[20%] w-[20%] h-[20%] rounded-full bg-rose-200/30 blur-3xl pointer-events-none" />
+    <div className="min-h-screen w-full relative flex items-center justify-center p-4 overflow-hidden">
+      {/* Aurora orbs scure brand-coerenti, NO bg gradient chiaro che farebbe cornice bianca */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-600/30 blur-3xl pointer-events-none" />
+      <div className="absolute bottom-[-15%] right-[-10%] w-[45%] h-[45%] rounded-full bg-purple-600/25 blur-3xl pointer-events-none" />
+      <div className="absolute top-[30%] right-[20%] w-[20%] h-[20%] rounded-full bg-fuchsia-500/15 blur-3xl pointer-events-none" />
 
       <div className="relative w-full max-w-md">
-        <div className="bg-white/70 backdrop-blur-2xl rounded-3xl shadow-2xl ring-1 ring-white/60 border border-white/60 p-8">
+        <div className="bg-slate-900/80 backdrop-blur-2xl rounded-3xl shadow-2xl ring-1 ring-white/10 border border-white/10 p-8">
           <div className="mb-6 text-center">
             {title ? (
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+              <h1 className="text-2xl font-bold tracking-tight text-white">
                 {title}
               </h1>
             ) : null}
-            {subtitle ? <p className="text-sm text-slate-500 mt-1.5">{subtitle}</p> : null}
+            {subtitle ? <p className="text-sm text-slate-400 mt-1.5">{subtitle}</p> : null}
           </div>
           {children}
-          {footer ? <div className="mt-6 text-center text-sm text-slate-500">{footer}</div> : null}
+          {footer ? <div className="mt-6 text-center text-sm text-slate-400">{footer}</div> : null}
         </div>
       </div>
     </div>
@@ -377,18 +380,21 @@ export default AuthLayout;
 
 const PAGE_LAYOUT_JSX = `import React from 'react';
 
+// PageLayout — DARK theme coerente con lc-theme.css. NESSUN bg light qui:
+// il body ha gia' il gradient navy + aurora, questo layout e' TRASPARENTE
+// per non creare cornici chiare visibili intorno al contenuto.
 export function PageLayout({ sidebar, header, children, maxWidth = '7xl' }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/40">
-      <div className="flex min-h-screen">
+    <div className="min-h-screen w-full">
+      <div className="flex min-h-screen w-full">
         {sidebar ? (
-          <aside className="hidden md:flex w-64 flex-shrink-0 flex-col border-r border-slate-200/70 bg-white/60 backdrop-blur-xl">
+          <aside className="hidden md:flex w-64 flex-shrink-0 flex-col border-r border-white/10 bg-slate-900/40 backdrop-blur-xl">
             {sidebar}
           </aside>
         ) : null}
         <div className="flex-1 flex flex-col min-w-0">
           {header ? (
-            <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/70 backdrop-blur-xl">
+            <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-900/60 backdrop-blur-xl">
               <div className={'mx-auto px-6 py-4 max-w-' + maxWidth}>{header}</div>
             </header>
           ) : null}
@@ -403,12 +409,12 @@ export function PageLayout({ sidebar, header, children, maxWidth = '7xl' }) {
 
 export function SidebarBrand({ name, icon: Icon }) {
   return (
-    <div className="px-5 py-5 border-b border-slate-200/60">
+    <div className="px-5 py-5 border-b border-white/10">
       <div className="flex items-center gap-2.5">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/30">
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-md shadow-indigo-500/30">
           {Icon ? <Icon size={18} strokeWidth={2.4} /> : <span className="font-bold">{(name||'A')[0]}</span>}
         </div>
-        <span className="font-bold text-slate-900 tracking-tight">{name}</span>
+        <span className="font-bold text-white tracking-tight">{name}</span>
       </div>
     </div>
   );
@@ -421,8 +427,8 @@ export function SidebarItem({ icon: Icon, label, active = false, onClick }) {
       className={[
         'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all',
         active
-          ? 'bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-700 shadow-sm ring-1 ring-indigo-100'
-          : 'text-slate-600 hover:bg-slate-100/70 hover:text-slate-900',
+          ? 'bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-white shadow-sm ring-1 ring-indigo-400/30'
+          : 'text-slate-300 hover:bg-white/5 hover:text-white',
       ].join(' ')}
     >
       {Icon ? <Icon size={18} strokeWidth={2} /> : null}
@@ -439,8 +445,8 @@ export function PageHeader({ title, subtitle, action }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
-        {subtitle ? <p className="text-sm text-slate-500 mt-1">{subtitle}</p> : null}
+        <h1 className="text-2xl font-bold tracking-tight text-white">{title}</h1>
+        {subtitle ? <p className="text-sm text-slate-400 mt-1">{subtitle}</p> : null}
       </div>
       {action ? <div className="flex-shrink-0">{action}</div> : null}
     </div>
