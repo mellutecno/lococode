@@ -77,25 +77,12 @@ const commonModels = [
 // Il tier viene scelto dall'utente al momento della creazione dell'app.
 // L'orchestratore usa il modello giusto per la fase giusta.
 const GENERATION_TIERS = {
-  base: {
-    label: "Base",
-    description: "App funzionante, design pulito ma essenziale",
-    color: "#10b981",
-    feeEur: 3.99,
-    estCost: { min: 0.20, max: 0.50 },
-    models: {
-      sdd: "deepseek/deepseek-v4-pro",
-      backend: "deepseek/deepseek-v4-pro",
-      frontend: "deepseek/deepseek-v4-pro",
-      review: null,
-    },
-  },
-  media: {
-    label: "Media",
-    description: "Frontend curato con Kimi (specializzato in design)",
+  starter: {
+    label: "Starter",
+    description: "App completa con frontend curato (Kimi K2.6) e backend solido",
     color: "#3b82f6",
     feeEur: 4.99,
-    estCost: { min: 0.40, max: 0.80 },
+    estCost: { min: 0.30, max: 0.70 },
     models: {
       sdd: "deepseek/deepseek-v4-pro",
       backend: "deepseek/deepseek-v4-pro",
@@ -179,7 +166,7 @@ function computePriceFromSdd(target) {
   if (isWebsite) {
     return {
       complexityScore: score,
-      suggestedTier: "base",
+      suggestedTier: "starter",
       priceEur: 4.99,
       breakdown: {
         taskCount,
@@ -189,11 +176,10 @@ function computePriceFromSdd(target) {
     };
   }
 
-  // Mapping score -> tier suggerito e prezzo
-  // Base €3.99 (score 0-25), Media €4.99 (26-45), Pro €9.99 (46-70), Premium €19.99 (71+)
+  // Mapping score -> tier ASSEGNATO (utente non sceglie) e prezzo.
+  // 3 tier: Starter €4.99 (0-45), Pro €9.99 (46-70), Premium €19.99 (71+)
   let suggestedTier, priceEur;
-  if (score <= 25) { suggestedTier = "base"; priceEur = 3.99; }
-  else if (score <= 45) { suggestedTier = "media"; priceEur = 4.99; }
+  if (score <= 45) { suggestedTier = "starter"; priceEur = 4.99; }
   else if (score <= 70) { suggestedTier = "pro"; priceEur = 9.99; }
   else { suggestedTier = "premium"; priceEur = 19.99; }
 
@@ -219,9 +205,16 @@ function requiresPaymentFlow(target, user) {
   return true;
 }
 
+// Backward compat: app vecchie hanno generationTier "base" o "media".
+// Le mappiamo a "starter" che le ingloba (modelli di media: deepseek + kimi).
+function normalizeTier(tier) {
+  const t = String(tier || "starter").toLowerCase();
+  if (t === "base" || t === "media") return "starter";
+  return t;
+}
 function getTierModels(tier) {
-  const t = String(tier || "base").toLowerCase();
-  return GENERATION_TIERS[t] ? GENERATION_TIERS[t].models : GENERATION_TIERS.base.models;
+  const t = normalizeTier(tier);
+  return GENERATION_TIERS[t] ? GENERATION_TIERS[t].models : GENERATION_TIERS.starter.models;
 }
 
 const app = express();
@@ -731,18 +724,16 @@ app.post("/api/generate", async (req, res) => {
     }
   }
 
-  // Tier di generazione: chi sceglie quale combinazione di modelli usare.
-  // Default "base" (DeepSeek). Solo l'admin puo' attualmente scegliere tier
-  // superiori finche' non agganciamo i tier ai piani di abbonamento.
-  const requestedTier = String(req.body.generationTier || "").trim().toLowerCase();
-  const validTiers = ["base", "media", "pro", "premium"];
-  const generationTier = validTiers.includes(requestedTier) ? requestedTier : "base";
-  if (!isAdminUser(user) && generationTier !== "base") {
-    // Per ora: utenti non-admin vincolati a "base". Quando aggiungeremo
-    // l'abbonamento Premium, qui controlleremo l'eligibilita'.
-    // TODO: sbloccare tier in base al piano sottoscritto.
-  }
-  const effectiveTier = isAdminUser(user) ? generationTier : "base";
+  // Tier di generazione: 3 tier (starter/pro/premium). L'utente NON sceglie:
+  // il tier viene ASSEGNATO dal sistema dopo l'analisi SDD in base allo score
+  // di complessita'. Qui partiamo da "starter" come placeholder iniziale (vale
+  // per la sola fase SDD che usa comunque DeepSeek). Dopo l'analisi
+  // computePriceFromSdd produce suggestedTier che diventa il tier finale.
+  // L'admin puo' forzare un tier via req.body.generationTier per testare.
+  const validTiers = ["starter", "pro", "premium"];
+  const requestedTier = normalizeTier(String(req.body.generationTier || "").trim().toLowerCase());
+  const adminChosenTier = isAdminUser(user) && validTiers.includes(requestedTier) ? requestedTier : null;
+  const effectiveTier = adminChosenTier || "starter";
 
   // Kind: webapp (default, flusso completo con backend) oppure website (sito
   // vetrina statico, niente backend). Influenza prompt e pipeline.
@@ -2662,15 +2653,21 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       // che, vedendo pricing.status==="paid", saltera' la fase SDD e proseguira'.
       if (target.pricing?.status === "estimate_pending") {
         const estimate = computePriceFromSdd(target);
+        // ASSEGNA il tier dal sistema (non lo sceglie piu' l'utente):
+        // suggestedTier diventa il generationTier finale dell'app, cosi' dopo
+        // il pagamento le fasi backend/frontend useranno i modelli del tier
+        // assegnato (es. Premium = Sonnet 4.5).
+        target.generationTier = normalizeTier(estimate.suggestedTier);
         target.pricing = {
           ...(target.pricing || {}),
           ...estimate,
+          chosenTier: target.generationTier,
           status: "awaiting_payment",
           estimatedAt: new Date().toISOString(),
         };
         appendOperationalLog(
           target,
-          `✓ Analisi pronta. Preventivo €${estimate.priceEur.toFixed(2)} (${estimate.suggestedTier}, complessita' ${estimate.complexityScore}/100). In attesa di conferma utente.`,
+          `✓ Analisi pronta. Preventivo €${estimate.priceEur.toFixed(2)} (tier ${estimate.suggestedTier} assegnato, complessita' ${estimate.complexityScore}/100). In attesa di conferma utente.`,
         );
         return {
           summary: `Analisi completata. Preventivo €${estimate.priceEur.toFixed(2)} in attesa di conferma.`,
@@ -2803,7 +2800,7 @@ function buildOrchestratorSystemPrompt() {
     "- Non fare domande bloccanti quando puoi scegliere una soluzione ragionevole.",
     "- Non inserire API key o segreti nei file.",
     "- Ogni progetto generato deve tendere a un prodotto testabile: frontend, backend, database/config e istruzioni di avvio coerenti.",
-    "- Ogni progetto deve avere un flusso attivazione: chiave di avvio precaricata, pulsante 'Abbonati' o 'Attiva licenza', e gestione chiave definitiva mensile.",
+    "- IMPORTANTE: NON inserire MAI flussi di licenza, trial, attivazione, abbonamento, chiavi precaricate o scadenze nell'app generata. Trial, pagamento e abbonamento sono gestiti dal sistema LocoCode (esterno) a monte: l'app deve essere SOLO il prodotto richiesto dall'utente, niente schermate 'Attivazione' o 'Abbonati' o banner trial.",
     "- Non proporre Render, Netlify, Vercel, Firebase o servizi esterni: il prodotto deve girare sul server LocoCode, dentro la cartella del progetto dell'utente.",
     "- Il backend deve esporre API avviabili sul server e il frontend deve poter usare una URL API configurabile con VITE_API_URL.",
     "- Il database deve stare nella cartella del progetto, preferibilmente SQLite. Precarica dati di esempio realistici.",
@@ -2880,7 +2877,7 @@ function buildInitialSpecsPrompt(initialPrompt) {
     "NON usare: T1/T2/T19, Task-1, #1, bullet senza numero. Solo numerazione 1.1/1.2/2.1/2.2 etc.",
     "- .lc/spec/sdd.md: 5 sezioni brevi: 1) Descrizione progetto (50 parole), 2) Utenti e ruoli (50 parole), 3) Funzionalita principali (bullet list di 6-8 voci), 4) Vincoli tecnici (bullet list), 5) Flusso principale (3-4 step). NIENTE PROSA VERBOSA.",
     "- .lc/spec/architecture.md: tabelle SQLite con colonne e tipi (in markdown table), endpoint FastAPI con metodo/path/payload (lista compatta), componenti React principali (lista nomi). NO descrizioni romanzate.",
-    "Il piano deve includere: link finale dell'app, chiave di avvio iniziale, flusso abbonamento mensile, gestione scadenza chiave.",
+    "Il piano deve includere SOLO le funzionalita' richieste dall'utente. NIENTE task su attivazione, licenze, chiavi mensili o abbonamenti: lo gestisce LocoCode esternamente.",
     "Se servono API esterne, pianifica una schermata Impostazioni per inserire le chiavi. Senza chiave l'app mostra dati di esempio funzionanti.",
     "Marca completati solo i task di specifica realmente coperti in questa fase.",
 
@@ -2931,8 +2928,7 @@ function buildInitialBackendPrompt(initialPrompt, projectMemory) {
     "ATTENZIONE: PyJWT e python-jose sono DIVERSI. Se importi 'jwt' metti PyJWT. Se importi 'jose' metti python-jose.",
     "Includi SEMPRE in requirements.txt anche python-dotenv anche se non lo importi direttamente — molti template lo aspettano.",
     "",
-    "deploy/lococode.json deve descrivere nome servizio, porta suggerita, comando backend, comando build frontend, percorso SQLite, credenziali di prova, chiave provvisoria, chiave di attivazione mensile e API esterne richieste.",
-    "Il backend deve gestire una chiave di attivazione iniziale precaricata e predisporre una chiave definitiva con scadenza mensile per l'abbonamento.",
+    "deploy/lococode.json deve descrivere nome servizio, porta suggerita, comando backend, comando build frontend, percorso SQLite, credenziali di prova e API esterne richieste.",
     "Se sono necessarie API esterne, crea endpoint SQLite per salvare le chiavi. Se mancano, restituisci dati di esempio e messaggi chiari, non errori bloccanti.",
     "Non usare render.yaml, Netlify, Vercel o altri deploy esterni.",
     "Non inserire dati sanitari reali, API key o segreti.",
@@ -2962,17 +2958,15 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "5. frontend/tailwind.config.js             — config Tailwind",
     "6. frontend/postcss.config.js              — config PostCSS",
     "7. frontend/index.html                     — entry HTML Vite",
-    "8. frontend/src/components/TrialBanner.jsx — banner trial (template fornito sotto)",
-    "9. Altri componenti/pagine (se servono)",
-    "10. preview/index.html                     — fallback statico (opzionale)",
-    "11. .lc/spec/tasks.md",
-    "12. .lc/memory/project_context.md",
+    "8. Altri componenti/pagine (se servono)",
+    "9. preview/index.html                      — fallback statico (opzionale)",
+    "10. .lc/spec/tasks.md",
+    "11. .lc/memory/project_context.md",
     "",
     "REGOLA D'ORO: App.jsx + main.jsx + package.json + index.css DEVONO essere completi e funzionanti. Se devi tagliare, taglia preview/index.html e i task md. NIENTE FILE VUOTI O TRONCATI A META.",
     "",
     "Il frontend deve essere in italiano, gestionale, responsive, navigabile e con dati di prova realistici ma fittizi.",
     "L'utente deve poter provare l'MVP come prodotto: pagine principali, pulsanti, form e routing devono funzionare nella preview reale.",
-    "Il frontend deve mostrare un'area 'Attivazione' o 'Abbonamento' con lo stato della licenza corrente e un pulsante per abbonarsi o attivare la chiave definitiva.",
     "Se l'app usa API esterne, il frontend deve avere una schermata Impostazioni/Chiavi API dove inserire la chiave; senza chiave mostra dati di esempio funzionanti, non si ferma.",
     "FONDAMENTALE - Chiamate API: usa SEMPRE const API = import.meta.env.VITE_API_URL || ''; poi chiama fetch(API + '/endpoint'). Non scrivere mai localhost, 127.0.0.1 o porte hardcoded. VITE_API_URL viene iniettato da LocoCode al build e punta al backend reale.",
     "FONDAMENTALE - Gestione risposte fetch ROBUSTA: ogni helper fetch DEVE controllare il Content-Type prima di chiamare res.json(). Se il backend non e attivo, nginx serve l'index.html invece dell'API e res.json() crasherebbe con 'Unexpected token <'. Pattern obbligatorio: const ct = (res.headers.get('content-type')||'').toLowerCase(); if (!ct.includes('application/json')) throw new Error('Servizio temporaneamente non disponibile.'); Poi try/catch su res.json(). Non mostrare MAI all'utente messaggi tecnici come 'Unexpected token' o 'is not valid JSON' — sempre messaggi friendly italiani.",
@@ -3262,7 +3256,6 @@ function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, 
     "- QUALITA' VISIVA: mantieni lo stile premium del design system (gradient indigo->purple, glassmorphism, font Inter). Non degradare mai il livello visivo.",
     "- LIBRERIE VIETATE: non aggiungere mai @heroicons/react, @headlessui/react, @radix-ui/*, recharts, chart.js, react-router-dom, date-fns, axios, lodash. Usa SOLO lucide-react per le icone.",
     "- Mantieni sempre funzionante il link finale: se una chiave API esterna manca, usa dati di prova, non errori.",
-    "- Mantieni il flusso attivazione -> abbonamento mensile.",
     "- Non creare mai .venv, venv, node_modules, dist o build.",
     "- Restituisci solo blocchi file nel formato richiesto.",
   ].join("\n");

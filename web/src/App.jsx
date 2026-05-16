@@ -949,8 +949,7 @@ function AppHeader({ selectedApp, status, activeView, currentUser, onAuth, onLog
 }
 
 const FALLBACK_TIERS = {
-  base: { key: "base", label: "Base", description: "App funzionante, design pulito ma essenziale", color: "#10b981", feeEur: 3.99, estCost: { min: 0.20, max: 0.50 }, hasReview: false },
-  media: { key: "media", label: "Media", description: "Frontend curato (Kimi K2.6 specializzato in design)", color: "#3b82f6", feeEur: 4.99, estCost: { min: 0.40, max: 0.80 }, hasReview: false },
+  starter: { key: "starter", label: "Starter", description: "App completa con frontend curato (Kimi K2.6) e backend solido", color: "#3b82f6", feeEur: 4.99, estCost: { min: 0.30, max: 0.70 }, hasReview: false },
   pro: { key: "pro", label: "Pro", description: "Frontend + review automatica del design con Claude Haiku 4.5", color: "#8b5cf6", feeEur: 9.99, estCost: { min: 0.50, max: 0.90 }, hasReview: true },
   premium: { key: "premium", label: "Premium", description: "Tutto Claude Sonnet 4.5 + review GPT-5. Massima qualita.", color: "#f59e0b", feeEur: 19.99, estCost: { min: 1.50, max: 3.50 }, hasReview: true },
 };
@@ -959,17 +958,10 @@ function TierSelector({ value, onChange, isAdmin, tiersCatalog }) {
   // Tier visualizzati come "tipi di app" con esempi concreti. Niente prezzi
   // esposti qui: l'utente sceglie cosa vuole, il prezzo emerge dal SDD dopo.
   const TIER_PROFILES = {
-    base: {
-      label: "Base",
-      tagline: "App semplici",
-      examples: ["Lista della spesa", "Calcolatrice", "Contatore", "TODO basic"],
-      icon: "🪶",
-      color: "#10b981",
-    },
-    media: {
-      label: "Media",
-      tagline: "App discrete",
-      examples: ["Blog con login", "Mini agenda", "Gestionale piccolo", "Form complessi"],
+    starter: {
+      label: "Starter",
+      tagline: "App semplici o medie",
+      examples: ["Lista della spesa", "Mini gestionale", "Blog con login", "Form complessi"],
       icon: "📋",
       color: "#3b82f6",
     },
@@ -988,7 +980,7 @@ function TierSelector({ value, onChange, isAdmin, tiersCatalog }) {
       color: "#f59e0b",
     },
   };
-  const order = ["base", "media", "pro", "premium"];
+  const order = ["starter", "pro", "premium"];
   return (
     <div className="tier-selector">
       <div className="tier-selector-head">
@@ -1042,12 +1034,17 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
             placeholder="Esempio: Gestionale studio medico"
           />
         </label>
-        <TierSelector
-          value={generationTier}
-          onChange={setGenerationTier}
-          isAdmin={isAdmin}
-          tiersCatalog={tiersCatalog}
-        />
+        {/* Tier picker visibile SOLO all'admin per test. L'utente normale
+            non sceglie: il tier viene assegnato dal sistema dopo l'analisi
+            in base alla complessita' dell'app (vedi EstimateView). */}
+        {isAdmin && (
+          <TierSelector
+            value={generationTier}
+            onChange={setGenerationTier}
+            isAdmin={isAdmin}
+            tiersCatalog={tiersCatalog}
+          />
+        )}
         <Composer
           value={prompt}
           onChange={setPrompt}
@@ -1410,9 +1407,6 @@ function EstimateView({ app, busy, onConfirmPayment, onCancelEstimate, onBackToP
   const score = Number(pf.complexityScore || 0);
   const tier = pf.suggestedTier || "base";
   const breakdown = pf.breakdown || {};
-  const chosenTier = pf.chosenTier || "base";
-  const tierMismatch = chosenTier !== tier;
-  const tierUpgrade = ["base", "media", "pro", "premium"].indexOf(tier) > ["base", "media", "pro", "premium"].indexOf(chosenTier);
 
   const signals = [];
   if (breakdown.hasAuth) signals.push({ icon: "🔐", label: "Login e registrazione utenti" });
@@ -1473,19 +1467,9 @@ function EstimateView({ app, busy, onConfirmPayment, onCancelEstimate, onBackToP
           <span className="estimate-complexity-label">Complessità rilevata: <strong>{score}/100</strong> · categoria <strong>{tier}</strong></span>
         </div>
 
-        {tierMismatch && (
-          <div className={`estimate-mismatch ${tierUpgrade ? "upgrade" : "downgrade"}`}>
-            {tierUpgrade ? (
-              <>
-                <strong>⚠ La tua idea richiede tier <em>{tier}</em></strong> ma avevi scelto <em>{chosenTier}</em>. Proseguendo, la creazione sarà adattata a {tier} (€{price.toFixed(2)}).
-              </>
-            ) : (
-              <>
-                <strong>✨ Buona notizia:</strong> la tua idea è più semplice di {chosenTier}, paghi solo €{price.toFixed(2)} (categoria {tier}).
-              </>
-            )}
-          </div>
-        )}
+        <div className="estimate-mismatch upgrade">
+          <strong>Tier assegnato dal sistema:</strong> <em>{tier}</em>. La complessita' della tua idea (score {score}/100) determina il prezzo. Non puoi scegliere un tier inferiore: se non vuoi pagare €{price.toFixed(2)}, annulla qui sotto.
+        </div>
 
         <div className="estimate-actions">
           <button
