@@ -711,6 +711,26 @@ app.post("/api/generate", async (req, res) => {
     return;
   }
 
+  // Limite anti-spam: un utente non-admin puo' avere SOLO un'app "in corso"
+  // alla volta. In corso = autopilot attivo, oppure flusso pricing non
+  // concluso (estimate_pending o awaiting_payment). Quando la prima e'
+  // completata, pagata o cancellata, puo' partirne un'altra. L'admin bypassa.
+  if (isNewApp && !isAdminUser(user)) {
+    const blocking = apps.find((a) => {
+      if (a.autopilot?.running) return true;
+      const ps = a.pricing?.status;
+      return ps === "estimate_pending" || ps === "awaiting_payment";
+    });
+    if (blocking) {
+      res.status(409).json({
+        error: `Hai gia' un progetto in corso: "${blocking.name}". Completalo, pagalo o cancellalo prima di crearne un altro.`,
+        app: publicApp(blocking),
+        reason: "another_in_progress",
+      });
+      return;
+    }
+  }
+
   // Tier di generazione: chi sceglie quale combinazione di modelli usare.
   // Default "base" (DeepSeek). Solo l'admin puo' attualmente scegliere tier
   // superiori finche' non agganciamo i tier ai piani di abbonamento.
@@ -1177,6 +1197,27 @@ async function startAutopilotRequest(req, res) {
         : "API key non disponibile. Inseriscila nelle impostazioni.",
     });
     return;
+  }
+
+  // Stessa regola "1 progetto in corso per utente" del POST /api/generate:
+  // se l'utente non-admin sta gia' lavorando su un'altra app, blocca il
+  // resume di questa. Idempotente: se il check "alreadyRunning" sotto
+  // restituisce true per QUESTO target, ovviamente non blocchiamo se stessi.
+  if (!isAdminUser(user)) {
+    const blocking = (await loadApps(user)).find((a) => {
+      if (a.id === target.id) return false;
+      if (a.autopilot?.running) return true;
+      const ps = a.pricing?.status;
+      return ps === "estimate_pending" || ps === "awaiting_payment";
+    });
+    if (blocking) {
+      res.status(409).json({
+        error: `Hai gia' un progetto in corso: "${blocking.name}". Completalo, pagalo o cancellalo prima di riprendere questo.`,
+        app: publicApp(blocking),
+        reason: "another_in_progress",
+      });
+      return;
+    }
   }
 
   if (target.autopilot?.running || runningJobs.has(jobKey(user.id, target.id))) {

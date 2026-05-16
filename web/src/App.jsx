@@ -790,10 +790,6 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
           </div>
           {!isEmpty && (
             <div className="projects-head-actions">
-              <button className="primary primary-blue" onClick={() => setActiveView("website")}>
-                <Globe size={18} />
-                <span>Nuovo sito</span>
-              </button>
               <button className="primary" onClick={() => setActiveView("apps")}>
                 <Plus size={20} />
                 <span>Nuova web app</span>
@@ -810,8 +806,8 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
 
         {isEmpty ? (
           <div className="creation-choice">
-            <h2 className="creation-choice-title">Cosa vuoi creare?</h2>
-            <p className="creation-choice-sub">Scegli il punto di partenza giusto. Puoi sempre creare l'altro in seguito.</p>
+            <h2 className="creation-choice-title">Crea la tua prima web app</h2>
+            <p className="creation-choice-sub">Gestionali, dashboard, strumenti interattivi. Backend, database e login inclusi.</p>
             <div className="creation-choice-grid">
               <button className="creation-card creation-card-app" onClick={() => setActiveView("apps")}>
                 <div className="creation-card-icon"><Workflow size={28} /></div>
@@ -822,18 +818,7 @@ function ProjectsView({ apps, selectedApp, currentUser, searchTerm, setSearchTer
                   <li>Login e registrazione</li>
                   <li>Dati persistenti</li>
                 </ul>
-                <span className="creation-card-cta">Crea web app →</span>
-              </button>
-              <button className="creation-card creation-card-site" onClick={() => setActiveView("website")}>
-                <div className="creation-card-icon"><Globe size={28} /></div>
-                <h3>Sito Web</h3>
-                <p>Vetrina online per attività: pizzeria, ristorante, parrucchiere, officina. Bello, veloce, statico.</p>
-                <ul className="creation-card-features">
-                  <li>Hero + menu/servizi</li>
-                  <li>Contatti + mappa</li>
-                  <li>Galleria foto</li>
-                </ul>
-                <span className="creation-card-cta">Crea sito web →</span>
+                <span className="creation-card-cta">Inizia →</span>
               </button>
             </div>
           </div>
