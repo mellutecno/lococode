@@ -3455,6 +3455,277 @@ select option:hover {
   border-color: var(--line-strong);
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   TIER SELECTOR — Card "tipo di app" con esempi, senza prezzi
+   ═══════════════════════════════════════════════════════════════════ */
+.tier-card-icon {
+  font-size: 28px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.tier-card-examples {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  font-size: 11px;
+  color: var(--muted);
+}
+.tier-card-examples li {
+  position: relative;
+  padding-left: 11px;
+}
+.tier-card-examples li::before {
+  content: "·";
+  position: absolute;
+  left: 2px;
+  color: var(--tier-color, var(--accent));
+  font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ESTIMATE VIEW — schermata preventivo dopo SDD
+   ═══════════════════════════════════════════════════════════════════ */
+.estimate-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+.estimate-card {
+  width: min(640px, 100%);
+  background: linear-gradient(140deg, rgba(124, 90, 240, 0.10) 0%, rgba(255, 255, 255, 0.04) 100%);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xl);
+  padding: 32px 30px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 16px 48px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  position: relative;
+}
+.estimate-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--brand-gradient);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+.estimate-header {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+.estimate-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(124, 90, 240, 0.12);
+  border: 1px solid rgba(124, 90, 240, 0.30);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.estimate-header h1 {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: -0.02em;
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.estimate-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 480px;
+}
+.estimate-app-name {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+}
+.estimate-app-name span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+.estimate-app-name strong { color: var(--ink); font-size: 15px; font-weight: 700; }
+
+.estimate-price-box {
+  text-align: center;
+  padding: 24px 18px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(124, 90, 240, 0.18) 0%, rgba(168, 85, 247, 0.12) 100%);
+  border: 1px solid rgba(124, 90, 240, 0.30);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+.estimate-price-label {
+  font-size: 12px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+.estimate-price-amount {
+  font-size: 48px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.estimate-price-discount {
+  font-size: 13px;
+  color: #34d399;
+  font-weight: 500;
+  max-width: 380px;
+}
+.estimate-price-discount strong { color: #34d399; font-weight: 700; }
+
+.estimate-section h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--ink-2);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.estimate-signals {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 600px) {
+  .estimate-signals { grid-template-columns: 1fr; }
+}
+.estimate-signals li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.estimate-signal-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+.estimate-empty-signals {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.estimate-complexity {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.estimate-complexity-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.estimate-complexity-fill {
+  height: 100%;
+  background: var(--brand-gradient);
+  transition: width 320ms var(--ease-out);
+}
+.estimate-complexity-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.estimate-complexity-label strong { color: var(--ink-2); }
+
+.estimate-mismatch {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.estimate-mismatch.upgrade {
+  background: rgba(245, 158, 11, 0.10);
+  border: 1px solid rgba(245, 158, 11, 0.30);
+  color: #fbbf24;
+}
+.estimate-mismatch.downgrade {
+  background: rgba(16, 185, 129, 0.10);
+  border: 1px solid rgba(16, 185, 129, 0.30);
+  color: #34d399;
+}
+.estimate-mismatch strong { font-weight: 700; }
+
+.estimate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.estimate-confirm {
+  width: 100%;
+  padding: 14px 20px !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.estimate-cancel {
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent !important;
+  border: 1px solid var(--line) !important;
+  color: var(--muted) !important;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  transition: color var(--t-base), border-color var(--t-base);
+}
+.estimate-cancel:hover {
+  color: var(--ink-2) !important;
+  border-color: var(--line-strong) !important;
+}
+.estimate-footnote {
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted-2);
+}
+
 /* Bottone "Nuovo sito": stesso peso di "Nuova web app" ma blu/teal
    (coerente con la card sito dello stato vuoto) */
 .primary.primary-blue {

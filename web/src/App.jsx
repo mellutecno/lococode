@@ -384,6 +384,46 @@ Questa azione è irreversibile.`)) return;
     }
   }
 
+  async function confirmEstimatePayment(appId, opts = {}) {
+    if (!requireAuth()) return;
+    setBusy(true); setError(""); setStatus("Conferma pagamento...");
+    try {
+      const response = await apiFetch(`/api/apps/${appId}/confirm-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentMethod: opts.paymentMethod || "sandbox", orderId: opts.orderId || "" }),
+      });
+      const data = await readApiJson(response);
+      if (!response.ok) throw new Error(data.error || "Conferma pagamento fallita.");
+      await refreshApps(data.app.id);
+      setActiveView("chat");
+      setStatus("Generazione ripresa");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStatus("Errore conferma");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelEstimate(appId) {
+    if (!requireAuth()) return;
+    if (!confirm("Confermi l'annullamento? La preventivazione verrà chiusa senza addebiti.")) return;
+    setBusy(true); setError("");
+    try {
+      const response = await apiFetch(`/api/apps/${appId}/cancel-estimate`, { method: "POST" });
+      const data = await readApiJson(response);
+      if (!response.ok) throw new Error(data.error || "Annullamento fallito.");
+      await refreshApps();
+      setActiveView("projects");
+      setStatus("Preventivo annullato");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function refreshApps(nextSelectedId = selectedAppId) {
     if (!currentUser) return;
     const response = await apiFetch("/api/apps");
@@ -564,7 +604,17 @@ Questa azione è irreversibile.`)) return;
           />
         )}
 
-        {activeView === "chat" && (
+        {activeView === "chat" && selectedApp?.paymentFlow?.status === "awaiting_payment" && (
+          <EstimateView
+            app={selectedApp}
+            busy={busy}
+            onConfirmPayment={confirmEstimatePayment}
+            onCancelEstimate={cancelEstimate}
+            onBackToProjects={() => setActiveView("projects")}
+          />
+        )}
+
+        {activeView === "chat" && selectedApp?.paymentFlow?.status !== "awaiting_payment" && (
           <ChatView
             app={selectedApp}
             chatPrompt={chatPrompt}
@@ -914,50 +964,73 @@ const FALLBACK_TIERS = {
 };
 
 function TierSelector({ value, onChange, isAdmin, tiersCatalog }) {
-  const catalog = (tiersCatalog && Object.keys(tiersCatalog).length) ? tiersCatalog : FALLBACK_TIERS;
+  // Tier visualizzati come "tipi di app" con esempi concreti. Niente prezzi
+  // esposti qui: l'utente sceglie cosa vuole, il prezzo emerge dal SDD dopo.
+  const TIER_PROFILES = {
+    base: {
+      label: "Base",
+      tagline: "App semplici",
+      examples: ["Lista della spesa", "Calcolatrice", "Contatore", "TODO basic"],
+      icon: "🪶",
+      color: "#10b981",
+    },
+    media: {
+      label: "Media",
+      tagline: "App discrete",
+      examples: ["Blog con login", "Mini agenda", "Gestionale piccolo", "Form complessi"],
+      icon: "📋",
+      color: "#3b82f6",
+    },
+    pro: {
+      label: "Pro",
+      tagline: "App complete",
+      examples: ["Gestionale clienti", "Dashboard analitica", "E-commerce semplice", "CRM"],
+      icon: "💼",
+      color: "#8b5cf6",
+    },
+    premium: {
+      label: "Premium",
+      tagline: "App complesse",
+      examples: ["CRM multi-utente", "Marketplace", "Piattaforma con AI", "App con pagamenti"],
+      icon: "💎",
+      color: "#f59e0b",
+    },
+  };
   const order = ["base", "media", "pro", "premium"];
   return (
     <div className="tier-selector">
       <div className="tier-selector-head">
-        <strong>Livello di generazione</strong>
-        <span>Sceglie la combinazione di motori AI usata per costruire la tua app.</span>
+        <strong>Che tipo di app vuoi creare?</strong>
+        <span>Scegli la categoria che meglio descrive la tua idea. Il prezzo finale verrà calcolato dopo l'analisi (sempre rimborsato se ti abboni o compri la licenza).</span>
       </div>
       <div className="tier-grid">
         {order.map((k) => {
-          const tier = catalog[k];
-          if (!tier) return null;
-          const locked = !isAdmin && k !== "base";
+          const profile = TIER_PROFILES[k];
           const active = value === k;
           return (
             <button
               key={k}
               type="button"
-              className={`tier-card ${active ? "active" : ""} ${locked ? "locked" : ""}`}
-              style={{ "--tier-color": tier.color }}
-              onClick={() => { if (!locked) onChange(k); }}
-              disabled={locked}
-              title={locked ? "Disponibile con piano Premium" : tier.description}
+              className={`tier-card ${active ? "active" : ""}`}
+              style={{ "--tier-color": profile.color }}
+              onClick={() => onChange(k)}
+              title={profile.tagline}
             >
+              <div className="tier-card-icon">{profile.icon}</div>
               <div className="tier-card-head">
-                <span className="tier-card-label">{tier.label}</span>
-                {tier.hasReview && <span className="tier-card-badge">+ Review</span>}
-                {locked && <span className="tier-card-lock">🔒</span>}
+                <span className="tier-card-label">{profile.label}</span>
               </div>
-              <div className="tier-card-desc">{tier.description}</div>
-              <div className="tier-card-fee">
-                <strong>€{(tier.feeEur ?? 0).toFixed(2)}</strong>
-                <span>creazione (rimborsato se ti abboni)</span>
-              </div>
+              <div className="tier-card-desc">{profile.tagline}</div>
+              <ul className="tier-card-examples">
+                {profile.examples.map((ex) => <li key={ex}>{ex}</li>)}
+              </ul>
             </button>
           );
         })}
       </div>
-      {!isAdmin && (
-        <p className="tier-hint">
-          🔒 I tier Media/Pro/Premium si sbloccano con l'abbonamento corrispondente.
-          Durante il trial puoi usare Base.
-        </p>
-      )}
+      <p className="tier-hint">
+        💡 Il prezzo finale dipende dalla complessità reale rilevata dall'analisi della tua idea, dalla categoria che scegli, e potrai sempre rifiutare se non ti convince — niente addebiti senza la tua conferma.
+      </p>
     </div>
   );
 }
@@ -1267,6 +1340,117 @@ function PricingCard({ app, onPurchaseTier }) {
       </div>
       <p className="pricing-footnote">* In modalità sandbox il pagamento è simulato. La conferma sblocca il piano immediatamente. PayPal Live disponibile a breve.</p>
     </section>
+  );
+}
+
+// Vista preventivo: mostrata quando app.paymentFlow.status === "awaiting_payment".
+// L'utente vede prezzo, breakdown della complessita', riepilogo cosa verra' creato
+// e decide: conferma (paga sandbox/PayPal) o annulla (nessun addebito).
+function EstimateView({ app, busy, onConfirmPayment, onCancelEstimate, onBackToProjects }) {
+  const pf = app?.paymentFlow || {};
+  const price = Number(pf.priceEur || 0);
+  const score = Number(pf.complexityScore || 0);
+  const tier = pf.suggestedTier || "base";
+  const breakdown = pf.breakdown || {};
+  const chosenTier = pf.chosenTier || "base";
+  const tierMismatch = chosenTier !== tier;
+  const tierUpgrade = ["base", "media", "pro", "premium"].indexOf(tier) > ["base", "media", "pro", "premium"].indexOf(chosenTier);
+
+  const signals = [];
+  if (breakdown.hasAuth) signals.push({ icon: "🔐", label: "Login e registrazione utenti" });
+  if (breakdown.hasDb) signals.push({ icon: "🗄️", label: "Database con tabelle" });
+  if (breakdown.hasAdminPanel) signals.push({ icon: "🎛️", label: "Pannello di gestione" });
+  if (breakdown.hasUpload) signals.push({ icon: "📤", label: "Upload file/immagini" });
+  if (breakdown.hasMultiUser) signals.push({ icon: "👥", label: "Multi-utente con ruoli" });
+  if (breakdown.hasPayments) signals.push({ icon: "💳", label: "Pagamenti integrati" });
+  if (breakdown.hasIntegrations) signals.push({ icon: "🔌", label: "API esterne / webhook" });
+  if (breakdown.hasRealtime) signals.push({ icon: "⚡", label: "Funzioni real-time" });
+
+  return (
+    <div className="estimate-view">
+      <button className="back-link" onClick={onBackToProjects}>← Torna al workspace</button>
+
+      <div className="estimate-card">
+        <div className="estimate-header">
+          <div className="estimate-badge">
+            <Sparkles size={14} /> Analisi completata
+          </div>
+          <h1>Ecco il tuo preventivo</h1>
+          <p className="estimate-subtitle">Abbiamo analizzato la tua idea. Decidi tu se proseguire — nessun addebito senza conferma.</p>
+        </div>
+
+        <div className="estimate-app-name">
+          <span>App</span>
+          <strong>{app?.name || "Senza nome"}</strong>
+        </div>
+
+        <div className="estimate-price-box">
+          <span className="estimate-price-label">Costo creazione</span>
+          <div className="estimate-price-amount">€{price.toFixed(2)}</div>
+          <div className="estimate-price-discount">
+            💚 <strong>Scontato</strong> dal primo mese di abbonamento o dalla licenza permanente
+          </div>
+        </div>
+
+        <div className="estimate-section">
+          <h3>Cosa creeremo</h3>
+          {signals.length > 0 ? (
+            <ul className="estimate-signals">
+              {signals.map((s, i) => (
+                <li key={i}><span className="estimate-signal-icon">{s.icon}</span> {s.label}</li>
+              ))}
+              {breakdown.taskCount && (
+                <li><span className="estimate-signal-icon">📋</span> {breakdown.taskCount} task pianificati</li>
+              )}
+            </ul>
+          ) : (
+            <p className="estimate-empty-signals">App essenziale, struttura semplice.</p>
+          )}
+        </div>
+
+        <div className="estimate-complexity">
+          <div className="estimate-complexity-bar">
+            <div className="estimate-complexity-fill" style={{ width: `${score}%` }} />
+          </div>
+          <span className="estimate-complexity-label">Complessità rilevata: <strong>{score}/100</strong> · categoria <strong>{tier}</strong></span>
+        </div>
+
+        {tierMismatch && (
+          <div className={`estimate-mismatch ${tierUpgrade ? "upgrade" : "downgrade"}`}>
+            {tierUpgrade ? (
+              <>
+                <strong>⚠ La tua idea richiede tier <em>{tier}</em></strong> ma avevi scelto <em>{chosenTier}</em>. Proseguendo, la creazione sarà adattata a {tier} (€{price.toFixed(2)}).
+              </>
+            ) : (
+              <>
+                <strong>✨ Buona notizia:</strong> la tua idea è più semplice di {chosenTier}, paghi solo €{price.toFixed(2)} (categoria {tier}).
+              </>
+            )}
+          </div>
+        )}
+
+        <div className="estimate-actions">
+          <button
+            className="primary estimate-confirm"
+            onClick={() => onConfirmPayment(app.id, { paymentMethod: "sandbox" })}
+            disabled={busy}
+          >
+            {busy ? <><Sparkles size={16} className="spin" /> Conferma in corso…</> : <>💳 Paga €{price.toFixed(2)} e crea l'app</>}
+          </button>
+          <button
+            className="secondary estimate-cancel"
+            onClick={() => onCancelEstimate(app.id)}
+            disabled={busy}
+          >
+            Annulla, nessun addebito
+          </button>
+        </div>
+
+        <p className="estimate-footnote">
+          💡 In modalità sandbox: il pagamento viene simulato per testare il flusso. PayPal Live disponibile a breve.
+        </p>
+      </div>
+    </div>
   );
 }
 

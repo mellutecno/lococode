@@ -133,6 +133,92 @@ const GENERATION_TIERS = {
   },
 };
 
+// Calcolo prezzo finale dell'app basato sul SDD generato (complessita' reale).
+// Usato dopo la prima fase (SDD) per mostrare all'utente un preventivo PRIMA
+// di addebitare. Heuristiche:
+//   - numero di task totali
+//   - presenza di backend (auth/db)
+//   - numero di entita'/tabelle (rileva da architecture.md)
+//   - presenza di pagamenti/integrations esterne
+// Output: { complexityScore (0-100), suggestedTier, priceEur }
+function computePriceFromSdd(target) {
+  const steps = target.sdd?.steps || [];
+  const taskCount = steps.length;
+  const filesPlanned = (target.fileCount || 0) || taskCount * 2; // stima grossolana
+  const isWebsite = target.kind === "website";
+
+  // Score 0-100 basato su segnali concreti
+  let score = 0;
+  score += Math.min(taskCount * 3, 40);            // fino a 40 punti per task
+  score += Math.min(filesPlanned * 1.5, 20);        // fino a 20 per file
+
+  // Bonus per feature complesse rilevate (cerco keyword nei task)
+  const taskBlob = steps.map((s) => `${s.label || ""} ${s.phase || ""}`).join(" ").toLowerCase();
+  const hasAuth = /\b(login|register|auth|jwt|token|password|registr)/i.test(taskBlob);
+  const hasDb = /\b(database|tabella|schema|sqlite|postgres|model|orm)/i.test(taskBlob);
+  const hasPayments = /\b(pagament|paypal|stripe|checkout|abbonament)/i.test(taskBlob);
+  const hasUpload = /\b(upload|file|immagine|foto|allegat)/i.test(taskBlob);
+  const hasAdminPanel = /\b(admin|backoffice|gestionale|dashboard)/i.test(taskBlob);
+  const hasMultiUser = /\b(multi-utente|ruol|permessi|workspace|team)/i.test(taskBlob);
+  const hasIntegrations = /\b(api|integrazione|webhook|email|sms|notifica)/i.test(taskBlob);
+  const hasRealtime = /\b(websocket|real.?time|chat|messaggi)/i.test(taskBlob);
+
+  if (hasAuth) score += 8;
+  if (hasDb) score += 5;
+  if (hasPayments) score += 12;
+  if (hasUpload) score += 5;
+  if (hasAdminPanel) score += 6;
+  if (hasMultiUser) score += 10;
+  if (hasIntegrations) score += 6;
+  if (hasRealtime) score += 10;
+
+  // Cap
+  score = Math.min(Math.round(score), 100);
+
+  // Sito vetrina: sconto fisso indipendentemente dallo score
+  if (isWebsite) {
+    return {
+      complexityScore: score,
+      suggestedTier: "base",
+      priceEur: 4.99,
+      breakdown: {
+        taskCount,
+        hasBackend: false,
+        signals: { isWebsite: true },
+      },
+    };
+  }
+
+  // Mapping score -> tier suggerito e prezzo
+  // Base €3.99 (score 0-25), Media €4.99 (26-45), Pro €9.99 (46-70), Premium €19.99 (71+)
+  let suggestedTier, priceEur;
+  if (score <= 25) { suggestedTier = "base"; priceEur = 3.99; }
+  else if (score <= 45) { suggestedTier = "media"; priceEur = 4.99; }
+  else if (score <= 70) { suggestedTier = "pro"; priceEur = 9.99; }
+  else { suggestedTier = "premium"; priceEur = 19.99; }
+
+  return {
+    complexityScore: score,
+    suggestedTier,
+    priceEur,
+    breakdown: {
+      taskCount,
+      filesPlanned: Math.round(filesPlanned),
+      hasAuth, hasDb, hasPayments, hasUpload, hasAdminPanel, hasMultiUser, hasIntegrations, hasRealtime,
+    },
+  };
+}
+
+// Determina se per questa app serve il flusso pricing (estimate -> pay -> resume).
+// Sito vetrina e admin sono esclusi: pipeline fila tutta come prima.
+function requiresPaymentFlow(target, user) {
+  if (target.kind === "website") return false;       // siti hanno gia' prezzo fisso semplice
+  if (isAdminUser(user)) return false;               // admin bypass per test
+  if (target.pricing?.status === "free") return false;
+  if (target.pricing?.status === "paid") return false;
+  return true;
+}
+
 function getTierModels(tier) {
   const t = String(tier || "base").toLowerCase();
   return GENERATION_TIERS[t] ? GENERATION_TIERS[t].models : GENERATION_TIERS.base.models;
@@ -656,6 +742,13 @@ app.post("/api/generate", async (req, res) => {
       model,
       generationTier: effectiveTier,
       kind: appKind,
+      // Flusso pricing: utenti normali partono in "estimate_pending" -> dopo SDD
+      // diventa "awaiting_payment". Admin/siti bypassano: status "free".
+      pricing: {
+        status: (appKind === "website" || isAdminUser(user)) ? "free" : "estimate_pending",
+        chosenTier: effectiveTier,
+        createdAt: now,
+      },
       prompt,
       status: "building",
       phase: "intake",
@@ -710,6 +803,75 @@ app.post("/api/generate", async (req, res) => {
 
 app.post("/api/apps/:id/continue", startAutopilotRequest);
 app.post("/api/apps/:id/autopilot", startAutopilotRequest);
+
+// Conferma pagamento del preventivo (al momento sandbox: trust del click utente,
+// in futuro verifichera' un PayPal order_id). Sposta pricing.status -> "paid",
+// resetta lo stato autopilot e ri-avvia il job in mode initial: la pipeline
+// vedra' pricing.status==="paid" e saltera' la fase SDD, proseguendo con
+// backend + frontend + review fino al deploy.
+app.post("/api/apps/:id/confirm-payment", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const apps = await loadApps(user);
+  const target = apps.find((item) => item.id === req.params.id);
+  if (!target) { res.status(404).json({ error: "App non trovata." }); return; }
+  if (target.pricing?.status !== "awaiting_payment") {
+    res.status(409).json({ error: "L'app non e' in attesa di pagamento.", currentStatus: target.pricing?.status });
+    return;
+  }
+
+  // TODO: quando PAYPAL_CLIENT_ID/SECRET sono configurati, verificare req.body.orderId
+  // con PayPal Orders API v2 prima di marcare paid. Per ora trust del click.
+  const paymentMethod = String(req.body.paymentMethod || "sandbox").trim();
+  const paymentRef = String(req.body.orderId || `sandbox-${Date.now()}`);
+
+  const now = new Date().toISOString();
+  target.pricing = {
+    ...(target.pricing || {}),
+    status: "paid",
+    paidAt: now,
+    paymentMethod,
+    paymentRef,
+  };
+  target.status = "building";
+  target.updatedAt = now;
+  appendOperationalLog(target, `✓ Pagamento confermato (€${target.pricing.priceEur?.toFixed(2) || "?"} via ${paymentMethod}). Riprendo generazione...`);
+  await saveApps(apps, user);
+
+  const settings = await loadSettings(user);
+  const apiKey = resolveApiKey(user, settings.openrouterApiKey);
+  if (!apiKey) { res.status(500).json({ error: "API key non disponibile per riprendere." }); return; }
+
+  startAutopilotJob({
+    userId: user.id,
+    appId: target.id,
+    apiKey,
+    model: target.model || settings.defaultModel || commonModels[0],
+    userPrompt: target.prompt || "",
+    mode: "initial",
+  });
+
+  res.json({ app: publicApp(target), resumed: true });
+});
+
+// Annulla il preventivo (cancellazione dell'app pre-pagamento). L'utente non
+// paga niente, l'app viene marcata "cancelled" (puo' essere cancellata fisicamente
+// in un secondo momento).
+app.post("/api/apps/:id/cancel-estimate", async (req, res) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const apps = await loadApps(user);
+  const target = apps.find((item) => item.id === req.params.id);
+  if (!target) { res.status(404).json({ error: "App non trovata." }); return; }
+
+  const now = new Date().toISOString();
+  target.pricing = { ...(target.pricing || {}), status: "cancelled", cancelledAt: now };
+  target.status = "cancelled";
+  target.updatedAt = now;
+  appendOperationalLog(target, "✗ Preventivo annullato dall'utente. Nessun addebito.");
+  await saveApps(apps, user);
+  res.json({ app: publicApp(target), cancelled: true });
+});
 
 app.post("/api/apps/:id/stop", async (req, res) => {
   const user = await requireUser(req, res);
@@ -1343,6 +1505,27 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
       });
       if (result.stopped) {
         await pauseAutopilot(target, apps, user, result.summary);
+        return;
+      }
+      // CHECKPOINT PAGAMENTO: la pipeline si e' fermata dopo il SDD per attendere
+      // conferma utente. Salviamo lo stato "awaiting_payment" e usciamo dal job
+      // senza chiamare finishAutopilot. L'endpoint /confirm-payment riavviera'.
+      if (result.awaitingPayment) {
+        target.status = "awaiting_payment";
+        target.autopilot = {
+          ...(target.autopilot || {}),
+          running: false,
+          stopRequested: false,
+          updatedAt: new Date().toISOString(),
+          lastMessage: `Preventivo pronto: €${result.estimate.priceEur.toFixed(2)}. In attesa di conferma utente.`,
+          error: null,
+        };
+        await saveApps(apps, user);
+        pushAssistantMessage(
+          target,
+          `Ho analizzato la tua idea. La complessita' rilevata e' ${result.estimate.complexityScore}/100 (categoria ${result.estimate.suggestedTier}). Costo per la creazione: €${result.estimate.priceEur.toFixed(2)}. Conferma per proseguire — verra' scalato dal tuo abbonamento o licenza futura.`,
+        );
+        await saveApps(apps, user);
         return;
       }
       pushAssistantMessage(target, result.summary);
@@ -2333,6 +2516,14 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
   const touched = [];
 
   for (const phase of phases) {
+    // RESUME: se l'utente ha gia' pagato, le fasi gia' completate vanno saltate.
+    // Il SDD viene saltato sempre dopo pagamento. Le altre fasi: solo se i loro
+    // expectedFiles esistono gia' (significa che precedente run le aveva fatte).
+    if (target.pricing?.status === "paid" && phase.key === "sdd") {
+      appendOperationalLog(target, "✓ SDD gia' fatto (skippo, riprendo dopo pagamento).");
+      continue;
+    }
+
     const stopReasonBefore = await shouldStop?.();
     if (stopReasonBefore) {
       return {
@@ -2400,6 +2591,33 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
       await refreshProjectState(target);
       target.preview = { ...target.preview, buildVersion: (target.preview?.buildVersion || 0) + 1 };
       await onProgress?.(phase.label);
+
+      // ═══ CHECKPOINT PAGAMENTO ═══
+      // Se l'utente deve pagare prima di proseguire (flusso normale per utenti
+      // non-admin con webapp), qui ci fermiamo: calcoliamo il preventivo dal
+      // SDD appena generato, lo salviamo, e ritorniamo segnalando awaitingPayment.
+      // L'utente confermera' via UI -> endpoint /confirm-payment ri-avviera' il job
+      // che, vedendo pricing.status==="paid", saltera' la fase SDD e proseguira'.
+      if (target.pricing?.status === "estimate_pending") {
+        const estimate = computePriceFromSdd(target);
+        target.pricing = {
+          ...(target.pricing || {}),
+          ...estimate,
+          status: "awaiting_payment",
+          estimatedAt: new Date().toISOString(),
+        };
+        appendOperationalLog(
+          target,
+          `✓ Analisi pronta. Preventivo €${estimate.priceEur.toFixed(2)} (${estimate.suggestedTier}, complessita' ${estimate.complexityScore}/100). In attesa di conferma utente.`,
+        );
+        return {
+          summary: `Analisi completata. Preventivo €${estimate.priceEur.toFixed(2)} in attesa di conferma.`,
+          touched: [...new Set(touched)],
+          changedFiles: new Set(touched).size,
+          awaitingPayment: true,
+          estimate,
+        };
+      }
     }
 
     if (phase.phaseNum === 3) {
@@ -4430,6 +4648,7 @@ function publicApp(appData) {
     tokenUsage: usage,
     generationCostEur: Number(totalCostEur.toFixed(4)),
     authSmokeTest: appData.authSmokeTest || null,
+    paymentFlow: appData.pricing || null,
     backendPort: appData.backendPort || null,
     backendOnline: !!appData.backendPort,
     appUrl,
