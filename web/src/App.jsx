@@ -1056,19 +1056,6 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
           showModel={isAdmin}
         />
       </section>
-
-        <div className="quick-row">
-          {quickPrompts.map((item) => {
-            const Icon = item.icon;
-            return (
-            <button key={item.label} onClick={() => onQuick(item)} disabled={busy}>
-              <Icon size={22} />
-              <span>{item.label}</span>
-            </button>
-            );
-        })}
-      </div>
-
     </div>
   );
 }
