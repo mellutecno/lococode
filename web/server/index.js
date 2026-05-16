@@ -1499,6 +1499,19 @@ async function runAutopilotJob({ userId, appId, apiKey, model, userPrompt = "", 
   const target = apps.find((item) => item.id === appId);
   if (!target) return;
 
+  // Tier wins: il "model" passato e' quello dei settings dell'utente
+  // (per i nuovi utenti = "anthropic/claude-sonnet-4.5" che e' commonModels[0]).
+  // Le fasi principali (sdd/backend/frontend/review) hanno gia' modelFor(phase)
+  // che pesca da tierModels, MA le chiamate "fuori-fase" (wireframe, followup,
+  // recovery, retry) usano direttamente questa variabile -> spenderebbero Sonnet
+  // anche su tier "base". Forza qui all'SDD-model del tier dell'app, cosi' chi
+  // ha pagato il base usa SOLO DeepSeek per ogni chiamata. Admin con tier
+  // premium continua a usare Sonnet, etc.
+  const tierModels = getTierModels(target.generationTier);
+  if (tierModels?.sdd) {
+    model = tierModels.sdd;
+  }
+
   const saveProgress = async (phaseLabel = "") => {
     await refreshProjectState(target);
     const steps = target.sdd?.steps || [];
