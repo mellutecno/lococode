@@ -701,15 +701,24 @@ button[class*="bg-gradient"] .text-white,
 
 /* Quando l'AI usa text-white pieno o text-white/X dentro un container,
    garantiamo che resti chiaro (non sovrascritto da nessun'altra regola). */
+/* text-white: lascia che la regola generale Tailwind valga (color: #fff)
+   ma all'interno di input/textarea/select forza nero (vince per specificita').
+   I placeholder li gestiamo TUTTI uniformemente in slate-gray sotto. */
 .text-white { color: #ffffff !important; }
-.text-white\\/90 { color: rgba(255, 255, 255, 0.92) !important; }
-.text-white\\/80 { color: rgba(255, 255, 255, 0.86) !important; }
-.text-white\\/70 { color: rgba(255, 255, 255, 0.80) !important; }
-.text-white\\/60 { color: rgba(255, 255, 255, 0.75) !important; }
-.text-white\\/50 { color: rgba(255, 255, 255, 0.70) !important; }
-.text-white\\/40 { color: rgba(255, 255, 255, 0.65) !important; }
-.placeholder-white\\/50::placeholder { color: rgba(255, 255, 255, 0.65) !important; }
-.placeholder-white\\/40::placeholder { color: rgba(255, 255, 255, 0.60) !important; }
+input.text-white, textarea.text-white {
+  color: #0f172a !important;  /* dentro input forza dark, non bianco */
+}
+/* Placeholder UNIVERSALE: sempre slate-400 leggibile su input bianco.
+   Vince su placeholder-white/N che la AI puo' aggiungere. */
+input::placeholder,
+textarea::placeholder,
+.placeholder-white\\/50::placeholder,
+.placeholder-white\\/40::placeholder,
+.placeholder-white\\/60::placeholder,
+[class*="placeholder-white"]::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+}
 `;
 
 const TAILWIND_CONFIG = (absHtml, absSrc) => `/** @type {import('tailwindcss').Config} */
