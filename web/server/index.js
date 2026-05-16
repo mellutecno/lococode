@@ -131,56 +131,85 @@ const GENERATION_TIERS = {
 function computePriceFromSdd(target) {
   const steps = target.sdd?.steps || [];
   const taskCount = steps.length;
-  const filesPlanned = (target.fileCount || 0) || taskCount * 2; // stima grossolana
+  const filesPlanned = (target.fileCount || 0) || taskCount * 2;
   const isWebsite = target.kind === "website";
 
-  // Score 0-100 basato su segnali concreti
-  let score = 0;
-  score += Math.min(taskCount * 3, 40);            // fino a 40 punti per task
-  score += Math.min(filesPlanned * 1.5, 20);        // fino a 20 per file
-
-  // Bonus per feature complesse rilevate (cerco keyword nei task)
+  // FILOSOFIA SCORING v2:
+  // 1) Le FEATURE si rilevano SOLO dal prompt dell'utente, non dai task
+  //    generati: l'orchestrator gonfia i task con boilerplate (vedi caso
+  //    "todo list" che otteneva hasAdminPanel + hasIntegrations false-positive
+  //    da parole tipo "dashboard" e "api" che esistono in ogni codebase).
+  // 2) Il volume (task/file) pesa poco: non vogliamo che l'utente paghi
+  //    di piu' solo perche' l'AI scrive piu' codice del necessario.
+  // 3) Aggiungiamo un segnale REALE: i token consumati nella fase SDD.
+  //    Una idea complessa fa scrivere all'AI molti piu' token di specifiche.
+  const promptBlob = String(target.prompt || "").toLowerCase();
   const taskBlob = steps.map((s) => `${s.label || ""} ${s.phase || ""}`).join(" ").toLowerCase();
-  const hasAuth = /\b(login|register|auth|jwt|token|password|registr)/i.test(taskBlob);
-  const hasDb = /\b(database|tabella|schema|sqlite|postgres|model|orm)/i.test(taskBlob);
-  const hasPayments = /\b(pagament|paypal|stripe|checkout|abbonament)/i.test(taskBlob);
-  const hasUpload = /\b(upload|file|immagine|foto|allegat)/i.test(taskBlob);
-  const hasAdminPanel = /\b(admin|backoffice|gestionale|dashboard)/i.test(taskBlob);
-  const hasMultiUser = /\b(multi-utente|ruol|permessi|workspace|team)/i.test(taskBlob);
-  const hasIntegrations = /\b(api|integrazione|webhook|email|sms|notifica)/i.test(taskBlob);
-  const hasRealtime = /\b(websocket|real.?time|chat|messaggi)/i.test(taskBlob);
+  // Feature flags: regex stretti, ancorati al prompt (con fallback su task
+  // solo per segnali che il prompt potrebbe omettere ma sono evidenti).
+  // Login + DB ammettono fallback (utente puo' dire "condivisa" senza dire
+  // "login"): se l'app e' multi-utente serve quasi sempre login/db.
+  const hasMultiUser  = /\b(multi.?utente|condivis[oa]|tra utenti|fra utenti|team|workspace|collaborativ|ruoli?\b|permess)/i.test(promptBlob);
+  const hasAuthExplicit = /\b(login|registrazion|account utent|profil)/i.test(promptBlob);
+  const hasAuth       = hasAuthExplicit || hasMultiUser; // multi-utente implica auth
+  const hasDbExplicit = /\b(database|tabell|sqlite|postgres|persistent|salv(a|are) dat)/i.test(promptBlob);
+  const hasDb         = hasDbExplicit || hasAuth; // se c'e' auth serve anche DB
+  const hasUpload     = /\b(upload|carica(re)? (foto|immagin|file|allegat)|allegat|galleri[ae] foto)/i.test(promptBlob);
+  const hasPayments   = /\b(paypal|stripe|checkout|carrello|pagament[oi] (online|reali)|fatturazione|sottoscrivere|pay\s?wall)/i.test(promptBlob);
+  const hasAdminPanel = /\b(backoffice|pannello (di )?admin|pannello (di )?amministrazione|gestione utenti|approva(zione|re) utent)/i.test(promptBlob);
+  const hasIntegrations = /\b(stripe|twilio|sendgrid|openai|claude|google maps|whatsapp|telegram|slack|webhook|webhooks|api esterna|api esterne|servizio esterno)/i.test(promptBlob);
+  const hasRealtime   = /\b(tempo reale|real.?time|websocket|live update|notifiche push|chat (tra|fra) utent)/i.test(promptBlob);
 
+  // ===== SCORING =====
+  let score = 10; // base: ogni app parte da 10 (sotto Starter cap)
+
+  // Volume: contributo basso. Il volume di task/file e' un PROXY rumoroso
+  // (orchestrator gonfia anche app semplici), quindi pesa poco.
+  // taskCount: 1 punto per task oltre i primi 5, cap 10 totali
+  score += Math.min(Math.max(0, taskCount - 5) * 1, 10);
+  // filesPlanned: 0.5 punti oltre i primi 6, cap 5
+  score += Math.min(Math.max(0, filesPlanned - 6) * 0.5, 5);
+
+  // Token SDD: segnale piu' affidabile di complessita' reale.
+  const sddTokens =
+    (target.tokenUsage?.sdd?.promptTokens || 0) +
+    (target.tokenUsage?.sdd?.completionTokens || 0);
+  let sddTokenBonus = 0;
+  if (sddTokens > 12000) sddTokenBonus = 10;
+  else if (sddTokens > 8000) sddTokenBonus = 7;
+  else if (sddTokens > 5000) sddTokenBonus = 4;
+  score += sddTokenBonus;
+
+  // Feature dichiarate dall'utente nel prompt
   if (hasAuth) score += 8;
   if (hasDb) score += 5;
-  if (hasPayments) score += 12;
-  if (hasUpload) score += 5;
-  if (hasAdminPanel) score += 6;
-  if (hasMultiUser) score += 10;
-  if (hasIntegrations) score += 6;
-  if (hasRealtime) score += 10;
+  if (hasMultiUser) score += 12;
+  if (hasUpload) score += 8;
+  if (hasPayments) score += 15;
+  if (hasAdminPanel) score += 8;
+  if (hasIntegrations) score += 10;
+  if (hasRealtime) score += 12;
 
-  // Cap
   score = Math.min(Math.round(score), 100);
 
-  // Sito vetrina: sconto fisso indipendentemente dallo score
   if (isWebsite) {
     return {
       complexityScore: score,
       suggestedTier: "starter",
       priceEur: 4.99,
-      breakdown: {
-        taskCount,
-        hasBackend: false,
-        signals: { isWebsite: true },
-      },
+      breakdown: { taskCount, hasBackend: false, signals: { isWebsite: true } },
     };
   }
 
-  // Mapping score -> tier ASSEGNATO (utente non sceglie) e prezzo.
-  // 3 tier: Starter €4.99 (0-45), Pro €9.99 (46-70), Premium €19.99 (71+)
+  // Soglie tier. Esempi calibrati su pesi attuali:
+  //   "todo personale localStorage"           -> ~15  -> Starter
+  //   "todo condivisa fra utenti"             -> ~50  -> Starter
+  //   "gestionale studio medico"              -> ~65  -> Pro
+  //   "CRM commerciale multi-utente con doc"  -> ~75  -> Pro
+  //   "marketplace pagamenti chat realtime"   -> ~95  -> Premium
   let suggestedTier, priceEur;
-  if (score <= 45) { suggestedTier = "starter"; priceEur = 4.99; }
-  else if (score <= 70) { suggestedTier = "pro"; priceEur = 9.99; }
+  if (score <= 55) { suggestedTier = "starter"; priceEur = 4.99; }
+  else if (score <= 80) { suggestedTier = "pro"; priceEur = 9.99; }
   else { suggestedTier = "premium"; priceEur = 19.99; }
 
   return {
@@ -190,6 +219,8 @@ function computePriceFromSdd(target) {
     breakdown: {
       taskCount,
       filesPlanned: Math.round(filesPlanned),
+      sddTokens,
+      sddTokenBonus,
       hasAuth, hasDb, hasPayments, hasUpload, hasAdminPanel, hasMultiUser, hasIntegrations, hasRealtime,
     },
   };
