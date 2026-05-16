@@ -511,8 +511,12 @@ const THEME_CSS = `/* LocoCode Design System base styles. NON modificare a mano.
 
 html, body, #root {
   min-height: 100vh;
+  width: 100%;
   margin: 0;
   padding: 0;
+}
+html, body {
+  overflow-x: hidden;
 }
 
 body {
@@ -641,18 +645,19 @@ textarea:-webkit-autofill {
    - su sfondo chiaro: ora ha contrasto reale
    Manteniamo invariate le shade -500 in giu' (gia' scure) e le shade
    -100/-200 (pensate per pillole/badge con bg dello stesso colore). */
-.text-gray-300, .text-slate-300, .text-zinc-300, .text-neutral-300, .text-stone-300 { color: #475569 !important; }
-.text-gray-400, .text-slate-400, .text-zinc-400, .text-neutral-400, .text-stone-400 { color: #334155 !important; }
-.text-green-300, .text-emerald-300, .text-lime-300, .text-teal-300 { color: #047857 !important; }
-.text-green-400, .text-emerald-400, .text-lime-400, .text-teal-400 { color: #047857 !important; }
-.text-yellow-300, .text-amber-300, .text-orange-300 { color: #b45309 !important; }
-.text-yellow-400, .text-amber-400, .text-orange-400 { color: #b45309 !important; }
-.text-red-300, .text-rose-300, .text-pink-300 { color: #be123c !important; }
-.text-red-400, .text-rose-400, .text-pink-400 { color: #be123c !important; }
-.text-blue-300, .text-sky-300, .text-cyan-300 { color: #1d4ed8 !important; }
-.text-blue-400, .text-sky-400, .text-cyan-400 { color: #1d4ed8 !important; }
-.text-indigo-300, .text-violet-300, .text-purple-300, .text-fuchsia-300 { color: #4338ca !important; }
-.text-indigo-400, .text-violet-400, .text-purple-400, .text-fuchsia-400 { color: #4338ca !important; }
+/* Versione "medium" (-500) leggibile su QUALSIASI bg (chiaro o scuro). */
+.text-gray-300, .text-slate-300, .text-zinc-300, .text-neutral-300, .text-stone-300 { color: #94a3b8 !important; }
+.text-gray-400, .text-slate-400, .text-zinc-400, .text-neutral-400, .text-stone-400 { color: #94a3b8 !important; }
+.text-green-300, .text-emerald-300, .text-lime-300, .text-teal-300 { color: #10b981 !important; }
+.text-green-400, .text-emerald-400, .text-lime-400, .text-teal-400 { color: #10b981 !important; }
+.text-yellow-300, .text-amber-300, .text-orange-300 { color: #f59e0b !important; }
+.text-yellow-400, .text-amber-400, .text-orange-400 { color: #f59e0b !important; }
+.text-red-300, .text-rose-300, .text-pink-300 { color: #fb7185 !important; }
+.text-red-400, .text-rose-400, .text-pink-400 { color: #fb7185 !important; }
+.text-blue-300, .text-sky-300, .text-cyan-300 { color: #38bdf8 !important; }
+.text-blue-400, .text-sky-400, .text-cyan-400 { color: #38bdf8 !important; }
+.text-indigo-300, .text-violet-300, .text-purple-300, .text-fuchsia-300 { color: #a78bfa !important; }
+.text-indigo-400, .text-violet-400, .text-purple-400, .text-fuchsia-400 { color: #a78bfa !important; }
 
 /* Eccezione: dentro un pulsante con bg colorato pieno il testo chiaro DEVE
    restare bianco. Lo riportiamo a bianco quando il button ha una bg- esplicita. */
