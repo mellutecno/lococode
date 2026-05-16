@@ -497,28 +497,30 @@ export { PageLayout, SidebarBrand, SidebarItem, SidebarNav, PageHeader } from '.
 export { Modal } from './Modal';
 `;
 
-const THEME_CSS = `/* LocoCode Design System base styles. NON modificare a mano.
-   Iniettato in OGNI app generata per garantire estetica premium. */
+const THEME_CSS = `/* LocoCode Design System — versione 2.0 (riscritta da zero).
+   Iniettato in OGNI app generata. Garantisce dark theme premium con
+   contrasto bulletproof indipendentemente da cosa l'AI generi.
+   STRATEGIA: dark theme di base + override DIFENSIVI dei pattern
+   piu' comuni mal generati dall'AI. Solo le caselle input restano
+   bianche (per leggibilita' del testo digitato). */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-:root {
-  --lc-brand-from: #4f46e5;
-  --lc-brand-to: #9333ea;
-  --lc-surface: rgba(255, 255, 255, 0.7);
-  --lc-border: rgba(226, 232, 240, 0.7);
-}
-
+/* ═══════════════════════════════════════════════════════════════
+   1. RESET + LAYOUT BASE — full viewport, niente scrollbar orizz.
+   ═══════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; }
 html, body, #root {
   min-height: 100vh;
   width: 100%;
   margin: 0;
   padding: 0;
 }
-html, body {
-  overflow-x: hidden;
-}
+html, body { overflow-x: hidden; }
 
+/* ═══════════════════════════════════════════════════════════════
+   2. BODY DARK THEME — bg navy con aurora + dot pattern textura
+   ═══════════════════════════════════════════════════════════════ */
 body {
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -528,197 +530,138 @@ body {
   color: #e7e9f2;
   background-color: #0a0e1a;
   background-image:
-    radial-gradient(ellipse 1100px 600px at 85% -10%, rgba(168, 85, 247, 0.20) 0%, transparent 60%),
-    radial-gradient(ellipse 900px 500px at -10% 20%, rgba(91, 62, 232, 0.22) 0%, transparent 60%),
-    radial-gradient(ellipse 800px 500px at 50% 110%, rgba(56, 189, 248, 0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 1100px 600px at 85% -10%, rgba(168, 85, 247, 0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 900px 500px at -10% 20%, rgba(91, 62, 232, 0.24) 0%, transparent 60%),
+    radial-gradient(ellipse 800px 500px at 50% 110%, rgba(56, 189, 248, 0.12) 0%, transparent 55%),
     linear-gradient(160deg, #0a0e1a 0%, #0d1126 50%, #0a0f22 100%);
   background-attachment: fixed;
   min-height: 100vh;
   position: relative;
-  overflow-x: hidden;
 }
-/* Dot pattern overlay sottile per dare textura */
 body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  content: ""; position: fixed; inset: 0; pointer-events: none;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 28px 28px;
-  background-position: -1px -1px;
-  z-index: 0;
-  opacity: 0.6;
+  z-index: 0; opacity: 0.55;
   mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.7) 0%, transparent 75%);
   -webkit-mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.7) 0%, transparent 75%);
 }
-/* Aurora animata */
 body::after {
-  content: "";
-  position: fixed;
-  inset: -20%;
-  pointer-events: none;
+  content: ""; position: fixed; inset: -20%; pointer-events: none;
   background:
-    radial-gradient(circle at 25% 35%, rgba(168, 85, 247, 0.14) 0%, transparent 35%),
-    radial-gradient(circle at 75% 65%, rgba(56, 189, 248, 0.10) 0%, transparent 35%);
+    radial-gradient(circle at 25% 35%, rgba(168, 85, 247, 0.15) 0%, transparent 35%),
+    radial-gradient(circle at 75% 65%, rgba(56, 189, 248, 0.11) 0%, transparent 35%);
   filter: blur(80px);
   animation: lc-aurora 26s ease-in-out infinite alternate;
-  opacity: 0.7;
-  z-index: 0;
+  opacity: 0.75; z-index: 0;
 }
 @keyframes lc-aurora {
   0%   { transform: translate(0, 0) rotate(0deg); }
   50%  { transform: translate(6%, -3%) rotate(6deg); }
   100% { transform: translate(-4%, 5%) rotate(-5deg); }
 }
-/* I contenuti React stanno SOPRA aurora/pattern */
 #root { position: relative; z-index: 1; }
 
-h1, h2, h3, h4 {
-  letter-spacing: -0.02em;
-  font-weight: 700;
-}
+/* ═══════════════════════════════════════════════════════════════
+   3. WRAPPER FULL COVERAGE — qualunque min-h-screen DEVE essere w-full
+   ═══════════════════════════════════════════════════════════════ */
+[class*="min-h-screen"] { width: 100% !important; }
 
-/* Scrollbar piu' elegante */
+/* ═══════════════════════════════════════════════════════════════
+   4. TIPOGRAFIA
+   ═══════════════════════════════════════════════════════════════ */
+h1, h2, h3, h4 { letter-spacing: -0.02em; font-weight: 700; }
+::selection { background-color: rgba(99, 102, 241, 0.30); color: #fff; }
+
+/* ═══════════════════════════════════════════════════════════════
+   5. SCROLLBAR ELEGANTE
+   ═══════════════════════════════════════════════════════════════ */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.25);
+  background: rgba(148, 163, 184, 0.30);
   border-radius: 999px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.45); background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.50); background-clip: padding-box; }
 
-/* Fade in subtle per i contenuti */
-@keyframes lc-fade-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+/* ═══════════════════════════════════════════════════════════════
+   6. ANIMAZIONI UTILITY
+   ═══════════════════════════════════════════════════════════════ */
+@keyframes lc-fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 .lc-fade-in { animation: lc-fade-in 0.32s ease-out both; }
-
-/* Spinner */
 @keyframes lc-spin { to { transform: rotate(360deg); } }
 .lc-spin { animation: lc-spin 0.8s linear infinite; }
 
-/* Selezione testo brand */
-::selection {
-  background-color: rgba(99, 102, 241, 0.18);
-  color: #4338ca;
+/* ═══════════════════════════════════════════════════════════════
+   7. GLASS CARDS — bg-white/N (5-30%, pattern AI per "glass cards")
+   forzati a SOLID dark navy. Cosi' text-white/N dentro resta leggibile.
+   ═══════════════════════════════════════════════════════════════ */
+.bg-white\\/5, .bg-white\\/10, .bg-white\\/15,
+.bg-white\\/20, .bg-white\\/25, .bg-white\\/30 {
+  background-color: #1a1f33 !important;
+  background-image: linear-gradient(135deg, rgba(124,90,240,0.10) 0%, rgba(255,255,255,0.02) 100%) !important;
 }
+.border-white\\/5  { border-color: rgba(255, 255, 255, 0.10) !important; }
+.border-white\\/10 { border-color: rgba(255, 255, 255, 0.14) !important; }
+.border-white\\/15 { border-color: rgba(255, 255, 255, 0.18) !important; }
+.border-white\\/20 { border-color: rgba(255, 255, 255, 0.22) !important; }
+.border-white\\/30 { border-color: rgba(255, 255, 255, 0.28) !important; }
 
-/* ─── DEFENSIVE INPUT CONTRAST ─────────────────────────────────
-   L'AI sbaglia spesso mettendo testi chiari su sfondi chiari dentro
-   gli <input>/<textarea>/<select>. Forziamo SEMPRE testi scuri
-   leggibili su sfondo bianco dentro le caselle, indipendentemente
-   dalle classi Tailwind che l'AI ha applicato. Cosi' anche se mette
-   className="text-white bg-white/10" sul container, dentro l'input
-   il testo digitato dall'utente resta leggibile.
-   color-scheme:light forza anche i picker (date/file) chiari. */
+/* ═══════════════════════════════════════════════════════════════
+   8. INPUTS — sempre bianchi con testo SCURO e placeholder visibile.
+   Regola assoluta: input/textarea/select DEVONO essere leggibili.
+   Vince su qualunque classe Tailwind che l'AI aggiunge sopra.
+   ═══════════════════════════════════════════════════════════════ */
 input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="file"]):not([type="range"]):not([type="color"]),
-textarea,
-select {
+textarea, select {
   color-scheme: light;
   color: #0f172a !important;
   background-color: #ffffff !important;
   caret-color: #4f46e5;
 }
 input::placeholder,
-textarea::placeholder {
+textarea::placeholder,
+[class*="placeholder-white"]::placeholder,
+[class*="placeholder-gray"]::placeholder,
+[class*="placeholder-slate"]::placeholder {
   color: #94a3b8 !important;
-  opacity: 1;
+  opacity: 1 !important;
 }
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus,
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus,
 textarea:-webkit-autofill {
   -webkit-text-fill-color: #0f172a !important;
   -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
   box-shadow: 0 0 0 1000px #ffffff inset !important;
 }
 
-/* ─── DEFENSIVE TEXT CONTRAST ──────────────────────────────────
-   L'AI mette spesso classi text-{color}-300/400 (pensate per sfondo
-   scuro) dentro card glassmorphism che pero' appaiono CHIARE, e il
-   testo svanisce. Remappiamo questi colori "troppo chiari" a tonalita'
-   medio-scure (-600/-700) che restano leggibili in ENTRAMBI i contesti:
-   - su sfondo scuro: leggermente meno vivace ma sempre leggibile
-   - su sfondo chiaro: ora ha contrasto reale
-   Manteniamo invariate le shade -500 in giu' (gia' scure) e le shade
-   -100/-200 (pensate per pillole/badge con bg dello stesso colore). */
-/* Versione "medium" (-500) leggibile su QUALSIASI bg (chiaro o scuro). */
-.text-gray-300, .text-slate-300, .text-zinc-300, .text-neutral-300, .text-stone-300 { color: #94a3b8 !important; }
-.text-gray-400, .text-slate-400, .text-zinc-400, .text-neutral-400, .text-stone-400 { color: #94a3b8 !important; }
-.text-green-300, .text-emerald-300, .text-lime-300, .text-teal-300 { color: #10b981 !important; }
-.text-green-400, .text-emerald-400, .text-lime-400, .text-teal-400 { color: #10b981 !important; }
-.text-yellow-300, .text-amber-300, .text-orange-300 { color: #f59e0b !important; }
-.text-yellow-400, .text-amber-400, .text-orange-400 { color: #f59e0b !important; }
-.text-red-300, .text-rose-300, .text-pink-300 { color: #fb7185 !important; }
-.text-red-400, .text-rose-400, .text-pink-400 { color: #fb7185 !important; }
-.text-blue-300, .text-sky-300, .text-cyan-300 { color: #38bdf8 !important; }
-.text-blue-400, .text-sky-400, .text-cyan-400 { color: #38bdf8 !important; }
-.text-indigo-300, .text-violet-300, .text-purple-300, .text-fuchsia-300 { color: #a78bfa !important; }
-.text-indigo-400, .text-violet-400, .text-purple-400, .text-fuchsia-400 { color: #a78bfa !important; }
-
-/* Eccezione: dentro un pulsante con bg colorato pieno il testo chiaro DEVE
-   restare bianco. Lo riportiamo a bianco quando il button ha una bg- esplicita. */
-button[class*="bg-"][class*="-500"] .text-white,
-button[class*="bg-"][class*="-600"] .text-white,
-button[class*="bg-"][class*="-700"] .text-white,
-button[class*="bg-gradient"] .text-white,
-[class*="bg-indigo-500"] *, [class*="bg-indigo-600"] *, [class*="bg-indigo-700"] *,
-[class*="bg-purple-500"] *, [class*="bg-purple-600"] *, [class*="bg-purple-700"] *,
-[class*="bg-emerald-500"] *, [class*="bg-emerald-600"] *,
-[class*="bg-rose-500"] *, [class*="bg-rose-600"] *,
-[class*="bg-red-500"] *, [class*="bg-red-600"] * {
-  /* dentro container con bg pieno scuro/colorato, NON sovrascrivere
-     i text-white o variants chiari */
-}
-
-/* ─── DEFENSIVE GLASS CARDS ─────────────────────────────────────
-   Pattern AI ricorrente:
-     <div class="bg-white/10 backdrop-blur ..."> ...<p class="text-white/60">testo</p>... </div>
-   Quando la pagina ha sfondo SCURO (gradient indigo/purple/slate-900):
-     bg-white/10 sopra dark diventa una tinta CHIARA del page bg
-     -> text-white/60 sopra diventa quasi invisibile
-   FIX: forziamo le low-opacity white card a sfondo SOLIDO scuro (niente
-   trasparenza). Cosi' qualunque sfondo del page passi attraverso,
-   le card sono SEMPRE leggibili e i text-white/N risaltano. */
-.bg-white\\/5,
-.bg-white\\/10,
-.bg-white\\/15,
-.bg-white\\/20,
-.bg-white\\/25,
-.bg-white\\/30 {
-  background-color: #1a1f33 !important;  /* solido dark navy/purple */
-  background-image: linear-gradient(135deg, rgba(124,90,240,0.08) 0%, rgba(255,255,255,0.02) 100%) !important;
-}
-/* Bordo: rafforziamo i border-white/N a opacita' maggiore per definirsi sul dark */
-.border-white\\/5  { border-color: rgba(255, 255, 255, 0.12) !important; }
-.border-white\\/10 { border-color: rgba(255, 255, 255, 0.16) !important; }
-.border-white\\/15 { border-color: rgba(255, 255, 255, 0.20) !important; }
-.border-white\\/20 { border-color: rgba(255, 255, 255, 0.22) !important; }
-.border-white\\/30 { border-color: rgba(255, 255, 255, 0.28) !important; }
-
-/* Quando l'AI usa text-white pieno o text-white/X dentro un container,
-   garantiamo che resti chiaro (non sovrascritto da nessun'altra regola). */
-/* text-white: lascia che la regola generale Tailwind valga (color: #fff)
-   ma all'interno di input/textarea/select forza nero (vince per specificita').
-   I placeholder li gestiamo TUTTI uniformemente in slate-gray sotto. */
+/* ═══════════════════════════════════════════════════════════════
+   9. TESTI BIANCHI — text-white resta bianco OVUNQUE tranne dentro
+   input (li forziamo dark perche' input bg e' bianco).
+   Le opacita' text-white/N (es. /60, /70) sono lasciate alla Tailwind
+   nativa che le rende correttamente con rgba(255,255,255,0.X).
+   ═══════════════════════════════════════════════════════════════ */
 .text-white { color: #ffffff !important; }
-input.text-white, textarea.text-white {
-  color: #0f172a !important;  /* dentro input forza dark, non bianco */
-}
-/* Placeholder UNIVERSALE: sempre slate-400 leggibile su input bianco.
-   Vince su placeholder-white/N che la AI puo' aggiungere. */
-input::placeholder,
-textarea::placeholder,
-.placeholder-white\\/50::placeholder,
-.placeholder-white\\/40::placeholder,
-.placeholder-white\\/60::placeholder,
-[class*="placeholder-white"]::placeholder {
-  color: #94a3b8 !important;
-  opacity: 1 !important;
-}
+input.text-white, textarea.text-white, select.text-white { color: #0f172a !important; }
+
+/* ═══════════════════════════════════════════════════════════════
+   10. TESTI COLORATI -300/-400 — l'AI li mette spesso pensando dark,
+   ma su card che noi forziamo dark non sono ben visibili.
+   Rimappiamo alla versione -500 medium (visibile in ENTRAMBI i casi).
+   ═══════════════════════════════════════════════════════════════ */
+.text-gray-300, .text-slate-300, .text-zinc-300, .text-neutral-300, .text-stone-300,
+.text-gray-400, .text-slate-400, .text-zinc-400, .text-neutral-400, .text-stone-400 { color: #cbd5e1 !important; }
+.text-green-300, .text-emerald-300, .text-lime-300, .text-teal-300,
+.text-green-400, .text-emerald-400, .text-lime-400, .text-teal-400 { color: #34d399 !important; }
+.text-yellow-300, .text-amber-300, .text-orange-300,
+.text-yellow-400, .text-amber-400, .text-orange-400 { color: #fbbf24 !important; }
+.text-red-300, .text-rose-300, .text-pink-300,
+.text-red-400, .text-rose-400, .text-pink-400 { color: #fb7185 !important; }
+.text-blue-300, .text-sky-300, .text-cyan-300,
+.text-blue-400, .text-sky-400, .text-cyan-400 { color: #60a5fa !important; }
+.text-indigo-300, .text-violet-300, .text-purple-300, .text-fuchsia-300,
+.text-indigo-400, .text-violet-400, .text-purple-400, .text-fuchsia-400 { color: #a78bfa !important; }
 `;
 
 const TAILWIND_CONFIG = (absHtml, absSrc) => `/** @type {import('tailwindcss').Config} */
