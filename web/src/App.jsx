@@ -1134,7 +1134,7 @@ function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
     ];
     if (phone.trim()) lines.push(`Telefono (fornito dal titolare): ${phone.trim()}.`);
     if (address.trim()) lines.push(`Indirizzo (fornito dal titolare): ${address.trim()}.`);
-    if (description.trim()) lines.push(`Note del titolare: ${description.trim()}`);
+    if (description.trim()) lines.push(`Descrizione del sito richiesta dal titolare (criterio di ricerca e generazione): ${description.trim()}`);
     lines.push(
       "",
       "IMPORTANTE: cerca su Google/Maps/Tripadvisor/Facebook/sito ufficiale dell'attivita' TUTTE le info disponibili: indirizzo completo, telefono, orari (giorni e fasce), descrizione reale, menu/servizi/prezzi, foto vere del locale (interno/esterno/piatti), titolare/chef se presente, recensioni. Usa i dati REALI trovati come fonte primaria; se trovi un'info diversa da quella che ti ha dato il titolare, preferisci quella REALE (la web search e' verificata).",
@@ -1150,9 +1150,6 @@ function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
         <button className="back-link" onClick={onBackToProjects}>← Torna al workspace</button>
         <div className="hero-badge"><Globe size={12} /> Sito web vetrina</div>
         <h1>Crea il sito della tua attività</h1>
-        <p className="hero-sub">
-          Compila <strong>solo Nome e Città</strong>. Tutto il resto (telefono, indirizzo, orari, menu, foto del locale) lo cerchiamo noi automaticamente sul web — devi solo specificare cosa NON vuoi che troviamo.
-        </p>
 
         <div className="website-form">
           <label className="project-name-field">
@@ -1162,7 +1159,6 @@ function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
               onChange={(e) => setBusinessName(e.target.value)}
               placeholder="Esempio: Pizzeria Il Mago Quattro"
             />
-            <small className="field-helper">Più è preciso, meglio troviamo info reali sul web.</small>
           </label>
 
           <div className="website-form-row">
@@ -1195,41 +1191,35 @@ function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
 
           <div className="website-form-row">
             <label className="project-name-field">
-              <span>Telefono <em className="field-optional">(facoltativo — lo cerchiamo)</em></span>
+              <span>Telefono</span>
               <input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="Lascia vuoto: lo trovi sul web"
+                placeholder="Es: 02 12345678"
               />
+              <small className="field-helper">Se lo lasci vuoto, proveremo a cercarlo noi.</small>
             </label>
             <label className="project-name-field">
-              <span>Indirizzo <em className="field-optional">(facoltativo — lo cerchiamo)</em></span>
+              <span>Indirizzo</span>
               <input
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="Lascia vuoto: lo cerchiamo noi"
+                placeholder="Es: Via Roma 12"
               />
+              <small className="field-helper">Se lo lasci vuoto, proveremo a cercarlo noi.</small>
             </label>
           </div>
 
           <label className="project-name-field">
-            <span>Note libere <em className="field-optional">(facoltativo)</em></span>
+            <span>Descrizione</span>
             <textarea
               className="website-textarea"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Vuoi richiedere qualcosa di specifico? Es: 'metti in evidenza la pizza margherita doc' oppure 'aggiungi una sezione eventi' oppure 'non mostrare i prezzi'..."
-              rows={3}
+              placeholder="Descrivi il sito che vuoi: cosa includere, cosa NON includere, stile preferito. Es: 'sito elegante per pizzeria napoletana, evidenzia il forno a legna, non mostrare prezzi, aggiungi sezione eventi'..."
+              rows={4}
             />
           </label>
-
-          <div className="website-search-banner">
-            <span>🔎</span>
-            <div>
-              <strong>La ricerca web parte appena clicchi</strong>
-              <p>Cercheremo automaticamente su Google, Maps, Tripadvisor, Facebook, sito ufficiale: orari, contatti, menu, foto reali del locale, recensioni. Costo della ricerca incluso, nessun sovrapprezzo.</p>
-            </div>
-          </div>
 
           <button
             className="primary website-submit"
@@ -1240,7 +1230,7 @@ function WebsiteHomeView({ busy, onGenerate, onBackToProjects }) {
               kind: "website",
             })}
           >
-            {busy ? <><Sparkles className="spin" size={18} /> Cerco info e creo…</> : <><Globe size={18} /> Cerca info e crea il sito</>}
+            {busy ? <><Sparkles className="spin" size={18} /> Creazione in corso…</> : <><Globe size={18} /> Crea il sito</>}
           </button>
         </div>
       </section>
