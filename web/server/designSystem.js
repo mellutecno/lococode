@@ -548,6 +548,36 @@ body {
   background-color: rgba(99, 102, 241, 0.18);
   color: #4338ca;
 }
+
+/* ─── DEFENSIVE INPUT CONTRAST ─────────────────────────────────
+   L'AI sbaglia spesso mettendo testi chiari su sfondi chiari dentro
+   gli <input>/<textarea>/<select>. Forziamo SEMPRE testi scuri
+   leggibili su sfondo bianco dentro le caselle, indipendentemente
+   dalle classi Tailwind che l'AI ha applicato. Cosi' anche se mette
+   className="text-white bg-white/10" sul container, dentro l'input
+   il testo digitato dall'utente resta leggibile.
+   color-scheme:light forza anche i picker (date/file) chiari. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="file"]):not([type="range"]):not([type="color"]),
+textarea,
+select {
+  color-scheme: light;
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+  caret-color: #4f46e5;
+}
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1;
+}
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill {
+  -webkit-text-fill-color: #0f172a !important;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  box-shadow: 0 0 0 1000px #ffffff inset !important;
+}
 `;
 
 const TAILWIND_CONFIG = (absHtml, absSrc) => `/** @type {import('tailwindcss').Config} */
