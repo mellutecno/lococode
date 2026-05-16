@@ -578,6 +578,43 @@ textarea:-webkit-autofill {
   -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
   box-shadow: 0 0 0 1000px #ffffff inset !important;
 }
+
+/* ─── DEFENSIVE TEXT CONTRAST ──────────────────────────────────
+   L'AI mette spesso classi text-{color}-300/400 (pensate per sfondo
+   scuro) dentro card glassmorphism che pero' appaiono CHIARE, e il
+   testo svanisce. Remappiamo questi colori "troppo chiari" a tonalita'
+   medio-scure (-600/-700) che restano leggibili in ENTRAMBI i contesti:
+   - su sfondo scuro: leggermente meno vivace ma sempre leggibile
+   - su sfondo chiaro: ora ha contrasto reale
+   Manteniamo invariate le shade -500 in giu' (gia' scure) e le shade
+   -100/-200 (pensate per pillole/badge con bg dello stesso colore). */
+.text-gray-300, .text-slate-300, .text-zinc-300, .text-neutral-300, .text-stone-300 { color: #475569 !important; }
+.text-gray-400, .text-slate-400, .text-zinc-400, .text-neutral-400, .text-stone-400 { color: #334155 !important; }
+.text-green-300, .text-emerald-300, .text-lime-300, .text-teal-300 { color: #047857 !important; }
+.text-green-400, .text-emerald-400, .text-lime-400, .text-teal-400 { color: #047857 !important; }
+.text-yellow-300, .text-amber-300, .text-orange-300 { color: #b45309 !important; }
+.text-yellow-400, .text-amber-400, .text-orange-400 { color: #b45309 !important; }
+.text-red-300, .text-rose-300, .text-pink-300 { color: #be123c !important; }
+.text-red-400, .text-rose-400, .text-pink-400 { color: #be123c !important; }
+.text-blue-300, .text-sky-300, .text-cyan-300 { color: #1d4ed8 !important; }
+.text-blue-400, .text-sky-400, .text-cyan-400 { color: #1d4ed8 !important; }
+.text-indigo-300, .text-violet-300, .text-purple-300, .text-fuchsia-300 { color: #4338ca !important; }
+.text-indigo-400, .text-violet-400, .text-purple-400, .text-fuchsia-400 { color: #4338ca !important; }
+
+/* Eccezione: dentro un pulsante con bg colorato pieno il testo chiaro DEVE
+   restare bianco. Lo riportiamo a bianco quando il button ha una bg- esplicita. */
+button[class*="bg-"][class*="-500"] .text-white,
+button[class*="bg-"][class*="-600"] .text-white,
+button[class*="bg-"][class*="-700"] .text-white,
+button[class*="bg-gradient"] .text-white,
+[class*="bg-indigo-500"] *, [class*="bg-indigo-600"] *, [class*="bg-indigo-700"] *,
+[class*="bg-purple-500"] *, [class*="bg-purple-600"] *, [class*="bg-purple-700"] *,
+[class*="bg-emerald-500"] *, [class*="bg-emerald-600"] *,
+[class*="bg-rose-500"] *, [class*="bg-rose-600"] *,
+[class*="bg-red-500"] *, [class*="bg-red-600"] * {
+  /* dentro container con bg pieno scuro/colorato, NON sovrascrivere
+     i text-white o variants chiari */
+}
 `;
 
 const TAILWIND_CONFIG = (absHtml, absSrc) => `/** @type {import('tailwindcss').Config} */
