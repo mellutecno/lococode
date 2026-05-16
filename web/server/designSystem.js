@@ -615,6 +615,39 @@ button[class*="bg-gradient"] .text-white,
   /* dentro container con bg pieno scuro/colorato, NON sovrascrivere
      i text-white o variants chiari */
 }
+
+/* ─── DEFENSIVE GLASS CARDS ─────────────────────────────────────
+   Pattern AI ricorrente:
+     <div class="bg-white/10 backdrop-blur ..."> ...<p class="text-white/60">testo</p>... </div>
+   Quando la pagina ha sfondo SCURO (gradient indigo/purple/slate-900):
+     bg-white/10 sopra dark diventa una tinta CHIARA del page bg
+     -> text-white/60 sopra diventa quasi invisibile
+   FIX: trasformiamo le low-opacity white card in DARK glass card.
+   Cosi' le text-white/X dell'AI rimangono leggibili (chiaro su scuro).
+   Affecta solo opacita' basse (5-30%) = pattern "glass". */
+.bg-white\/5,
+.bg-white\/10,
+.bg-white\/15,
+.bg-white\/20,
+.bg-white\/25,
+.bg-white\/30 {
+  background-color: rgba(15, 23, 42, 0.55) !important;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+/* I border bianchi a bassa opacita' restano (sono solo decorativi) */
+
+/* Quando l'AI usa text-white pieno o text-white/X dentro un container,
+   garantiamo che resti chiaro (non sovrascritto da nessun'altra regola). */
+.text-white { color: #ffffff !important; }
+.text-white\/90 { color: rgba(255, 255, 255, 0.92) !important; }
+.text-white\/80 { color: rgba(255, 255, 255, 0.86) !important; }
+.text-white\/70 { color: rgba(255, 255, 255, 0.80) !important; }
+.text-white\/60 { color: rgba(255, 255, 255, 0.75) !important; }
+.text-white\/50 { color: rgba(255, 255, 255, 0.70) !important; }
+.text-white\/40 { color: rgba(255, 255, 255, 0.65) !important; }
+.placeholder-white\/50::placeholder { color: rgba(255, 255, 255, 0.65) !important; }
+.placeholder-white\/40::placeholder { color: rgba(255, 255, 255, 0.60) !important; }
 `;
 
 const TAILWIND_CONFIG = (absHtml, absSrc) => `/** @type {import('tailwindcss').Config} */
