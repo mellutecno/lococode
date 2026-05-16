@@ -3496,6 +3496,45 @@ select option:hover {
 @media (max-width: 640px) {
   .website-form-row { grid-template-columns: 1fr; }
 }
+
+/* ─── Mobile: creation choice + workspace head responsive ─── */
+@media (max-width: 720px) {
+  /* Le due card grandi vanno SOTTO una sopra l'altra */
+  .creation-choice-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .creation-card { padding: 22px 20px; }
+  .creation-card h3 { font-size: 17px; }
+  .creation-choice { padding: 14px 4px 18px; }
+  .creation-choice-title { font-size: 19px; }
+  .creation-choice-sub { font-size: 13px; margin-bottom: 16px; }
+
+  /* Bottoni doppi sotto al titolo a tutta larghezza */
+  .projects-head { flex-direction: column; align-items: stretch; gap: 14px; }
+  .projects-head-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 8px;
+  }
+  .projects-head-actions .secondary.compact,
+  .projects-head-actions .primary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Card workspace meno padding e h1 piu' piccolo cosi' non sborda */
+  .projects-card { padding: 18px; }
+  .projects-head h1 { font-size: 28px; }
+  .projects-view { padding: 12px; }
+}
+
+@media (max-width: 480px) {
+  .projects-card { padding: 14px; }
+  .projects-head h1 { font-size: 24px; }
+  .creation-card { padding: 18px 16px; }
+}
 .website-select {
   width: 100%;
   background: rgba(255, 255, 255, 0.04);
