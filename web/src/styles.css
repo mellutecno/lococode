@@ -2928,9 +2928,12 @@ a.primary { text-decoration: none; }
   display: flex;
   align-items: stretch;
   justify-content: center;
+  /* SOLID dark per tutta l'area cornice. Niente trasparenza per evitare che la
+     luce della pagina (gradient main-stage) trasparisca attorno al mobile shape
+     creando aloni chiari. */
   background:
-    radial-gradient(ellipse at center, rgba(124, 90, 240, 0.10) 0%, transparent 70%),
-    rgba(0, 0, 0, 0.20);
+    radial-gradient(ellipse at center, rgba(124, 90, 240, 0.18) 0%, transparent 60%),
+    #0a0e1a;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   padding: 0;
