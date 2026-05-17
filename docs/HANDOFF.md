@@ -1,11 +1,11 @@
 # HANDOFF MelluCode
 
 ## Data / autore
-- Data: 2026-05-17
+- Data: 2026-05-18
 - Tool usato: Codex
 
 ## Obiettivo della sessione
-Consolidare l'inizio della v2 MelluCode e portare online il primo backend gestito `mellucode-api` con auth creator reale. Nelle fasi successive sono stati aggiunti il primo blocco multi-tenant, l'auth degli utenti finali delle app generate e la prima Data API gestita.
+Consolidare l'inizio della v2 MelluCode e portare online il primo backend gestito `mellucode-api` con auth creator reale. Nelle fasi successive sono stati aggiunti il primo blocco multi-tenant, l'auth degli utenti finali delle app generate, la prima Data API gestita e lo SDK frontend base.
 
 ## Modifiche fatte
 - Creato/committato scaffold `platform/api/`:
@@ -55,6 +55,17 @@ Consolidare l'inizio della v2 MelluCode e portare online il primo backend gestit
   - `DELETE /v1/data/{entity}/{id}`
 - Le entita' usano `json_schema` per una validazione base: required, type, maxLength, additionalProperties.
 - I record sono sempre filtrati per `tenant_id`; update/delete rispettano permessi base (`authenticated`, `admin`, `owner_or_admin`, `none`).
+- Creato `platform/sdk/`:
+  - package `mellucode-sdk`
+  - `MelluCode` client ESM
+  - `mc.auth.register/login/logout/me/changePassword`
+  - refresh automatico dell'access token su `401`
+  - storage token su `localStorage` in browser e memoria in ambienti non-browser
+  - `mc.entities.list/upsert`
+  - `mc.data(entity).list/get/create/update/delete`
+  - `MelluCodeError`
+  - test `node:test` con fetch mock
+  - README SDK con esempio d'uso
 
 ## Git
 - Branch: `mellucode-v2`
@@ -65,6 +76,8 @@ Consolidare l'inizio della v2 MelluCode e portare online il primo backend gestit
   - `7dd1900` tenant + app user auth APIs
   - `69879ca` handoff app-auth deploy
   - `88de15e` managed tenant data API
+  - `cb8e7de` handoff data API deploy
+  - prossimo commit atteso: SDK auth/data base
 - Push fatto: si
 - Stato al termine previsto: pulito dopo commit finale di handoff.
 
@@ -109,17 +122,29 @@ Consolidare l'inizio della v2 MelluCode e portare online il primo backend gestit
   - update record dal proprietario -> OK
   - delete negata a utente non admin quando `delete=admin` -> `403`
   - delete concessa ad admin -> `204`
+  - SDK unit test:
+    - login salva token e `/me` manda bearer -> OK
+    - refresh automatico su `401` -> OK
+    - entity + CRUD path Data API -> OK
+    - errori API diventano `MelluCodeError` -> OK
+  - SDK smoke test produzione:
+    - creato tenant temporaneo
+    - login app via SDK -> OK
+    - upsert entity via SDK -> OK
+    - create/update/list/delete record via SDK -> OK
   - `nginx -t` -> OK
   - `pm2 status mellucode-api` -> online
 - Pulizia test data:
   - eliminati dal DB i soli creator temporanei `codex-smoke-*` e `codex-logout-*`; cascade ha rimosso i tenant temporanei collegati.
   - eliminato anche il creator temporaneo `codex-data-*`; cascade ha rimosso tenant, entita', record e utenti app di test.
+  - eliminato anche il creator temporaneo `codex-sdk-*`; cascade ha rimosso tenant, entita', record e utenti app di test.
 
 ## Stato finale
 - `mellucode-api` e' online e risponde via HTTPS.
 - Auth creator base funziona end-to-end.
 - Tenant e auth utenti finali delle app generate funzionano end-to-end.
 - Data API multi-tenant base funziona end-to-end.
+- SDK frontend base auth/data funzionante e testato contro produzione.
 - Migrations DB vengono applicate al boot.
 - La v1 resta archiviata in `/opt/lococode-legacy` e tag `legacy-v1`.
 
@@ -131,10 +156,11 @@ Consolidare l'inizio della v2 MelluCode e portare online il primo backend gestit
 - Il logger PM2 contiene vecchi errori del primo avvio sbagliato con npm; il servizio corrente e' sano.
 - Non rilanciare il vecchio comando che rigenera `/tmp/mellucode-db-pass.tmp`: cambierebbe la password DB e romperebbe il `.env`.
 - Se si testa logout app-auth da PowerShell, `Invoke-WebRequest` puo' comportarsi male con `204 No Content`; usare `curl.exe` o un client HTTP normale. L'endpoint risponde correttamente `204`.
+- Lo SDK non ha ancora build bundle/minified ne pubblicazione npm/CDN: per ora esporta ESM da `src/index.js`.
 
 ## Prossimo passo consigliato
-1. Aggiungere test automatici auth/app-auth/data con `node:test` o Vitest.
-2. Iniziare `platform/sdk/` con `auth` + `data`.
-3. Rafforzare la validazione JSON Schema con Ajv.
-4. Implementare `/v1/files/upload`.
-5. Poi email transazionali e AI proxy con quota/costi.
+1. Aggiungere test automatici server auth/app-auth/data con `node:test` o Vitest.
+2. Rafforzare la validazione JSON Schema server con Ajv.
+3. Implementare `/v1/files/upload` e poi aggiungere `mc.files` nello SDK.
+4. Implementare email transazionali.
+5. Implementare AI proxy con quota/costi.

@@ -160,5 +160,6 @@ FILE STORAGE (Fase 1: locale, Fase 4: S3-compatible):
 - [ ] Endpoint `/v1/files/upload`
 - [ ] Endpoint `/v1/email/send`
 - [ ] Endpoint `/v1/ai/chat` con quota
-- [ ] SDK `platform/sdk/` versione 0.1.0 con auth, data, files, ai
+- [x] SDK `platform/sdk/` versione 0.1.0 con auth + data
+- [ ] SDK `platform/sdk/` con files + ai
 - [ ] Documentazione API (OpenAPI generato da Fastify schemas)

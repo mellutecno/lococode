@@ -1,0 +1,18 @@
+{
+  "name": "mellucode-sdk",
+  "version": "0.1.0",
+  "description": "MelluCode browser SDK for generated apps",
+  "type": "module",
+  "private": true,
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "check": "node scripts/check.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
