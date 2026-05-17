@@ -51,9 +51,11 @@
 - `recordValidation.test.js` esteso da 9 a 19 test (i 9 originali continuano a passare invariati, i 10 nuovi coprono le nuove capacita').
 
 ## Stato test
-- `cd platform/api && npm test`:
+- `cd platform/api && npm test` (locale, senza DB):
   - 39 unit test PASS (29 baseline + 10 nuovi su Ajv)
   - 1 suite integration SKIP (correttamente, manca `TEST_DATABASE_URL`)
+- `cd platform/api && TEST_DATABASE_URL=... npm test` (sul server contro `mellucode_test`):
+  - 71/71 PASS in ~40s (39 unit + 32 integration). Validato sia il refactor `data.js` -> `utils/permissions.js` + `utils/recordValidation.js` sia tutte le route end-to-end.
 - Per girare la suite integration: creare un DB di test e settare la variabile prima di `npm test`:
   - PowerShell: `$env:TEST_DATABASE_URL = "postgres://USER:PASS@127.0.0.1:5432/mellucode_test"`
   - Bash: `TEST_DATABASE_URL=postgres://USER:PASS@127.0.0.1:5432/mellucode_test npm test`
@@ -61,8 +63,18 @@
 - Postgres non e' installato localmente sulla macchina Windows di Antonio: la suite integration va girata o sul server di produzione (in un DB separato, MAI `mellucode_dev`) o quando si imposta una CI con PG.
 
 ## Modifiche al codice di produzione (non solo test)
-- `src/routes/data.js` rifattorizzato per importare da `utils/permissions.js` e `utils/recordValidation.js`. Comportamento identico al codice precedente; gli stessi smoke test manuali in produzione devono continuare a passare (non eseguiti in questa sessione perche' modifiche locali).
+- `src/routes/data.js` rifattorizzato per importare da `utils/permissions.js` e `utils/recordValidation.js`.
 - `src/server.js` ora deriva da `src/app.js` ma il comportamento di avvio (porta, host, logger, migrations, shutdown) e' identico.
+
+## Deploy effettuato (sessione corrente)
+- `git pull` su `/opt/mellucode/` (passa a `7a0e67c`).
+- `npm install --omit=dev` in `/opt/mellucode/platform/api/`: aggiunge `ajv@8.20.0` + `ajv-formats@2.1.1` come deps dirette (npm audit segnala 8 vulnerabilita' in transitive — da rivedere a parte, vedi sezione "Problemi").
+- `pm2 restart mellucode-api`: migrations idempotenti, server online su `127.0.0.1:5200`, health 200.
+- Smoke test contro produzione con una nuova entita' `contacts` che usa TUTTE le keyword Ajv aggiunte:
+  - 7 casi invalidi rifiutati con i messaggi italiani attesi (email format, pattern CAP, enum status, age >= 18, age <= 120, required mancante, required stringa vuota).
+  - 2 casi validi accettati (201).
+  - Tutti i dati di smoke test eliminati a fine corsa (verificato: 0 tenant residui).
+- Suite integration eseguita sul server contro `mellucode_test` (DB separato, creato in questa sessione, owner `mellucode`): 71/71 PASS.
 
 ## Git
 - Branch: `mellucode-v2`
@@ -93,9 +105,9 @@
 - Lo SDK in `platform/sdk/` ha la sua suite test (gia' esistente, immutata in questa sessione).
 
 ## Prossimo passo consigliato
-1. Smoke test manuale post-refactor su produzione: creare entita', creare record, update/delete con vari ruoli. Includere una entita' che usa le nuove keyword Ajv (es. `email` format, `enum` per stato, `pattern` per codici fiscali/CAP) per validare end-to-end.
-2. `npm install` sul server in `/opt/mellucode/platform/api/` per scaricare `ajv` e `ajv-formats` come deps dirette prima del restart PM2.
-3. Far girare la suite integration almeno una volta: creare `mellucode_test` su Postgres locale del server (NON il DB di produzione), settare `TEST_DATABASE_URL`, `npm test`.
-4. Implementare `/v1/files/upload` + `mc.files` SDK (richiede conferma path storage).
-5. Implementare `/v1/email/send` (richiede conferma mittente SMTP).
-6. Implementare `/v1/ai/chat` con quota (richiede chiave OpenRouter da `/opt/lococode-legacy/web/.env` e quota trial di default).
+1. **(Da decidere con Antonio)** ordine dei 3 endpoint mancanti per chiudere Fase 1:
+   - `/v1/files/upload` + `mc.files` SDK (richiede conferma path storage, default proposto `/opt/mellucode/storage/{tenant_id}/{file_id}`).
+   - `/v1/email/send` (richiede conferma mittente SMTP: riusare `approfittoffro@gmail.com` o nuovo `noreply@mellucode.mellutecno.it`?).
+   - `/v1/ai/chat` con quota (richiede spostare chiave `LOCOCODE_OPENROUTER_KEY` da `/opt/lococode-legacy/web/.env` al nuovo `.env` e definire quota trial default).
+2. Eventuale `npm audit fix` sul server per le 8 vulnerabilita' transitive segnalate (1 critica, 6 high, 1 moderate). Da fare a parte, verificare prima cosa tocca.
+3. Considerare CI (GitHub Actions) che esegua `npm test` sia unit che integration ad ogni push su `mellucode-v2`.
