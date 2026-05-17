@@ -329,7 +329,7 @@ Questa azione è irreversibile.`)) return;
     }
   }
 
-  async function generateApp({ text, appId = "", overrideModel = "", name = "", tier = "base", kind = "", notifyEmailOnEstimate = false }) {
+  async function generateApp({ text, appId = "", overrideModel = "", name = "", tier = "base", kind = "", notifyEmailOnEstimate = false, notifyEmailOnReady = false }) {
     if (!requireAuth()) return;
     const cleanPrompt = text.trim();
     if (!cleanPrompt || busy) return;
@@ -358,6 +358,7 @@ Questa azione è irreversibile.`)) return;
           kind: kind || "webapp",
           openrouterApiKey: apiKey,
           notifyEmailOnEstimate: !!notifyEmailOnEstimate,
+          notifyEmailOnReady: !!notifyEmailOnReady,
         }),
       });
 
@@ -592,11 +593,11 @@ Questa azione è irreversibile.`)) return;
             setGenerationTier={setGenerationTier}
             tiersCatalog={tiersCatalog}
             isAdmin={currentUser?.isAdmin === true}
-            onGenerate={(notifyMail) => generateApp({ text: prompt, name: projectName, tier: generationTier, kind: "webapp", notifyEmailOnEstimate: notifyMail })}
-            onQuick={(item, notifyMail) => {
+            onGenerate={(notifyEst, notifyReady) => generateApp({ text: prompt, name: projectName, tier: generationTier, kind: "webapp", notifyEmailOnEstimate: notifyEst, notifyEmailOnReady: notifyReady })}
+            onQuick={(item, notifyEst, notifyReady) => {
               setProjectName(item.label);
               setPrompt(item.prompt);
-              void generateApp({ text: item.prompt, name: item.label, tier: generationTier, kind: "webapp", notifyEmailOnEstimate: notifyMail });
+              void generateApp({ text: item.prompt, name: item.label, tier: generationTier, kind: "webapp", notifyEmailOnEstimate: notifyEst, notifyEmailOnReady: notifyReady });
             }}
           />
         )}
@@ -1025,9 +1026,12 @@ function TierSelector({ value, onChange, isAdmin, tiersCatalog }) {
 }
 
 function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setModel, busy, onGenerate, onQuick, generationTier, setGenerationTier, isAdmin, tiersCatalog }) {
-  // Opt-in email "preventivo pronto": l'utente puo' chiudere il browser e
-  // ricevere un avviso quando l'analisi SDD finisce.
-  const [notifyMail, setNotifyMail] = useState(false);
+  // Due opt-in email distinti: il primo per "preventivo pronto" (utile a
+  // chi non vuole stare appeso al browser durante l'analisi), il secondo
+  // per "app pronta" (utile a chi non vuole stare appeso durante la
+  // generazione completa, che puo' durare diversi minuti).
+  const [notifyEstimate, setNotifyEstimate] = useState(false);
+  const [notifyReady, setNotifyReady] = useState(false);
 
   return (
     <div className="home-view">
@@ -1035,6 +1039,13 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
         <div className="hero-badge"><Sparkles size={12} /> AI App Builder</div>
         <h1>Crea la tua web app</h1>
         <p className="hero-sub">Descrivi cosa vuoi costruire — LocoCode genera backend, frontend e database pronti all'uso.</p>
+
+        {/* Avviso preliminare visibile SUBITO, prima del prompt: gestisce
+            l'aspettativa dell'utente sui tempi e propone gia' le mail. */}
+        <div className="hero-time-notice" style={{ background: "rgba(91,62,232,0.10)", border: "1px solid rgba(124,90,240,0.30)", padding: "12px 16px", borderRadius: 12, color: "#cbd5e1", fontSize: 13, marginBottom: 16, lineHeight: 1.55 }}>
+          ⏱ <strong style={{ color: "#f1f5f9" }}>Tempi medi:</strong> ~2 min per il preventivo, ~5-10 min per la generazione completa. Se non vuoi attendere, lascia le spunte qui sotto e ti avviseremo via email.
+        </div>
+
         <label className="project-name-field">
           <span>Nome app</span>
           <input
@@ -1043,8 +1054,6 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
             placeholder="Esempio: Gestionale studio medico"
           />
         </label>
-        {/* Pricing v3: niente tier picker, niente modello manuale. Tutti gli
-            utenti usano sempre i migliori motori AI e pagano flat €1.99. */}
         <Composer
           value={prompt}
           onChange={setPrompt}
@@ -1052,17 +1061,19 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
           setModel={setModel}
           busy={busy}
           placeholder="Descrivi l'app da creare..."
-          onSubmit={() => onGenerate(notifyMail)}
+          onSubmit={() => onGenerate(notifyEstimate, notifyReady)}
           showModel={false}
         />
-        <label className="notify-mail-opt" style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 14, color: "#cbd5e1", fontSize: 14 }}>
-          <input
-            type="checkbox"
-            checked={notifyMail}
-            onChange={(e) => setNotifyMail(e.target.checked)}
-          />
-          <span>Avvisami via email quando il preventivo e' pronto (puoi chiudere il browser, riceverai un link per tornare).</span>
-        </label>
+        <div className="notify-mail-block" style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+          <label style={{ display: "flex", gap: 10, alignItems: "flex-start", color: "#cbd5e1", fontSize: 14 }}>
+            <input type="checkbox" checked={notifyEstimate} onChange={(e) => setNotifyEstimate(e.target.checked)} style={{ marginTop: 3 }} />
+            <span>Avvisami via email <strong>quando il preventivo e' pronto</strong> (analisi finita, devi solo confermare il prezzo).</span>
+          </label>
+          <label style={{ display: "flex", gap: 10, alignItems: "flex-start", color: "#cbd5e1", fontSize: 14 }}>
+            <input type="checkbox" checked={notifyReady} onChange={(e) => setNotifyReady(e.target.checked)} style={{ marginTop: 3 }} />
+            <span>Avvisami via email <strong>quando l'app e' pronta e online</strong> (con il link per provarla e le credenziali).</span>
+          </label>
+        </div>
       </section>
     </div>
   );

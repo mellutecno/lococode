@@ -624,6 +624,59 @@ h1, h2, h3, h4 { letter-spacing: -0.02em; font-weight: 700; }
   background-color: #1a1f33 !important;
   background-image: linear-gradient(135deg, rgba(124,90,240,0.10) 0%, rgba(255,255,255,0.02) 100%) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   7-bis. NUKE LIGHT BG — l'AI continua a piazzare sfondi chiari come
+   wrapper di pagina (bg-white, bg-slate-50, bg-gray-50, bg-zinc-50,
+   gradient from-slate-50 to-indigo-50, etc.). Sono i responsabili del
+   bug "scritte chiare su sfondo chiaro" che riportiamo continuamente.
+   Forziamo TUTTI questi a transparent in modo che il body dark vinca.
+   Eccezione: input/textarea/select (gestiti in sezione 8 con bg bianco).
+   ═══════════════════════════════════════════════════════════════ */
+[class*="bg-white"]:not(input):not(textarea):not(select),
+.bg-slate-50, .bg-gray-50, .bg-zinc-50, .bg-stone-50, .bg-neutral-50,
+.bg-slate-100, .bg-gray-100, .bg-zinc-100, .bg-stone-100, .bg-neutral-100,
+.bg-blue-50, .bg-indigo-50, .bg-violet-50, .bg-purple-50, .bg-fuchsia-50,
+.bg-sky-50, .bg-cyan-50, .bg-teal-50, .bg-emerald-50, .bg-green-50,
+.bg-yellow-50, .bg-amber-50, .bg-orange-50, .bg-red-50, .bg-rose-50, .bg-pink-50 {
+  background-color: transparent !important;
+}
+/* Gradient chiari "from-XXX-50/100 to-YYY-50/100" sui wrapper principali
+   sono particolarmente fastidiosi: li uccidiamo solo se applicati su un
+   elemento con min-h-screen o w-full (cioe' wrapper di pagina). */
+[class*="min-h-screen"][class*="from-slate-5"],
+[class*="min-h-screen"][class*="from-gray-5"],
+[class*="min-h-screen"][class*="from-blue-5"],
+[class*="min-h-screen"][class*="from-indigo-5"],
+[class*="min-h-screen"][class*="from-violet-5"],
+[class*="min-h-screen"][class*="from-purple-5"],
+[class*="min-h-screen"][class*="from-emerald-5"],
+[class*="min-h-screen"][class*="from-amber-5"],
+[class*="min-h-screen"][class*="from-orange-5"],
+[class*="min-h-screen"][class*="bg-gradient"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+/* Testi dichiarati "slate-900" / "gray-900" / "zinc-900" su body dark
+   diventano invisibili. Forziamo white per tutti i testi "scuri"
+   eccetto dentro input (che hanno bg bianco). */
+:not(input):not(textarea):not(select).text-slate-900,
+:not(input):not(textarea):not(select).text-gray-900,
+:not(input):not(textarea):not(select).text-zinc-900,
+:not(input):not(textarea):not(select).text-neutral-900,
+:not(input):not(textarea):not(select).text-stone-900,
+:not(input):not(textarea):not(select).text-slate-800,
+:not(input):not(textarea):not(select).text-gray-800,
+:not(input):not(textarea):not(select).text-black {
+  color: #f1f5f9 !important;
+}
+:not(input):not(textarea):not(select).text-slate-700,
+:not(input):not(textarea):not(select).text-gray-700,
+:not(input):not(textarea):not(select).text-zinc-700,
+:not(input):not(textarea):not(select).text-slate-600,
+:not(input):not(textarea):not(select).text-gray-600 {
+  color: #cbd5e1 !important;
+}
 .border-white\\/5  { border-color: rgba(255, 255, 255, 0.10) !important; }
 .border-white\\/10 { border-color: rgba(255, 255, 255, 0.14) !important; }
 .border-white\\/15 { border-color: rgba(255, 255, 255, 0.18) !important; }

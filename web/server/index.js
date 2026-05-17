@@ -813,8 +813,10 @@ app.post("/api/generate", async (req, res) => {
   const appKind = requestedKind === "website" ? "website" : "webapp";
 
   // Email opt-in: l'utente puo' richiedere di essere avvisato quando il
-  // preventivo e' pronto e/o quando l'app e' pronta dopo il pagamento.
-  // Salviamo i flag sull'app cosi' la pipeline puo' decidere se mandare.
+  // preventivo e' pronto e/o quando l'app e' pronta. L'opt-in per "app
+  // pronta" e' settabile sia qui (HomeView) sia in EstimateView prima
+  // del pagamento (per non-admin). L'admin salta EstimateView quindi
+  // l'unica chance di opt-in per lui e' qui.
   const notifyOnEstimate = req.body.notifyEmailOnEstimate === true;
   const notifyOnReady = req.body.notifyEmailOnReady === true;
 
@@ -2007,9 +2009,34 @@ async function runPostGenerationPipeline(target, apps, user) {
     await saveApps(apps, user).catch(() => {});
   }
 
-  // 3) Smoke test: chiama un endpoint pubblico per verificare che TUTTO funzioni
+  // 3) Smoke test: chiama un endpoint pubblico per verificare che TUTTO
+  // funzioni. Inoltre verifica che il processo PM2 del backend non sia
+  // in crash loop (capita spesso con bug python tipo bcrypt/passlib).
   let smokeOk = false;
+  let backendCrashLoop = false;
   if (backendPort) {
+    // Check crash loop: leggi pm2 jlist e cerca quante volte il process
+    // si e' riavviato nell'ultimo minuto. > 5 restart = crash loop.
+    try {
+      const pmName = `lococode-app-${target.id}`;
+      const { execSync } = await import("node:child_process");
+      const pmJson = execSync("pm2 jlist", { encoding: "utf8", timeout: 5000 });
+      const list = JSON.parse(pmJson);
+      const proc = list.find((p) => p.name === pmName);
+      if (proc) {
+        const restarts = proc.pm2_env?.restart_time || 0;
+        const uptimeMs = Date.now() - (proc.pm2_env?.pm_uptime || Date.now());
+        // Restarts > 5 totali e uptime corrente < 30s = sta ancora crashando
+        if (restarts > 5 && uptimeMs < 30000) {
+          backendCrashLoop = true;
+          appendOperationalLog(target, `⚠⚠ Backend in crash loop (${restarts} restart, uptime ${Math.round(uptimeMs/1000)}s). Controlla i log: pm2 logs ${pmName} --err`);
+        }
+      }
+    } catch (err) {
+      // non bloccante - il check pm2 e' best-effort
+      console.warn(`[smoke] pm2 check fallito per ${target.id}: ${err.message}`);
+    }
+
     const slug = target.publicSlug || appPublicSlug(target);
     const smokeUrl = `${publicBaseUrl}/app/${slug}`;
     const apiSmokeUrl = `${publicBaseUrl}/app/${slug}/api/`;
@@ -2021,10 +2048,11 @@ async function runPostGenerationPipeline(target, apps, user) {
       const apiStatus = apiRes.status;
       const backendStatus = backendRes.status;
       // Accettiamo qualsiasi status < 500 sul frontend, e backend che almeno risponda
-      smokeOk = frontendStatus < 500 && backendStatus > 0 && backendStatus < 500;
+      // Ma se e' in crash loop, smokeOk e' SEMPRE false (anche se in quell'istante risponde).
+      smokeOk = !backendCrashLoop && frontendStatus < 500 && backendStatus > 0 && backendStatus < 500;
       appendOperationalLog(
         target,
-        `${smokeOk ? "✓" : "⚠"} Smoke test: frontend HTTP ${frontendStatus} · API HTTP ${apiStatus} · backend HTTP ${backendStatus}`,
+        `${smokeOk ? "✓" : "⚠"} Smoke test: frontend HTTP ${frontendStatus} · API HTTP ${apiStatus} · backend HTTP ${backendStatus}${backendCrashLoop ? " · BACKEND IN CRASH LOOP" : ""}`,
       );
       await saveApps(apps, user).catch(() => {});
     } catch (err) {
@@ -2055,7 +2083,7 @@ async function runPostGenerationPipeline(target, apps, user) {
 
   // 4) Email utente con risultato finale
   const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
-  await notifyUserAppReady(user, target, { frontendOk, backendPort, smokeOk, authOk, authReport, elapsedSec }).catch((err) =>
+  await notifyUserAppReady(user, target, { frontendOk, backendPort, smokeOk, authOk, authReport, elapsedSec, backendCrashLoop }).catch((err) =>
     console.warn(`[notify] email ${appId}:`, err.message),
   );
 }
@@ -2156,10 +2184,12 @@ async function notifyUserAppReady(user, target, status) {
   const appUrl = appUrlForApp(target);
   // authOk: true=passed, false=failed, null=not applicable (no auth or website)
   const authPassed = status.authOk !== false; // null o true = ok
-  const allOk = status.frontendOk && status.backendPort && status.smokeOk && authPassed;
-  const subject = allOk
-    ? `✓ La tua app "${target.name}" è online!`
-    : `⚠ App "${target.name}" generata con avvisi`;
+  const allOk = status.frontendOk && status.backendPort && status.smokeOk && authPassed && !status.backendCrashLoop;
+  const subject = status.backendCrashLoop
+    ? `🚨 App "${target.name}" generata ma il backend non parte`
+    : allOk
+      ? `✓ La tua app "${target.name}" è online!`
+      : `⚠ App "${target.name}" generata con avvisi`;
 
   const minutes = Math.floor(status.elapsedSec / 60);
   const seconds = status.elapsedSec % 60;
@@ -4848,12 +4878,18 @@ function computeAppScore(appData) {
 
 // Prezzi creazione (in EUR) — pagamento UPFRONT per generare l'app.
 // Questi prezzi vengono scalati come SCONTO dal primo mese di abbonamento
-// o dal pagamento export una tantum.
+// o dal pagamento export una tantum. Aggiornati al pricing v4 (€1.99-€4.99
+// in base a token SDD). Quando l'app non ha pricing.priceEur (es. admin
+// bypass), usiamo €2.99 come stima media per non gonfiare lo sconto fittizio.
 const GENERATION_FEES = {
-  base:    3.99,
-  media:   4.99,
-  pro:     9.99,
-  premium: 19.99,
+  // Pricing v4: tutti gli utenti sono trattati come "premium" (tier unico),
+  // il prezzo varia per app. La key "premium" qui e' il fallback medio.
+  starter: 1.99,
+  premium: 2.99,
+  // Backward compat per app vecchie generate prima del v4:
+  base:    1.99,
+  media:   2.99,
+  pro:     2.99,
 };
 
 // Tier post-creazione (Starter/Pro/Business/Enterprise) basato su score reale.
