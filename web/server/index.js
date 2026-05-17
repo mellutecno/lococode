@@ -2083,7 +2083,11 @@ async function runPostGenerationPipeline(target, apps, user) {
 
   // 4) Email utente con risultato finale
   const elapsedSec = Math.round((Date.now() - startedAt) / 1000);
-  await notifyUserAppReady(user, target, { frontendOk, backendPort, smokeOk, authOk, authReport, elapsedSec, backendCrashLoop }).catch((err) =>
+  const finalStatus = { frontendOk, backendPort, smokeOk, authOk, authReport, elapsedSec, backendCrashLoop };
+  // 4a) Logging metriche (append-only, prima della mail cosi' resta anche
+  // se la mail fallisce). Servono per ricalibrare prezzi v4 su dati reali.
+  await appendAppMetrics(target, user, finalStatus);
+  await notifyUserAppReady(user, target, finalStatus).catch((err) =>
     console.warn(`[notify] email ${appId}:`, err.message),
   );
 }
@@ -2261,6 +2265,60 @@ async function notifyUserAppReady(user, target, status) {
   });
   await transporter.sendMail({ from, to: userEmail, subject, html, text });
   console.log(`[notify] Email inviata a ${userEmail} per app ${target.id} (allOk=${allOk})`);
+}
+
+// Append-only ledger di tutte le app generate. Una riga per app, JSON.
+// Usato per analisi offline di costi/margini reali su un campione di
+// utenti veri (vedi memory pricing_v4: "raccogliere 5-10 generazioni
+// reali e ricalibrare le soglie"). Best-effort, errori silenziati.
+async function appendAppMetrics(target, user, status) {
+  try {
+    const tu = target.tokenUsage || {};
+    // Calcolo del costo reale usando lo stesso schema di publicApp (token prices EUR/k)
+    const TOKEN_PRICES_EUR_PER_K = {
+      "anthropic/claude-sonnet-4.5": { in: 0.003, out: 0.015 },
+      "anthropic/claude-haiku-4.5":  { in: 0.001, out: 0.005 },
+      "openai/gpt-5":                { in: 0.003, out: 0.015 },
+      "openai/gpt-5-mini":           { in: 0.0006, out: 0.003 },
+      "google/gemini-2.5-pro":       { in: 0.002, out: 0.010 },
+      "google/gemini-2.5-flash":     { in: 0.0003, out: 0.0015 },
+      "deepseek/deepseek-v4-pro":    { in: 0.0005, out: 0.0035 },
+      "moonshotai/kimi-k2.6":        { in: 0.0006, out: 0.0025 },
+      "qwen/qwen3-coder":            { in: 0.0004, out: 0.0014 },
+      "x-ai/grok-4-fast":            { in: 0.0008, out: 0.0030 },
+    };
+    let costEur = 0;
+    const perPhase = {};
+    for (const phaseKey of Object.keys(tu)) {
+      const u = tu[phaseKey];
+      const prices = TOKEN_PRICES_EUR_PER_K[u.model] || { in: 0.001, out: 0.003 };
+      const c = (u.promptTokens / 1000) * prices.in + (u.completionTokens / 1000) * prices.out;
+      costEur += c;
+      perPhase[phaseKey] = { model: u.model, in: u.promptTokens, out: u.completionTokens, eur: Number(c.toFixed(4)) };
+    }
+    const priceEur = Number(target.pricing?.priceEur || 0);
+    const marginEur = priceEur > 0 ? Number((priceEur - costEur).toFixed(2)) : null;
+    const row = {
+      at: new Date().toISOString(),
+      appId: target.id,
+      appName: target.name,
+      ownerEmail: target.ownerEmail || user?.email || "",
+      ownerIsAdmin: isAdminUser(user),
+      generationTier: target.generationTier || null,
+      sddTokens: (tu.sdd?.promptTokens || 0) + (tu.sdd?.completionTokens || 0),
+      costEur: Number(costEur.toFixed(4)),
+      priceEur,
+      marginEur,
+      smokeOk: !!status.smokeOk,
+      backendOnline: !!status.backendPort && !status.backendCrashLoop,
+      authOk: status.authOk,
+      elapsedSec: status.elapsedSec,
+      perPhase,
+    };
+    await fs.appendFile(path.join(dataDir, "metrics.jsonl"), JSON.stringify(row) + "\n");
+  } catch (err) {
+    console.warn(`[metrics] append fallito per ${target.id}: ${err.message}`);
+  }
 }
 
 async function shouldStopAutopilot(user, appId) {
