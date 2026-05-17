@@ -459,14 +459,18 @@ export function PageHeader({ title, subtitle, action }) {
 export default PageLayout;
 `;
 
-// File DEDICATO per PageHeader. L'AI sbaglia il path 1 volta su 2 e
-// importa da '../components/ui/PageHeader' (file singolo) invece che
-// dall'index.js. Senza un file dedicato il build fallisce con
-// "Could not resolve '../components/ui/PageHeader'" -> blank page.
-const PAGE_HEADER_JSX = `import React from 'react';
-export { PageHeader } from './PageLayout';
-export { PageHeader as default } from './PageLayout';
-`;
+// File DEDICATI per componenti che vivono dentro altri file. L'AI
+// sbaglia il path 1 volta su 2 e importa da '../components/ui/Xxx'
+// (file singolo) invece che dall'index.js. Senza un file dedicato
+// il build fallisce con "Could not resolve" -> blank page.
+// Creo uno stub che re-esporta dal file vero.
+const PAGE_HEADER_JSX = `export { PageHeader, PageHeader as default } from './PageLayout';\n`;
+const CARD_HEADER_JSX = `export { CardHeader, CardHeader as default } from './Card';\n`;
+const TEXTAREA_JSX    = `export { Textarea, Textarea as default } from './Input';\n`;
+const SELECT_JSX      = `export { Select, Select as default } from './Input';\n`;
+const SIDEBAR_BRAND_JSX = `export { SidebarBrand, SidebarBrand as default } from './PageLayout';\n`;
+const SIDEBAR_ITEM_JSX  = `export { SidebarItem, SidebarItem as default } from './PageLayout';\n`;
+const SIDEBAR_NAV_JSX   = `export { SidebarNav, SidebarNav as default } from './PageLayout';\n`;
 
 const MODAL_JSX = `import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
@@ -835,6 +839,12 @@ export function getDesignSystemFiles(frontendDirPath, pathModule) {
     "src/components/ui/AuthLayout.jsx": AUTH_LAYOUT_JSX,
     "src/components/ui/PageLayout.jsx": PAGE_LAYOUT_JSX,
     "src/components/ui/PageHeader.jsx": PAGE_HEADER_JSX,
+    "src/components/ui/CardHeader.jsx": CARD_HEADER_JSX,
+    "src/components/ui/Textarea.jsx": TEXTAREA_JSX,
+    "src/components/ui/Select.jsx": SELECT_JSX,
+    "src/components/ui/SidebarBrand.jsx": SIDEBAR_BRAND_JSX,
+    "src/components/ui/SidebarItem.jsx": SIDEBAR_ITEM_JSX,
+    "src/components/ui/SidebarNav.jsx": SIDEBAR_NAV_JSX,
     "src/components/ui/Modal.jsx": MODAL_JSX,
     "src/components/ui/index.js": INDEX_JSX,
     "src/components/ui/README.md": USAGE_README,
