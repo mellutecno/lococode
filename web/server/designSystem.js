@@ -753,6 +753,89 @@ input.text-white, textarea.text-white, select.text-white { color: #0f172a !impor
 .text-indigo-400, .text-violet-400, .text-purple-400, .text-fuchsia-400 { color: #a78bfa !important; }
 `;
 
+const THEME_CSS_NEUTRAL_OVERRIDES = `/* LocoCode UI Kit - neutral guardrails.
+   This runs after the old defensive theme. It removes the single forced
+   LocoCode/dark look while keeping typography and basic contrast safety.
+   Generated apps must own their visual identity. */
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif !important;
+  color: #0f172a !important;
+  background: #f8fafc !important;
+  background-image: none !important;
+  background-attachment: initial !important;
+}
+body::before,
+body::after {
+  display: none !important;
+}
+#root {
+  min-height: 100vh;
+  position: relative;
+  z-index: auto;
+}
+
+/* Restore Tailwind backgrounds that the old dark guardrail neutralized. */
+.bg-gradient-to-t  { background-image: linear-gradient(to top, var(--tw-gradient-stops)) !important; }
+.bg-gradient-to-tr { background-image: linear-gradient(to top right, var(--tw-gradient-stops)) !important; }
+.bg-gradient-to-r  { background-image: linear-gradient(to right, var(--tw-gradient-stops)) !important; }
+.bg-gradient-to-br { background-image: linear-gradient(to bottom right, var(--tw-gradient-stops)) !important; }
+.bg-gradient-to-b  { background-image: linear-gradient(to bottom, var(--tw-gradient-stops)) !important; }
+.bg-gradient-to-bl { background-image: linear-gradient(to bottom left, var(--tw-gradient-stops)) !important; }
+.bg-gradient-to-l  { background-image: linear-gradient(to left, var(--tw-gradient-stops)) !important; }
+.bg-gradient-to-tl { background-image: linear-gradient(to top left, var(--tw-gradient-stops)) !important; }
+
+.bg-white { background-color: rgb(255 255 255) !important; }
+.bg-white\\/5  { background-color: rgb(255 255 255 / 0.05) !important; }
+.bg-white\\/10 { background-color: rgb(255 255 255 / 0.10) !important; }
+.bg-white\\/20 { background-color: rgb(255 255 255 / 0.20) !important; }
+.bg-white\\/30 { background-color: rgb(255 255 255 / 0.30) !important; }
+.bg-white\\/40 { background-color: rgb(255 255 255 / 0.40) !important; }
+.bg-white\\/50 { background-color: rgb(255 255 255 / 0.50) !important; }
+.bg-white\\/60 { background-color: rgb(255 255 255 / 0.60) !important; }
+.bg-white\\/70 { background-color: rgb(255 255 255 / 0.70) !important; }
+.bg-white\\/80 { background-color: rgb(255 255 255 / 0.80) !important; }
+.bg-white\\/90 { background-color: rgb(255 255 255 / 0.90) !important; }
+.bg-white\\/95 { background-color: rgb(255 255 255 / 0.95) !important; }
+
+.bg-slate-50 { background-color: rgb(248 250 252) !important; }
+.bg-slate-100 { background-color: rgb(241 245 249) !important; }
+.bg-gray-50 { background-color: rgb(249 250 251) !important; }
+.bg-gray-100 { background-color: rgb(243 244 246) !important; }
+.bg-zinc-50 { background-color: rgb(250 250 250) !important; }
+.bg-zinc-100 { background-color: rgb(244 244 245) !important; }
+.bg-indigo-50 { background-color: rgb(238 242 255) !important; }
+.bg-purple-50 { background-color: rgb(250 245 255) !important; }
+.bg-blue-50 { background-color: rgb(239 246 255) !important; }
+.bg-emerald-50 { background-color: rgb(236 253 245) !important; }
+.bg-amber-50 { background-color: rgb(255 251 235) !important; }
+.bg-rose-50 { background-color: rgb(255 241 242) !important; }
+
+/* Restore readable neutral text on light surfaces. Dark themes should use
+   explicit text-white/text-slate-100/text-slate-200 classes. */
+.text-black { color: rgb(0 0 0) !important; }
+.text-slate-950 { color: rgb(2 6 23) !important; }
+.text-slate-900 { color: rgb(15 23 42) !important; }
+.text-slate-800 { color: rgb(30 41 59) !important; }
+.text-slate-700 { color: rgb(51 65 85) !important; }
+.text-slate-600 { color: rgb(71 85 105) !important; }
+.text-slate-500 { color: rgb(100 116 139) !important; }
+.text-slate-400 { color: rgb(148 163 184) !important; }
+.text-gray-900 { color: rgb(17 24 39) !important; }
+.text-gray-800 { color: rgb(31 41 55) !important; }
+.text-gray-700 { color: rgb(55 65 81) !important; }
+.text-gray-600 { color: rgb(75 85 99) !important; }
+.text-gray-500 { color: rgb(107 114 128) !important; }
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="file"]):not([type="range"]):not([type="color"]),
+textarea,
+select {
+  color-scheme: light;
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+}
+`;
+
 const TAILWIND_CONFIG = (absHtml, absSrc) => `/** @type {import('tailwindcss').Config} */
 export default {
   content: [${absHtml}, ${absSrc}],
@@ -848,7 +931,7 @@ export function getDesignSystemFiles(frontendDirPath, pathModule) {
     "src/components/ui/Modal.jsx": MODAL_JSX,
     "src/components/ui/index.js": INDEX_JSX,
     "src/components/ui/README.md": USAGE_README,
-    "src/lc-theme.css": THEME_CSS,
+    "src/lc-theme.css": THEME_CSS + THEME_CSS_NEUTRAL_OVERRIDES,
     "tailwind.config.js": TAILWIND_CONFIG(absHtml, absSrc),
   };
 }
@@ -856,9 +939,10 @@ export function getDesignSystemFiles(frontendDirPath, pathModule) {
 // Prompt-side: cosa raccontare all'AI sui componenti disponibili.
 // Tenuto qui per evitare drift tra codice e prompt.
 export const DESIGN_SYSTEM_PROMPT_SECTION = [
-  "DESIGN SYSTEM PREINSTALLATO — REGOLA INDEROGABILE",
-  "LocoCode inietta automaticamente in OGNI app generata un set di componenti UI 'Liquid Glass' belli e pronti.",
-  "Tu NON DEVI ricreare Button/Card/Input/Modal/Layout/Badge da zero con div+className. Usa direttamente questi componenti.",
+  "UI KIT PREINSTALLATO — REGOLA INDEROGABILE",
+  "LocoCode inietta automaticamente in OGNI app generata un set di componenti UI neutri, pronti e accessibili.",
+  "Tu NON DEVI ricreare Button/Card/Input/Modal/Layout/Badge da zero con div+className quando un componente pronto risolve lo stesso problema. Usa il kit come base funzionale, poi costruisci un'identita visiva specifica per questa app.",
+  "IMPORTANTISSIMO: il kit NON e un tema LocoCode da copiare. Ogni app deve avere palette, atmosfera, layout e stile propri, coerenti con dominio e pubblico.",
   "I file vengono scritti automaticamente prima del build, NON serve che tu li crei o li includa nei tuoi blocchi file.",
   "",
   "Import obbligatorio in OGNI pagina/componente che usa UI:",
@@ -867,10 +951,10 @@ export const DESIGN_SYSTEM_PROMPT_SECTION = [
   "",
   "DEVI inoltre importare in src/main.jsx (DOPO ./index.css) anche:",
   "  import './lc-theme.css';",
-  "(viene iniettato da LocoCode con tipografia Inter, scrollbar custom, animazioni — senza questo import l'app perde l'estetica).",
+  "(viene iniettato da LocoCode con font, scrollbar, animazioni e guardrail di contrasto. Non impone il look: il look lo decidi tu per la singola app).",
   "",
   "API DEI COMPONENTI (impara queste, sono tutte le opzioni disponibili):",
-  "- Button: variant='primary'|'secondary'|'ghost'|'danger'|'success', size='sm'|'md'|'lg', icon={IconLucide}, iconRight={IconLucide}, loading={bool}. Primario = gradient indigo->purple. NON aggiungere mai className che sovrascriva colori/padding: usa SOLO le variant.",
+  "- Button: variant='primary'|'secondary'|'ghost'|'danger'|'success', size='sm'|'md'|'lg', icon={IconLucide}, iconRight={IconLucide}, loading={bool}. Puoi usare className per adattare palette e dimensioni quando serve, ma mantieni contrasto alto e stati hover/focus.",
   "- Card: variant='glass'(default)|'elevated'|'plain'|'dark', padding='sm'|'md'|'lg'|'none', hover={bool}. Wrappa SEMPRE in <Card> ogni blocco di contenuto (lista, form, riepilogo). NON usare <div className='bg-white...'>.",
   "- CardHeader: props title, subtitle, action. Usalo dentro <Card> per il titolo.",
   "- Input/Textarea/Select: props label, icon (solo Input), error, hint. Niente input HTML grezzi nelle form.",
