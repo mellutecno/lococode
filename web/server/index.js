@@ -36,10 +36,11 @@ const sessionTtlMs = Number(process.env.LOCOCODE_SESSION_TTL_MS || 30 * 24 * 60 
 const heartbeatTimeoutMs = Number(process.env.LOCOCODE_HEARTBEAT_TIMEOUT_MS || 2 * 60 * 1000);
 const publicBaseUrl = String(process.env.LOCOCODE_PUBLIC_URL || "https://lococode.mellutecno.it").replace(/\/$/, "");
 const sharedOpenRouterKey = String(process.env.LOCOCODE_OPENROUTER_KEY || "").trim();
-// Trial PER-APP (dopo pagamento €1.99 l'utente puo' usare l'app per N giorni;
-// scaduto deve abbonarsi o acquistare). Default 1 giorno, configurabile via env.
+// Prova PER-APP: dopo il pagamento di creazione l'utente puo' usare l'app per N giorni;
+// scaduta la prova deve abbonarsi all'hosting LocoCode oppure acquistare/esportare il codice.
+// Default 48 ore, configurabile via env.
 // Trial PER-UTENTE (account-level, accesso a chiavi condivise) resta 30gg.
-const appTrialDays = Number(process.env.LOCOCODE_APP_TRIAL_DAYS || 1);
+const appTrialDays = Number(process.env.LOCOCODE_APP_TRIAL_DAYS || 2);
 const appTrialMs = appTrialDays * 24 * 60 * 60 * 1000;
 
 // Restituisce la chiave OpenRouter da usare: personale dell'utente oppure quella condivisa del server.
@@ -1240,7 +1241,7 @@ async function sendAdminEmail(subject, text) {
 
 function trialExpiredHtml(appName = "") {
   const name = escapeHtml(appName || "Questa app");
-  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trial scaduto · LocoCode</title><style>*{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;display:grid;place-items:center;font-family:Inter,system-ui,sans-serif;background:#0d1117;color:#e2e8f0}.card{background:#161b27;border:1px solid rgba(91,62,232,.25);border-radius:20px;padding:40px 36px;text-align:center;max-width:380px;box-shadow:0 0 0 1px rgba(91,62,232,.1),0 24px 64px rgba(0,0,0,.5)}.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(220,38,38,.12);color:#f87171;border:1px solid rgba(220,38,38,.2);border-radius:99px;padding:4px 12px;font-size:12px;font-weight:600;margin-bottom:20px;letter-spacing:.5px}h1{font-size:20px;font-weight:700;margin-bottom:10px;color:#f1f5f9}p{font-size:14px;color:#94a3b8;line-height:1.65;margin-bottom:24px}.btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,#5b3ee8,#7c5af0);color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;transition:opacity .2s}.btn:hover{opacity:.85}.footer{margin-top:16px;font-size:12px;color:#4b5563}</style></head><body><div class="card"><div class="badge">⏱ Trial scaduto</div><h1>${name}</h1><p>Il periodo di prova gratuito di questa app è terminato. Per continuare ad usarla richiedi una licenza permanente.</p><a class="btn" href="mailto:mellucciantonio@gmail.com?subject=Richiesta licenza LocoCode&body=Ciao, vorrei attivare la licenza permanente per l'app: ${name}">✉ Richiedi licenza</a><p class="footer">Generato con LocoCode · lococode.mellutecno.it</p></div></body></html>`;
+  return `<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prova terminata - LocoCode</title><style>*{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;display:grid;place-items:center;font-family:Inter,system-ui,sans-serif;background:#0d1117;color:#e2e8f0}.card{background:#161b27;border:1px solid rgba(91,62,232,.25);border-radius:20px;padding:40px 36px;text-align:center;max-width:420px;box-shadow:0 0 0 1px rgba(91,62,232,.1),0 24px 64px rgba(0,0,0,.5)}.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(220,38,38,.12);color:#f87171;border:1px solid rgba(220,38,38,.2);border-radius:99px;padding:4px 12px;font-size:12px;font-weight:600;margin-bottom:20px;letter-spacing:.5px}h1{font-size:20px;font-weight:700;margin-bottom:10px;color:#f1f5f9}p{font-size:14px;color:#94a3b8;line-height:1.65;margin-bottom:24px}.btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,#5b3ee8,#7c5af0);color:#fff;text-decoration:none;padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600;transition:opacity .2s}.btn:hover{opacity:.85}.footer{margin-top:16px;font-size:12px;color:#4b5563}</style></head><body><div class="card"><div class="badge">Prova 48 ore terminata</div><h1>${name}</h1><p>La prova pubblica di questa app e' terminata. Per continuare puoi attivare l'abbonamento hosting LocoCode oppure acquistare/esportare il codice completo.</p><a class="btn" href="mailto:mellucciantonio@gmail.com?subject=Attivazione app LocoCode&body=Ciao, vorrei attivare o acquistare questa app: ${name}">Richiedi attivazione</a><p class="footer">Generato con LocoCode - lococode.mellutecno.it</p></div></body></html>`;
 }
 
 async function startAutopilotRequest(req, res) {
@@ -2628,7 +2629,7 @@ async function runOrchestratorTurn({ target, apiKey, model, userPrompt, mode, on
   const createdOrUpdated = [...result.created, ...result.updated];
   const action =
     mode === "initial"
-      ? "SDD creato e primo MVP generato"
+      ? "Piano creato e prima versione funzionante generata"
       : mode === "continue"
         ? "Task applicato"
         : "Modifica applicata";
@@ -3005,13 +3006,18 @@ function buildOrchestratorSystemPrompt() {
     "- Rispondi in italiano nei documenti SDD.",
     "- Non fare domande bloccanti quando puoi scegliere una soluzione ragionevole.",
     "- Non inserire API key o segreti nei file.",
-    "- Ogni progetto generato deve tendere a un prodotto testabile: frontend, backend, database/config e istruzioni di avvio coerenti.",
+    "- Ogni progetto generato deve essere un PRODOTTO FINITO utilizzabile sul server LocoCode: frontend, backend, database/config, dati iniziali realistici e URL finale funzionante.",
+    "- Non generare prototipi statici o schermate dimostrative finte. Se l'utente chiede un gestionale, admin/operatore/cliente devono poter creare, modificare, archiviare/eliminare e consultare dati reali nel database.",
+    "- Tutti i pulsanti visibili devono funzionare davvero oppure non devono essere renderizzati. Vietati CTA, menu, tab, form e azioni decorative senza logica collegata.",
+    "- Il costo di creazione (1.99-4.99 EUR) e' un anticipo: se l'utente sceglie abbonamento hosting o acquisto/export viene scalato dal primo pagamento.",
+    "- L'app pubblicata resta provabile per 48 ore; poi LocoCode blocca l'accesso finche' l'utente non sceglie abbonamento hosting o acquisto/export. Questa logica resta esterna all'app generata.",
     "- IMPORTANTE: NON inserire MAI flussi di licenza, trial, attivazione, abbonamento, chiavi precaricate o scadenze nell'app generata. Trial, pagamento e abbonamento sono gestiti dal sistema LocoCode (esterno) a monte: l'app deve essere SOLO il prodotto richiesto dall'utente, niente schermate 'Attivazione' o 'Abbonati' o banner trial.",
     "- Non proporre Render, Netlify, Vercel, Firebase o servizi esterni: il prodotto deve girare sul server LocoCode, dentro la cartella del progetto dell'utente.",
     "- Il backend deve esporre API avviabili sul server e il frontend deve poter usare una URL API configurabile con VITE_API_URL.",
     "- Il database deve stare nella cartella del progetto, preferibilmente SQLite. Precarica dati di esempio realistici.",
-    "- Se l'app prevede accesso utenti, crea credenziali di prova fittizie documentate nel README, mai credenziali reali.",
-    "- Se l'app richiede API esterne, crea una schermata Impostazioni/Chiavi API per inserirle. Senza chiave mostra dati di esempio, non errori tecnici. Documenta le chiavi in deploy/lococode.json.",
+    "- Se l'app prevede accesso utenti, crea sempre un admin reale funzionante con password temporanea da cambiare al primo accesso, e credenziali documentate nel README/deploy/lococode.json.",
+    "- Se l'app richiede API esterne, crea una schermata Impostazioni/Chiavi API per inserirle. Senza chiave mostra dati di esempio funzionanti e messaggi chiari, non errori tecnici.",
+    "- Se l'app include intelligenza artificiale a runtime, separala dal costo di creazione: crea impostazioni per chiavi/credito AI, contatore consumo e blocco elegante quando il credito finisce. Non usare di nascosto la chiave OpenRouter di LocoCode.",
     "- Non inserire istruzioni da terminale, comandi bash, pip, npm o placeholder tipo OMDB_API_KEY nel testo visibile al cliente finale.",
     "- Ogni modifica deve restituire file completi, non patch parziali.",
     "- Usa solo percorsi relativi alla root progetto.",
@@ -3071,6 +3077,10 @@ function buildInitialSpecsPrompt(initialPrompt) {
     "7. deploy/lococode.json",
     "",
     "REGOLA D'ORO: tasks.md e architecture.md DEVONO essere completi anche a costo di tagliare gli altri file. NIENTE FILE VUOTI.",
+    "OBIETTIVO PRODOTTO: il piano deve portare a una web app finita e vendibile, non a una demo statica. Ogni entita importante del dominio deve avere flussi CRUD reali, schermate operative e persistenza nel database.",
+    "Se la richiesta utente e' scarna, scegli assunzioni ragionevoli e costruisci un prodotto completo per quel dominio; segnala le assunzioni in SDD senza bloccare la generazione.",
+    "Per ogni ruolo previsto, definisci cosa puo' fare davvero. Un admin deve poter gestire utenti, dati principali, configurazioni e contenuti dell'app.",
+    "Se l'app richiede servizi esterni o AI a runtime, pianifica una schermata Impostazioni/Crediti/Chiavi e fallback con dati di esempio funzionanti.",
     "",
     "REQUISITI STRUTTURA: .lc/spec/tasks.md deve avere tra 12 e 20 task [ ] divisi in 3-4 sezioni.",
     "Formato OBBLIGATORIO per i task — usa numerazione gerarchica senza prefissi T/Task:",
@@ -3082,7 +3092,7 @@ function buildInitialSpecsPrompt(initialPrompt) {
     "...",
     "NON usare: T1/T2/T19, Task-1, #1, bullet senza numero. Solo numerazione 1.1/1.2/2.1/2.2 etc.",
     "- .lc/spec/sdd.md: 5 sezioni brevi: 1) Descrizione progetto (50 parole), 2) Utenti e ruoli (50 parole), 3) Funzionalita principali (bullet list di 6-8 voci), 4) Vincoli tecnici (bullet list), 5) Flusso principale (3-4 step). NIENTE PROSA VERBOSA.",
-    "- .lc/spec/architecture.md: tabelle SQLite con colonne e tipi (in markdown table), endpoint FastAPI con metodo/path/payload (lista compatta), componenti React principali (lista nomi). NO descrizioni romanzate.",
+    "- .lc/spec/architecture.md: tabelle SQLite con colonne e tipi (in markdown table), endpoint FastAPI con metodo/path/payload (lista compatta), componenti React principali (lista nomi) e matrice ruolo -> azioni CRUD. NO descrizioni romanzate.",
     "Il piano deve includere SOLO le funzionalita' richieste dall'utente. NIENTE task su attivazione, licenze, chiavi mensili o abbonamenti: lo gestisce LocoCode esternamente.",
     "Se servono API esterne, pianifica una schermata Impostazioni per inserire le chiavi. Senza chiave l'app mostra dati di esempio funzionanti.",
     "Marca completati solo i task di specifica realmente coperti in questa fase.",
@@ -3114,9 +3124,12 @@ function buildInitialBackendPrompt(initialPrompt, projectMemory) {
     "REGOLA D'ORO: main.py DEVE essere completo e funzionante anche se devi tagliare gli altri. NIENTE FILE VUOTI.",
     "",
     "backend/app/main.py deve includere FastAPI con CORS (allow_origins=['*']), endpoint GET / health check, modelli Pydantic completi, inizializzazione SQLite con tabelle e dati di esempio realistici precaricati al primo avvio, e API CRUD complete coerenti con il progetto.",
+    "CRUD COMPLETO significa: lista, dettaglio, creazione, modifica, archiviazione/eliminazione e filtri utili per ogni entita primaria del dominio. Non basta restituire dashboard statiche.",
+    "I ruoli devono avere permessi reali: admin gestisce utenti e dati principali; ruoli operativi modificano solo cio' che compete; utenti finali vedono e modificano solo i propri dati.",
     "",
     "UTENTE ADMIN OBBLIGATORIO — Se l'app ha autenticazione utenti, AL PRIMO AVVIO (dentro la funzione che inizializza il DB) crea sempre un utente con:",
     "  email = 'admin@admin.it'   password = 'admin'   role = 'admin' (o equivalente)",
+    "Aggiungi un campo must_change_password (o equivalente) e forza il cambio password al primo accesso prima di usare la dashboard.",
     "Lo aggiungi solo se la tabella users e' vuota (idempotente). Documenta queste credenziali nel README e nel campo 'credentialsHint' di deploy/lococode.json cosi' il proprietario dell'app puo' fare login subito per testarla.",
     "",
     "ROUTE PREFIX OBBLIGATORIO: tutti gli endpoint API DEVONO essere sotto il prefisso /api/. Esempi: POST /api/auth/login, GET /api/lists, POST /api/items. MAI mettere endpoint a /auth/login o /lists. Il backend e' montato dietro un proxy /app/{slug}/api/* quindi DEVE rispondere su /api/*.",
@@ -3149,6 +3162,7 @@ function buildInitialBackendPrompt(initialPrompt, projectMemory) {
     "",
     "deploy/lococode.json deve descrivere nome servizio, porta suggerita, comando backend, comando build frontend, percorso SQLite, credenziali di prova e API esterne richieste.",
     "Se sono necessarie API esterne, crea endpoint SQLite per salvare le chiavi. Se mancano, restituisci dati di esempio e messaggi chiari, non errori bloccanti.",
+    "Se l'app usa AI a runtime, crea tabelle/endpoint per credito residuo, consumo stimato e blocco quando il credito finisce. La generazione dell'app e il consumo AI dell'app sono due costi separati.",
     "Non usare render.yaml, Netlify, Vercel o altri deploy esterni.",
     "Non inserire dati sanitari reali, API key o segreti.",
     "Aggiorna il piano dei task completati in questa fase.",
@@ -3162,7 +3176,7 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     initialPrompt,
     "",
     "FASE 3/3 - Frontend React e interfaccia utente.",
-    "Usa la memoria SDD qui sotto e genera il frontend MVP completo.",
+    "Usa la memoria SDD qui sotto e genera il frontend completo del prodotto.",
     "",
     DESIGN_SYSTEM_PROMPT_SECTION,
     "",
@@ -3185,7 +3199,9 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "REGOLA D'ORO: App.jsx + main.jsx + package.json + index.css DEVONO essere completi e funzionanti. Se devi tagliare, taglia preview/index.html e i task md. NIENTE FILE VUOTI O TRONCATI A META.",
     "",
     "Il frontend deve essere in italiano, gestionale, responsive, navigabile e con dati di prova realistici ma fittizi.",
-    "L'utente deve poter provare l'MVP come prodotto: pagine principali, pulsanti, form e routing devono funzionare nella preview reale.",
+    "L'utente deve poter provare l'app come prodotto finito: pagine principali, pulsanti, form, routing e salvataggi devono funzionare nella preview reale.",
+    "Ogni azione visibile deve essere collegata a stato o API reali: crea, modifica, elimina/archivia, filtra, cerca e visualizza dettagli dove il dominio lo richiede. Vietati pulsanti finti.",
+    "Se esistono ruoli, ogni ruolo deve avere schermate e azioni coerenti. L'admin deve poter gestire utenti e dati principali; non basta una dashboard statica.",
     "Se l'app usa API esterne, il frontend deve avere una schermata Impostazioni/Chiavi API dove inserire la chiave; senza chiave mostra dati di esempio funzionanti, non si ferma.",
     "FONDAMENTALE - Chiamate API: usa SEMPRE const API = import.meta.env.VITE_API_URL || ''; poi chiama fetch(API + '/endpoint'). Non scrivere mai localhost, 127.0.0.1 o porte hardcoded. VITE_API_URL viene iniettato da LocoCode al build e punta al backend reale.",
     "FONDAMENTALE - Gestione risposte fetch ROBUSTA: ogni helper fetch DEVE controllare il Content-Type prima di chiamare res.json(). Se il backend non e attivo, nginx serve l'index.html invece dell'API e res.json() crasherebbe con 'Unexpected token <'. Pattern obbligatorio: const ct = (res.headers.get('content-type')||'').toLowerCase(); if (!ct.includes('application/json')) throw new Error('Servizio temporaneamente non disponibile.'); Poi try/catch su res.json(). Non mostrare MAI all'utente messaggi tecnici come 'Unexpected token' o 'is not valid JSON' — sempre messaggi friendly italiani.",
@@ -3194,18 +3210,18 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "★★★ QUALITA' VISIVA = METRICA PRIMARIA DI SUCCESSO ★★★",
     "L'utente paga €1.99-4.99 per generare l'app, e DECIDERA' se abbonarsi (€/mese) o acquistare (€una-tantum) BASANDOSI SULLA BELLEZZA. Se l'app generata sembra fatta nel 2010, lui non si abbona e LocoCode perde il cliente. Se sembra Linear/Stripe/Vercel/Notion/Raycast/Arc Browser, lui si abbona. Non c'e' via di mezzo.",
     "REGOLE DI BELLEZZA NON NEGOZIABILI:",
-    " - SEMPRE dark theme coerente con lc-theme.css (body scuro, card semi-trasparenti glass).",
+    " - Scegli un tema coerente col dominio e diverso da LocoCode: puo' essere chiaro, scuro o misto, ma deve avere contrasto perfetto.",
     " - SEMPRE micro-animazioni: hover transition, fade-in al mount (animate-fade-in), scale 105% sui tile cliccabili.",
     " - SEMPRE spaziatura generosa: padding p-6/p-8 sulle card, py-12/16 sulle sezioni, gap-6 nelle grid.",
     " - SEMPRE ombre e bordi sottili: shadow-xl o ring-1 ring-white/10 sulle card, MAI card a fondo piatto.",
-    " - SEMPRE gradient nei CTA: bg-gradient-to-r from-indigo-600 to-purple-600, hover:from-indigo-500 to-purple-500.",
+    " - CTA primari sempre ben visibili e coerenti con la palette scelta; non usare sempre indigo/purple.",
     " - SEMPRE icone lucide-react (Sparkles, Activity, TrendingUp, Users, BarChart3, etc.) accanto ai titoli/KPI, mai testi nudi.",
     " - SEMPRE KPI in evidenza: dashboard con 3-4 numeri grandi (text-4xl font-bold) in card colorate. Anche se l'app non e' un gestionale, una mini-dashboard di overview rende SUBITO l'idea di valore.",
     " - SEMPRE empty state curato: quando una lista e' vuota, mostra icona grande + frase invitante + CTA, MAI 'nessun risultato' nudo.",
     " - SEMPRE loading state skeleton (non spinner): usa <div className='animate-pulse bg-slate-800 rounded h-10' /> mentre carichi.",
     " - SEMPRE responsive: mobile su un colonna, desktop su 2-3 colonne. Usa md:grid-cols-2 lg:grid-cols-3.",
     " - VIETATO: testi text-white su bg chiari, testi text-slate-300/400 su bianco, card senza bordo/ombra, layout a tabella nuda, font diversi da Inter.",
-    "Se hai dubbi, copia il pattern: header sticky con backdrop-blur + sidebar dark glass + main con cards animate. Vedi App.jsx del design system come riferimento.",
+    "Se hai dubbi, scegli un pattern professionale adatto al dominio: gestionale operativo, app consumer, dashboard premium, portale clinico, e-commerce o CRM. Non copiare LocoCode.",
     "",
     "QUALITA' VISIVA OBBLIGATORIA — il frontend DEVE essere bellissimo, moderno e curato come Linear, Stripe Dashboard, Vercel, Notion, Raycast, Arc Browser. Un utente DEVE volerla usare subito e dire 'wow, e bella'. Niente stile bootstrap anni 2010, niente sfondi pure white piatti, niente layout banali.",
     "USA TAILWIND CSS con classi utilitarie direttamente nei JSX. Ogni componente deve avere classi Tailwind complete e dettagliate.",
@@ -3233,8 +3249,8 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "",
     "STRUTTURA VISIVA OBBLIGATORIA:",
     "- Sfondo pagina: bg-slate-50 o bg-gray-50. Card contenuto: bg-white rounded-xl shadow-sm border border-slate-200 p-6.",
-    "- Layout: flex con sidebar sinistra fissa (w-56 o w-64) bg-white border-r border-slate-200, contenuto principale flex-1 overflow-auto p-6.",
-    "- Sidebar: logo + nome app in alto (font-bold text-indigo-600), voci menu con icone lucide-react, active state bg-indigo-50 text-indigo-700 font-medium, hover:bg-slate-50.",
+    "- Layout: scegli sidebar, topbar, tab bar o navigation rail in base al prodotto. Non usare sempre la stessa sidebar sinistra.",
+    "- Navigazione: logo/nome app, voci con icone lucide-react, stato attivo chiarissimo e leggibile; palette e forma coerenti col dominio, non sempre indigo.",
     "- Tipografia: font-family Inter via @import in index.css. Titoli text-xl font-bold text-slate-900. Sottotitoli text-sm text-slate-500. Corpo text-sm text-slate-700.",
     "- Pulsanti primari: bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-lg transition-colors. Secondari: border border-slate-300 hover:bg-slate-50.",
     "- Input/select: w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent.",
@@ -3454,6 +3470,10 @@ function buildFollowupOrchestratorPrompt({ userPrompt, projectMemory, nextTask, 
     "- Non ripartire da zero. Modifica solo i file necessari.",
     "- Se il task richiede backend, aggiorna backend/app/main.py e requirements.txt.",
     "- Se il task cambia la UI, aggiorna frontend/src/ e i file coinvolti.",
+    "- Mantieni il contratto prodotto finito: niente demo statiche, niente pulsanti finti, niente dashboard non collegate al database.",
+    "- Quando completi un task, verifica mentalmente che l'utente possa usare davvero la funzione: API, UI, persistenza e stato errore devono essere coerenti.",
+    "- Se aggiungi una funzione admin o gestionale, includi create/edit/delete/archive dove serve. Se non puoi cablarla, non mostrarla.",
+    "- Se emergono API esterne o AI a runtime, usa impostazioni/chiavi/crediti e fallback funzionanti; non bloccare l'app con errori tecnici.",
     "- Aggiorna preview/index.html solo come fallback statico se il frontend reale non e ancora pronto.",
     "- UI KIT PREINSTALLATO: il progetto ha gia' componenti UI neutri in frontend/src/components/ui/ (Button, Card, CardHeader, Input, Textarea, Select, Badge, Empty, Stat, Modal, AuthLayout, PageLayout, SidebarBrand, SidebarItem, SidebarNav, PageHeader). Usa questi componenti importandoli da './components/ui' (o '../components/ui') quando aiutano, ma personalizza la resa visiva per il dominio dell'app.",
     "- QUALITA' VISIVA: non degradare mai il livello visivo e non riportare l'app allo stile LocoCode. Palette, atmosfera e layout devono restare specifici del prodotto generato.",
@@ -4974,7 +4994,7 @@ async function readJson(filePath) {
 
 // ─── Pricing / scoring ────────────────────────────────────────────
 // 4 stati per il ciclo di vita dell'app:
-//   trial               — prova 30gg, codice sorgente locked
+//   trial               — prova 48 ore, codice sorgente locked
 //   hosted_lococode_api — abbonamento A: app sul nostro server + nostre API key
 //   hosted_user_api     — abbonamento B: app sul nostro server + chiavi utente
 //   exported            — pagato one-shot C: utente puo scaricare ZIP completo

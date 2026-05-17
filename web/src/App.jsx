@@ -1254,7 +1254,7 @@ function PricingCard({ app, onPurchaseTier }) {
     {
       key: "hosted_lococode_api",
       title: "Hosting LocoCode (full)",
-      tagline: "L'app gira sui nostri server. URL pubblico: lococode.mellutecno.it/app/tua-app. Servizi cloud inclusi se l'app li richiede.",
+      tagline: "L'app resta online sui nostri server con URL pubblico lococode.mellutecno.it/app/tua-app. Servizi cloud inclusi se l'app li richiede.",
       price: app.pricing.plans.hosted_lococode_api,
       cta: "Abbonati",
       featured: true,
@@ -1262,20 +1262,20 @@ function PricingCard({ app, onPurchaseTier }) {
         "Hosting + dominio lococode.mellutecno.it",
         "Backup automatici",
         "Pacchetto servizi cloud incluso (se l'app li usa)",
-        "Aggiornamenti illimitati al codice",
+        "Aggiornamenti e manutenzione sul server LocoCode",
       ],
     },
     {
       key: "hosted_user_api",
       title: "Hosting LocoCode (BYO keys)",
-      tagline: "L'app gira sui nostri server. URL: lococode.mellutecno.it/app/tua-app. Le tue chiavi servizi se l'app li usa.",
+      tagline: "L'app resta online sui nostri server, ma usi le tue chiavi per servizi esterni o AI se l'app li richiede.",
       price: app.pricing.plans.hosted_user_api,
       cta: "Abbonati",
       features: [
         "Hosting + dominio lococode.mellutecno.it",
         "Backup automatici",
         "Chiavi servizi cloud a tuo carico (solo se l'app li usa)",
-        "Aggiornamenti illimitati al codice",
+        "Aggiornamenti e manutenzione sul server LocoCode",
       ],
     },
     {
@@ -1468,7 +1468,7 @@ function EstimateView({ app, busy, onConfirmPayment, onCancelEstimate, onBackToP
           <span className="estimate-price-label">Costo creazione</span>
           <div className="estimate-price-amount">€{price.toFixed(2)}</div>
           <div className="estimate-price-discount">
-            💚 <strong>Trial 1 giorno incluso.</strong> Se ti abboni o acquisti l'app, questi €{price.toFixed(2)} verranno scontati dal prezzo finale.
+            💚 <strong>Prova 48 ore inclusa.</strong> Se ti abboni o acquisti/esporti l'app, questi €{price.toFixed(2)} vengono scalati dal primo pagamento.
           </div>
         </div>
 
@@ -1598,8 +1598,7 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
   if (projectComplete && !completedDetailsOpen) {
     const trialDaysLeft = app.trialDaysLeft;
     const trialExpired = trialDaysLeft !== null && trialDaysLeft === 0;
-    // Mostra il banner trial SOLO se sta per scadere (≤7gg) o è gia scaduto.
-    // Quando ci sono 30gg interi non serve ingombrare la pagina.
+    // Mostra il banner prova SOLO se sta per scadere o e' gia scaduta.
     const showTrialBanner = app.lifecycle === "trial" && trialDaysLeft !== null && trialDaysLeft <= 7;
 
     const doneCount = taskState.doneCount ?? 0;
@@ -1639,11 +1638,11 @@ function ChatView({ app, chatPrompt, setChatPrompt, busy, status, error, onSend,
           <div className={`trial-banner ${trialExpired ? "expired" : ""} ${trialDaysLeft <= 1 ? "warning" : ""}`}>
             <div className="trial-banner-text">
               {trialExpired ? (
-                <><strong>Trial scaduto.</strong> L'app non è più accessibile pubblicamente. Attiva una licenza per riabilitarla.</>
+                <><strong>Prova terminata.</strong> L'app non è più accessibile pubblicamente. Attiva un abbonamento o acquista/esporta il codice per riabilitarla.</>
               ) : trialDaysLeft === 1 ? (
-                <><strong>Ultimo giorno di trial!</strong> Da domani l'app non sarà più utilizzabile. Scegli un piano qui sotto per non perdere l'accesso.</>
+                <><strong>Ultime 24 ore di prova.</strong> Scegli un piano qui sotto per non perdere l'accesso.</>
               ) : (
-                <><strong>Trial attivo</strong> — {trialDaysLeft} giorni rimanenti. Acquista un piano prima della scadenza.</>
+                <><strong>Prova attiva</strong> — {trialDaysLeft} giorni rimanenti. Il costo di creazione verra scalato dal piano che scegli.</>
               )}
             </div>
           </div>
@@ -2144,7 +2143,7 @@ function chatMessageContent(message) {
   return cleanOperationText(text, 700)
     .replace(/Prossimo task SDD applicato con\s+[\w./:-]+\.?\s*/i, "Task applicato. ")
     .replace(/Task SDD applicato con\s+[\w./:-]+\.?\s*/i, "Task applicato. ")
-    .replace(/SDD creato e MVP iniziale generato con\s+[\w./:-]+\.?\s*/i, "Piano creato e MVP iniziale generato. ")
+    .replace(/SDD creato e MVP iniziale generato con\s+[\w./:-]+\.?\s*/i, "Piano creato e prima versione funzionante generata. ")
     .replace(/Modifica applicata seguendo SDD con\s+[\w./:-]+\.?\s*/i, "Modifica applicata. ")
     .replace(/\bSDD\b/g, "piano")
     .replace(/File aggiornati:\s*[\s\S]*$/i, "File aggiornati salvati nel progetto.")
