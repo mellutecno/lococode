@@ -1314,6 +1314,25 @@ function PricingCard({ app, onPurchaseTier }) {
           <span className="pricing-lifecycle-badge">Piano attivo: {app.lifecycle.replace(/_/g, " ")}</span>
         )}
       </header>
+
+      {/* Disclaimer AI: le app che usano intelligenza artificiale a runtime
+          (chiamate OpenAI/Claude/ecc dentro l'app generata) consumano token
+          ogni volta che l'utente le usa. Non possiamo includerle in un
+          abbonamento forfettario senza rischio di erosione del margine.
+          Pricing dedicato in arrivo: per ora preventivo a parte su richiesta. */}
+      <div style={{
+        margin: "12px 0 18px",
+        padding: "14px 18px",
+        background: "rgba(245, 158, 11, 0.08)",
+        border: "1px solid rgba(245, 158, 11, 0.30)",
+        borderRadius: 12,
+        color: "#fde68a",
+        fontSize: 13,
+        lineHeight: 1.55,
+      }}>
+        ⚠️ <strong style={{ color: "#fbbf24" }}>App con AI integrata:</strong> se la tua app prevede chiamate a modelli AI (ChatGPT, Claude, Gemini, ecc.) il costo di utilizzo NON e' incluso negli abbonamenti qui sotto. Avra' un pricing dedicato in base al volume di chiamate. Scrivici per un preventivo personalizzato.
+      </div>
+
       <div className="pricing-plans">
         {plans.map((plan) => (
           <article key={plan.key} className={`pricing-plan ${plan.featured ? "featured" : ""} ${app.lifecycle === plan.key ? "current" : ""}`}>
