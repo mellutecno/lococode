@@ -5,7 +5,8 @@
 - Tool usato: Claude Code (Opus 4.7)
 
 ## Obiettivo della sessione
-Costruire la prima baseline di test automatici per `mellucode-api`. Prima di questa sessione esistevano solo smoke test manuali in produzione (vedi handoff precedente di Codex). Obiettivo: unit test puri per i moduli "puri" gia' esistenti e integration test (fastify.inject + PostgreSQL) pronti da girare contro un DB di test quando disponibile.
+1. Costruire la prima baseline di test automatici per `mellucode-api` (unit + integration con fastify.inject + Postgres).
+2. Sostituire la validazione `validateRecordData` "light" con Ajv full (draft-07 + ajv-formats), mantenendo invariate le semantiche legacy (stringa vuota = mancante, null su campi opzionali ignorato).
 
 ## Modifiche fatte
 
@@ -31,9 +32,27 @@ Costruire la prima baseline di test automatici per `mellucode-api`. Prima di que
 - `package.json` script `test` aggiornato da `node --test src/**/*.test.js` (non funziona su Windows perche' la shell non espande il glob) a `node --test` (auto-discovery ricorsiva, supportata da Node 20+).
 - Aggiunto script `test:integration` per lanciare solo la suite integration.
 
+### Ajv: validazione record robusta
+- Aggiunte deps dirette: `ajv ^8.17.1` + `ajv-formats ^2.1.1` (erano gia' presenti come transitive di `@fastify/*`).
+- Riscritto `src/utils/recordValidation.js` per usare Ajv con cache di compilazione (Map keyed by `JSON.stringify(schema)`). Stesso schema -> stessa validate function compilata una sola volta.
+- Mantenute le semantiche custom del codice v1:
+  - `required` con valore `undefined | null | ""` -> messaggio "Campo obbligatorio mancante" (Ajv non gestisce nativamente stringa vuota / null come "missing").
+  - `null` su campi NON required -> ignorato nella validazione (Ajv altrimenti lo tratterebbe come tipo mismatch).
+- Schema malformati (es. `type: "telepathy"`) ora ritornano un errore esplicito "Schema entita' non valido: ..." invece di far crashare la richiesta.
+- Errori Ajv tradotti in italiano breve in `formatAjvError` (require / additionalProperties / type / maxLength / minLength / pattern / format / enum / minimum / maximum / exclusiveMin/Max / multipleOf / minItems / maxItems / uniqueItems). Path nested (es. `address.zip`) viene mostrato nel messaggio.
+- Nuove validazioni ora supportate dalla Data API (definibili dall'orchestrator nel `mc_app_entities.json_schema`):
+  - `format`: email, uri, uuid, date, date-time, ipv4, ipv6, ecc. (via `ajv-formats`)
+  - `pattern` (regex)
+  - `enum`
+  - `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`
+  - `minLength`
+  - `minItems`, `maxItems`, `uniqueItems` su array
+  - Validazione di oggetti nested
+- `recordValidation.test.js` esteso da 9 a 19 test (i 9 originali continuano a passare invariati, i 10 nuovi coprono le nuove capacita').
+
 ## Stato test
 - `cd platform/api && npm test`:
-  - 29 unit test PASS
+  - 39 unit test PASS (29 baseline + 10 nuovi su Ajv)
   - 1 suite integration SKIP (correttamente, manca `TEST_DATABASE_URL`)
 - Per girare la suite integration: creare un DB di test e settare la variabile prima di `npm test`:
   - PowerShell: `$env:TEST_DATABASE_URL = "postgres://USER:PASS@127.0.0.1:5432/mellucode_test"`
@@ -74,9 +93,9 @@ Costruire la prima baseline di test automatici per `mellucode-api`. Prima di que
 - Lo SDK in `platform/sdk/` ha la sua suite test (gia' esistente, immutata in questa sessione).
 
 ## Prossimo passo consigliato
-1. Smoke test manuale post-refactor su produzione: creare entita', creare record, update/delete con vari ruoli (rifare la sequenza del precedente handoff sezione "Test fatti / Produzione").
-2. Far girare la suite integration almeno una volta: creare `mellucode_test` su Postgres locale del server (NON il DB di produzione), settare `TEST_DATABASE_URL`, `npm test`.
-3. Sostituire la validazione `validateRecordData` con Ajv completo (i test attuali la inquadrano per evitare regressioni).
+1. Smoke test manuale post-refactor su produzione: creare entita', creare record, update/delete con vari ruoli. Includere una entita' che usa le nuove keyword Ajv (es. `email` format, `enum` per stato, `pattern` per codici fiscali/CAP) per validare end-to-end.
+2. `npm install` sul server in `/opt/mellucode/platform/api/` per scaricare `ajv` e `ajv-formats` come deps dirette prima del restart PM2.
+3. Far girare la suite integration almeno una volta: creare `mellucode_test` su Postgres locale del server (NON il DB di produzione), settare `TEST_DATABASE_URL`, `npm test`.
 4. Implementare `/v1/files/upload` + `mc.files` SDK (richiede conferma path storage).
 5. Implementare `/v1/email/send` (richiede conferma mittente SMTP).
 6. Implementare `/v1/ai/chat` con quota (richiede chiave OpenRouter da `/opt/lococode-legacy/web/.env` e quota trial di default).
