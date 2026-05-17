@@ -63,6 +63,7 @@ export class MelluCode {
 
     this.auth = new AuthClient(this);
     this.entities = new EntitiesClient(this);
+    this.files = new FilesClient(this);
   }
 
   data(entity) {
@@ -95,9 +96,11 @@ export class MelluCode {
     const {
       method = "GET",
       body,
+      rawBody,            // FormData/Blob/Buffer: niente JSON.stringify, niente Content-Type forzato
       auth = true,
       retryOnUnauthorized = true,
       headers = {},
+      responseType = "json", // "json" | "blob" | "response"
     } = options;
 
     const finalHeaders = {
@@ -105,13 +108,22 @@ export class MelluCode {
       ...headers,
     };
 
-    if (body !== undefined) finalHeaders["Content-Type"] = "application/json";
+    let fetchBody;
+    if (rawBody !== undefined) {
+      // FormData / Blob: il browser / undici settano da soli il Content-Type
+      // (con boundary corretto). Non sovrascrivere.
+      fetchBody = rawBody;
+    } else if (body !== undefined) {
+      finalHeaders["Content-Type"] = finalHeaders["Content-Type"] || "application/json";
+      fetchBody = JSON.stringify(body);
+    }
+
     if (auth && this.accessToken) finalHeaders.Authorization = `Bearer ${this.accessToken}`;
 
     const response = await this.fetch(`${this.apiUrl}${cleanPath(path)}`, {
       method,
       headers: finalHeaders,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: fetchBody,
     });
 
     if (response.status === 401 && auth && retryOnUnauthorized && this.refreshToken) {
@@ -121,6 +133,24 @@ export class MelluCode {
       } catch {
         this.clearTokens();
       }
+    }
+
+    if (responseType === "response") {
+      if (!response.ok) {
+        const payload = await parseResponse(response);
+        const message = payload?.error || payload?.message || `Errore MelluCode API (${response.status}).`;
+        throw new MelluCodeError(message, { status: response.status, payload });
+      }
+      return response;
+    }
+
+    if (responseType === "blob") {
+      if (!response.ok) {
+        const payload = await parseResponse(response);
+        const message = payload?.error || payload?.message || `Errore MelluCode API (${response.status}).`;
+        throw new MelluCodeError(message, { status: response.status, payload });
+      }
+      return response.blob();
     }
 
     const payload = await parseResponse(response);
@@ -232,6 +262,62 @@ class EntitiesClient {
         metadata,
       },
     });
+  }
+}
+
+class FilesClient {
+  constructor(client) {
+    this.client = client;
+  }
+
+  // Upload di un File / Blob (browser) o un Buffer/Stream (node via fetch undici).
+  // Accetta anche un terzo arg `metadata` (oggetto JSON serializzabile).
+  async upload(file, { metadata, filename } = {}) {
+    if (!file) throw new MelluCodeError("File mancante.");
+    const FormDataCtor = globalThis.FormData;
+    if (!FormDataCtor) throw new MelluCodeError("FormData non disponibile in questo ambiente.");
+
+    const form = new FormDataCtor();
+    if (filename) {
+      form.append("file", file, filename);
+    } else {
+      form.append("file", file);
+    }
+    if (metadata !== undefined) {
+      form.append("metadata", JSON.stringify(metadata));
+    }
+
+    return this.client.request("/v1/files/upload", {
+      method: "POST",
+      rawBody: form,
+    });
+  }
+
+  list({ limit, offset } = {}) {
+    return this.client.request(`/v1/files${encodeQuery({ limit, offset })}`);
+  }
+
+  get(id) {
+    return this.client.request(`/v1/files/${encodeURIComponent(id)}`);
+  }
+
+  async delete(id) {
+    await this.client.request(`/v1/files/${encodeURIComponent(id)}`, { method: "DELETE" });
+    return true;
+  }
+
+  // Stream binario come Blob: per visualizzare immagini in <img src> usare
+  // `URL.createObjectURL(await mc.files.downloadBlob(id))`.
+  downloadBlob(id) {
+    return this.client.request(`/v1/files/${encodeURIComponent(id)}/content`, {
+      responseType: "blob",
+    });
+  }
+
+  // URL diretto verso il backend. NB: richiede bearer header, quindi non
+  // funziona in <img src>. Utile per debug o per costruire fetch custom.
+  url(id) {
+    return `${this.client.apiUrl}/v1/files/${encodeURIComponent(id)}/content`;
   }
 }
 

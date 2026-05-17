@@ -138,6 +138,82 @@ test("entities and records call Data API paths", async () => {
   assert.equal(calls.length, 4);
 });
 
+test("files.upload posts FormData with file (and optional metadata)", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    calls.push({ path, method: options.method, headers: options.headers, body: options.body });
+    return jsonResponse({
+      file: { id: "f-1", originalFilename: "x.txt", mimeType: "text/plain", sizeBytes: 5 },
+    }, 201);
+  };
+
+  const mc = new MelluCode({
+    apiUrl: "https://api.example.test",
+    tenantSlug: "gym",
+    storage: createMemoryStorage({ "mellucode:gym:accessToken": "access-1" }),
+    fetchImpl,
+  });
+
+  const blob = new Blob(["hello"], { type: "text/plain" });
+  const res = await mc.files.upload(blob, { metadata: { alt: "x" }, filename: "x.txt" });
+
+  assert.equal(res.file.id, "f-1");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].path, "/v1/files/upload");
+  assert.equal(calls[0].method, "POST");
+  assert.equal(calls[0].headers.Authorization, "Bearer access-1");
+  // Content-Type NON deve essere forzato a application/json: deve essere
+  // settato dal browser/fetch col boundary corretto.
+  assert.notEqual(calls[0].headers["Content-Type"], "application/json");
+  // Il body deve essere un FormData (non una stringa JSON).
+  assert.ok(calls[0].body instanceof FormData);
+});
+
+test("files.downloadBlob returns a Blob from /content endpoint", async () => {
+  const calls = [];
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  const fetchImpl = async (url) => {
+    calls.push(new URL(url).pathname);
+    return new Response(bytes, { status: 200, headers: { "content-type": "application/octet-stream" } });
+  };
+  const mc = new MelluCode({
+    apiUrl: "https://api.example.test",
+    tenantSlug: "gym",
+    storage: createMemoryStorage({ "mellucode:gym:accessToken": "access-1" }),
+    fetchImpl,
+  });
+
+  const blob = await mc.files.downloadBlob("f-1");
+  assert.ok(blob instanceof Blob);
+  assert.equal(blob.size, bytes.length);
+  assert.equal(calls[0], "/v1/files/f-1/content");
+});
+
+test("files.list and files.delete hit the right paths", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    const u = new URL(url);
+    calls.push({ path: u.pathname + u.search, method: options.method || "GET" });
+    if (options.method === "DELETE") return new Response(null, { status: 204 });
+    return jsonResponse({ files: [] });
+  };
+  const mc = new MelluCode({
+    apiUrl: "https://api.example.test",
+    tenantSlug: "gym",
+    storage: createMemoryStorage({ "mellucode:gym:accessToken": "access-1" }),
+    fetchImpl,
+  });
+
+  await mc.files.list({ limit: 20 });
+  assert.equal(calls[0].path, "/v1/files?limit=20");
+  assert.equal(calls[0].method, "GET");
+
+  await mc.files.delete("f-1");
+  assert.equal(calls[1].path, "/v1/files/f-1");
+  assert.equal(calls[1].method, "DELETE");
+});
+
 test("API errors throw MelluCodeError", async () => {
   const { fetchImpl } = createFetchMock([
     () => jsonResponse({ error: "Accesso non consentito." }, 403),

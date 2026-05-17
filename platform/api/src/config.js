@@ -31,6 +31,14 @@ export const config = {
     origins: opt("CORS_ORIGINS", "*").split(",").map(s => s.trim()).filter(Boolean),
   },
 
+  storage: {
+    // STORAGE_DIR e' relativo o assoluto; resolveStoragePath() lo normalizza.
+    // In dev: ./storage (gitignored). In prod: /opt/mellucode/storage.
+    dir: opt("STORAGE_DIR", "./storage"),
+    // Limite per singolo upload. 10 MB di default. Cambiabile via env.
+    maxUploadBytes: Number(opt("UPLOAD_MAX_BYTES", "10485760")),
+  },
+
   openrouter: {
     apiKey: opt("OPENROUTER_API_KEY"),
   },

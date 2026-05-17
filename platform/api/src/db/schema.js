@@ -1,6 +1,6 @@
 // Schema Fase 1: creator MelluCode, tenant/app generate e auth utenti app.
 import {
-  pgTable, uuid, text, timestamp, varchar, jsonb, index, uniqueIndex, boolean,
+  pgTable, uuid, text, timestamp, varchar, jsonb, index, uniqueIndex, boolean, bigint,
 } from "drizzle-orm/pg-core";
 
 // Utenti di MelluCode: chi accede al pannello, crea app, paga abbonamento.
@@ -116,6 +116,25 @@ export const mcAppEntities = pgTable("mc_app_entities", {
 }, (t) => ({
   tenantNameUx: uniqueIndex("mc_app_entities_tenant_name_ux").on(t.tenantId, t.name),
   tenantIdx: index("mc_app_entities_tenant_idx").on(t.tenantId),
+}));
+
+// File caricati dalle app generate. Metadata sul DB, binario su disco a
+// `${STORAGE_DIR}/{tenant_id}/{file_id}`. Storage_path e' il path RELATIVO
+// a STORAGE_DIR (forward slash anche su Windows).
+export const mcAppFiles = pgTable("mc_app_files", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => mcTenants.id, { onDelete: "cascade" }),
+  ownerAppUserId: uuid("owner_app_user_id").references(() => mcAppUsers.id, { onDelete: "set null" }),
+  originalFilename: varchar("original_filename", { length: 255 }).notNull(),
+  mimeType: varchar("mime_type", { length: 160 }).notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  storagePath: text("storage_path").notNull(),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tenantIdx: index("mc_app_files_tenant_idx").on(t.tenantId),
+  ownerIdx: index("mc_app_files_owner_idx").on(t.ownerAppUserId),
+  tenantCreatedIdx: index("mc_app_files_tenant_created_idx").on(t.tenantId, t.createdAt),
 }));
 
 // Record generici delle app generate. Ogni record e' JSONB, sempre scoped a tenant.

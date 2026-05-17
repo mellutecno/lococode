@@ -10,6 +10,9 @@
 //   createdb mellucode_test
 import { describe, test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 const TEST_DB = process.env.TEST_DATABASE_URL;
 
@@ -21,6 +24,11 @@ if (!TEST_DB) {
   process.env.DATABASE_URL = TEST_DB;
   process.env.JWT_SECRET = process.env.JWT_SECRET ?? "test-secret-must-be-at-least-32-characters-long";
   process.env.NODE_ENV = "test";
+  // Storage isolato per i test files: tmpdir effimera, pulita dopo la suite.
+  const STORAGE_ROOT = path.join(tmpdir(), `mc-files-it-${process.pid}-${Date.now()}`);
+  process.env.STORAGE_DIR = STORAGE_ROOT;
+  // Limite basso per testare il 413 senza dover allocare 10 MB.
+  process.env.UPLOAD_MAX_BYTES = "2048";
 
   const { buildApp } = await import("../app.js");
   const { db } = await import("../db/index.js");
@@ -31,18 +39,21 @@ if (!TEST_DB) {
 
   before(async () => {
     await runMigrations();
+    await fs.mkdir(STORAGE_ROOT, { recursive: true });
     app = await buildApp({ logger: false });
     await app.ready();
   });
 
   after(async () => {
     if (app) await app.close();
+    await fs.rm(STORAGE_ROOT, { recursive: true, force: true });
   });
 
   beforeEach(async () => {
     await db.execute(sql`
       TRUNCATE TABLE
         mc_audit_log,
+        mc_app_files,
         mc_app_records,
         mc_app_entities,
         mc_app_user_sessions,
@@ -52,6 +63,11 @@ if (!TEST_DB) {
         mc_users
       RESTART IDENTITY CASCADE
     `);
+    // Pulizia file su disco: cancello solo il contenuto, mantengo la dir.
+    try {
+      const entries = await fs.readdir(STORAGE_ROOT);
+      await Promise.all(entries.map((e) => fs.rm(path.join(STORAGE_ROOT, e), { recursive: true, force: true })));
+    } catch {}
   });
 
   // ----- helpers -----
@@ -630,6 +646,231 @@ if (!TEST_DB) {
         method: "GET", url: "/v1/data/entities",
         headers: bearer(creatorToken),
       });
+      assert.equal(res.statusCode, 401);
+    });
+  });
+
+  // ================================================================
+  // /v1/files
+  // ================================================================
+  describe("/v1/files", () => {
+    // Multipart body builder manuale (niente form-data dep).
+    function multipartBody({ filename, mimeType, content, fields = {} }) {
+      const boundary = `----mctest${Math.random().toString(36).slice(2)}`;
+      const CRLF = "\r\n";
+      const parts = [];
+      for (const [k, v] of Object.entries(fields)) {
+        parts.push(Buffer.from(
+          `--${boundary}${CRLF}` +
+          `Content-Disposition: form-data; name="${k}"${CRLF}${CRLF}` +
+          `${v}${CRLF}`
+        ));
+      }
+      parts.push(Buffer.from(
+        `--${boundary}${CRLF}` +
+        `Content-Disposition: form-data; name="file"; filename="${filename}"${CRLF}` +
+        `Content-Type: ${mimeType}${CRLF}${CRLF}`
+      ));
+      parts.push(Buffer.isBuffer(content) ? content : Buffer.from(content));
+      parts.push(Buffer.from(`${CRLF}--${boundary}--${CRLF}`));
+      return {
+        payload: Buffer.concat(parts),
+        contentType: `multipart/form-data; boundary=${boundary}`,
+      };
+    }
+
+    async function setupTenantAndAdmin() {
+      const reg = await registerCreator();
+      const t = await createTenant(reg.res.json().accessToken);
+      const tenant = t.res.json().tenant;
+      const login = await appLogin(tenant.slug, t.body.adminEmail, t.body.adminPassword);
+      return { tenant, adminToken: login.json().accessToken, adminBody: t.body };
+    }
+
+    async function uploadAs(token, opts = {}) {
+      const mp = multipartBody({
+        filename: opts.filename ?? "hello.txt",
+        mimeType: opts.mimeType ?? "text/plain",
+        content: opts.content ?? "hello mellucode",
+        fields: opts.fields ?? {},
+      });
+      return app.inject({
+        method: "POST", url: "/v1/files/upload",
+        headers: { ...bearer(token), "content-type": mp.contentType },
+        payload: mp.payload,
+      });
+    }
+
+    test("upload + metadata + list", async () => {
+      const { adminToken } = await setupTenantAndAdmin();
+      const up = await uploadAs(adminToken, { filename: "ciao.txt", content: "ciao" });
+      assert.equal(up.statusCode, 201);
+      const f = up.json().file;
+      assert.equal(f.originalFilename, "ciao.txt");
+      assert.equal(f.mimeType, "text/plain");
+      assert.equal(f.sizeBytes, Buffer.from("ciao").length);
+
+      const meta = await app.inject({
+        method: "GET", url: `/v1/files/${f.id}`,
+        headers: bearer(adminToken),
+      });
+      assert.equal(meta.statusCode, 200);
+      assert.equal(meta.json().file.id, f.id);
+
+      const list = await app.inject({
+        method: "GET", url: "/v1/files",
+        headers: bearer(adminToken),
+      });
+      assert.equal(list.statusCode, 200);
+      assert.equal(list.json().files.length, 1);
+    });
+
+    test("download content returns the original bytes", async () => {
+      const { adminToken } = await setupTenantAndAdmin();
+      const payload = Buffer.from("12345abcde");
+      const up = await uploadAs(adminToken, { filename: "data.bin", mimeType: "application/octet-stream", content: payload });
+      const id = up.json().file.id;
+
+      const dl = await app.inject({
+        method: "GET", url: `/v1/files/${id}/content`,
+        headers: bearer(adminToken),
+      });
+      assert.equal(dl.statusCode, 200);
+      assert.equal(dl.headers["content-type"], "application/octet-stream");
+      assert.match(dl.headers["content-disposition"], /filename="data\.bin"/);
+      assert.equal(Buffer.from(dl.rawPayload).compare(payload), 0);
+    });
+
+    test("optional metadata field is preserved", async () => {
+      const { adminToken } = await setupTenantAndAdmin();
+      const up = await uploadAs(adminToken, {
+        fields: { metadata: JSON.stringify({ alt: "logo", focal: "center" }) },
+      });
+      const f = up.json().file;
+      assert.deepEqual(f.metadata, { alt: "logo", focal: "center" });
+    });
+
+    test("invalid JSON metadata is silently ignored (no upload failure)", async () => {
+      const { adminToken } = await setupTenantAndAdmin();
+      const up = await uploadAs(adminToken, { fields: { metadata: "{ not-json" } });
+      assert.equal(up.statusCode, 201);
+      assert.deepEqual(up.json().file.metadata, {});
+    });
+
+    test("upload over the byte limit returns 413", async () => {
+      const { adminToken } = await setupTenantAndAdmin();
+      const big = Buffer.alloc(4096, 0x41); // 4 KB > 2 KB limit in test env
+      const up = await uploadAs(adminToken, { filename: "big.bin", content: big });
+      assert.equal(up.statusCode, 413);
+    });
+
+    test("upload without multipart body returns 400", async () => {
+      const { adminToken } = await setupTenantAndAdmin();
+      const res = await app.inject({
+        method: "POST", url: "/v1/files/upload",
+        headers: { ...bearer(adminToken), "content-type": "application/json" },
+        payload: { not: "multipart" },
+      });
+      assert.equal(res.statusCode, 400);
+    });
+
+    test("files of one tenant are not visible to another", async () => {
+      const a = await setupTenantAndAdmin();
+      const upA = await uploadAs(a.adminToken, { filename: "A.txt", content: "from A" });
+      const fileAId = upA.json().file.id;
+
+      const b = await setupTenantAndAdmin();
+      const list = await app.inject({
+        method: "GET", url: "/v1/files",
+        headers: bearer(b.adminToken),
+      });
+      assert.equal(list.statusCode, 200);
+      assert.equal(list.json().files.length, 0);
+
+      const cross = await app.inject({
+        method: "GET", url: `/v1/files/${fileAId}`,
+        headers: bearer(b.adminToken),
+      });
+      assert.equal(cross.statusCode, 404);
+    });
+
+    test("delete: non-owner non-admin -> 403; owner -> 204; admin can always", async () => {
+      const { tenant, adminToken } = await setupTenantAndAdmin();
+
+      // user A uploada
+      const emailA = `ua-${rand()}@test.local`;
+      await app.inject({
+        method: "POST", url: "/v1/app-auth/register",
+        payload: { tenantSlug: tenant.slug, email: emailA, password: "User1Pass!" },
+      });
+      const tokenA = (await appLogin(tenant.slug, emailA, "User1Pass!")).json().accessToken;
+      const id1 = (await uploadAs(tokenA, { filename: "mine.txt" })).json().file.id;
+
+      // user B prova delete
+      const emailB = `ub-${rand()}@test.local`;
+      await app.inject({
+        method: "POST", url: "/v1/app-auth/register",
+        payload: { tenantSlug: tenant.slug, email: emailB, password: "User2Pass!" },
+      });
+      const tokenB = (await appLogin(tenant.slug, emailB, "User2Pass!")).json().accessToken;
+
+      const denied = await app.inject({
+        method: "DELETE", url: `/v1/files/${id1}`,
+        headers: bearer(tokenB),
+      });
+      assert.equal(denied.statusCode, 403);
+
+      // owner ok
+      const ownerDel = await app.inject({
+        method: "DELETE", url: `/v1/files/${id1}`,
+        headers: bearer(tokenA),
+      });
+      assert.equal(ownerDel.statusCode, 204);
+
+      // admin puo' sempre (su un nuovo file di user A)
+      const id2 = (await uploadAs(tokenA, { filename: "second.txt" })).json().file.id;
+      const adminDel = await app.inject({
+        method: "DELETE", url: `/v1/files/${id2}`,
+        headers: bearer(adminToken),
+      });
+      assert.equal(adminDel.statusCode, 204);
+    });
+
+    test("delete removes both DB row and disk file", async () => {
+      const { adminToken } = await setupTenantAndAdmin();
+      const up = await uploadAs(adminToken, { filename: "purge.txt", content: "x" });
+      const id = up.json().file.id;
+
+      await app.inject({
+        method: "DELETE", url: `/v1/files/${id}`,
+        headers: bearer(adminToken),
+      });
+
+      const after = await app.inject({
+        method: "GET", url: `/v1/files/${id}`,
+        headers: bearer(adminToken),
+      });
+      assert.equal(after.statusCode, 404);
+
+      // verifica disco: la dir del tenant non contiene piu' il file id
+      const tenantDirs = await fs.readdir(STORAGE_ROOT);
+      for (const tdir of tenantDirs) {
+        const files = await fs.readdir(path.join(STORAGE_ROOT, tdir)).catch(() => []);
+        assert.ok(!files.includes(id), `file ${id} dovrebbe essere sparito dal disco`);
+      }
+    });
+
+    test("files endpoints require an app_user JWT (creator JWT rejected)", async () => {
+      const reg = await registerCreator();
+      const res = await app.inject({
+        method: "GET", url: "/v1/files",
+        headers: bearer(reg.res.json().accessToken),
+      });
+      assert.equal(res.statusCode, 401);
+    });
+
+    test("GET /v1/files/:id requires bearer", async () => {
+      const res = await app.inject({ method: "GET", url: "/v1/files/00000000-0000-4000-8000-000000000000" });
       assert.equal(res.statusCode, 401);
     });
   });
