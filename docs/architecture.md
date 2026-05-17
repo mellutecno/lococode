@@ -67,7 +67,7 @@ mc_app_records:
   id           uuid pk
   tenant_id    uuid (FK mc_tenants)
   entity       text (es. "products", "bookings")
-  data         jsonb (il record vero, validato contro mc_app_entities.schema)
+  data         jsonb (il record vero, validato contro mc_app_entities.json_schema)
   created_at   timestamptz
   updated_at   timestamptz
   created_by   uuid (FK mc_app_users)
@@ -75,7 +75,7 @@ mc_app_records:
 indexes: (tenant_id, entity), GIN su data per query
 ```
 
-**Why JSONB invece di schema-per-entita'**: l'AI non puo' fare migrations DDL a runtime. Con JSONB l'AI definisce solo il `mc_app_entities.schema` (Zod-like) e il backend valida automaticamente.
+**Why JSONB invece di schema-per-entita'**: l'AI non puo' fare migrations DDL a runtime. Con JSONB l'AI definisce solo il `mc_app_entities.json_schema` e il backend valida automaticamente una base comune.
 
 **Trade-off**: query complesse sono piu' lente di pure SQL columns. Per le app utente medie (CRUD su poche entita') va benissimo. Quando un'app esplode in dimensioni si puo' migrare a schema dedicato.
 
@@ -155,7 +155,8 @@ FILE STORAGE (Fase 1: locale, Fase 4: S3-compatible):
 - [x] Test produzione end-to-end auth creator
 - [x] Endpoint `/v1/tenants` per registrare ogni app generata come tenant
 - [x] Endpoint `/v1/app-auth/*` per end-user app (multi-tenant)
-- [ ] Endpoint `/v1/data/{collection}` CRUD generico
+- [x] Endpoint `/v1/data/{collection}` CRUD generico
+- [x] Tabelle `mc_app_entities` e `mc_app_records`
 - [ ] Endpoint `/v1/files/upload`
 - [ ] Endpoint `/v1/email/send`
 - [ ] Endpoint `/v1/ai/chat` con quota
