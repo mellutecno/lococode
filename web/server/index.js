@@ -133,29 +133,44 @@ const GENERATION_TIERS = {
 //   - numero di entita'/tabelle (rileva da architecture.md)
 //   - presenza di pagamenti/integrations esterne
 // Output: { complexityScore (0-100), suggestedTier, priceEur }
-// PRICING v3 (2026-05-17): tutte le app sono GENERATE COI MIGLIORI MOTORI
-// (tier "premium": Claude Sonnet 4.5 + GPT-5 review) e l'utente paga sempre
-// €1.99 flat. Scontato dall'abbonamento o dall'acquisto. Nessuno scoring,
-// nessuna scelta tier per l'utente o per l'admin. Costo medio reale per
-// LocoCode misurato su app Premium: ~€1.70-1.80, margine ~€0.20-0.30.
-const FLAT_PRICE_EUR = 1.99;
+// PRICING v4 (2026-05-17 evening): tutte le app sono GENERATE COI MIGLIORI
+// MOTORI (tier "premium": Claude Sonnet 4.5 + GPT-5 review). L'utente NON
+// sceglie. Il prezzo viene assegnato dal sistema in base ai TOKEN SDD REALI
+// consumati dall'AI durante l'analisi (proxy onesto di complessita' che NON
+// dipende da keyword fallaci nei task generati).
+//
+// Soglie calibrate sui costi reali misurati 2026-05-17:
+//   - App semplice (es. todo personale)     -> ~€1.20-1.40 costo -> €1.99
+//   - App media (es. gestionale assistenza) -> ~€1.70-1.80 costo -> €2.99
+//   - App complessa (multi-modulo, CRM)     -> ~€2.20-3.00 costo -> €4.99
 const ALWAYS_TIER = "premium";
+const PRICE_TIERS = [
+  { maxSddTokens: 5000,  priceEur: 1.99, label: "essenziale" },
+  { maxSddTokens: 12000, priceEur: 2.99, label: "media" },
+  { maxSddTokens: Infinity, priceEur: 4.99, label: "complessa" },
+];
+
+function priceFromSddTokens(sddTokens) {
+  for (const t of PRICE_TIERS) {
+    if (sddTokens <= t.maxSddTokens) return t;
+  }
+  return PRICE_TIERS[PRICE_TIERS.length - 1];
+}
 
 function computePriceFromSdd(target) {
   const steps = target.sdd?.steps || [];
   const taskCount = steps.length;
   const filesPlanned = (target.fileCount || 0) || taskCount * 2;
   const isWebsite = target.kind === "website";
-  // Manteniamo i breakdown solo come info diagnostica (UI puo' mostrarle al
-  // creatore) ma NON pesano sul prezzo.
-  const promptBlob = String(target.prompt || "").toLowerCase();
   const sddTokens =
     (target.tokenUsage?.sdd?.promptTokens || 0) +
     (target.tokenUsage?.sdd?.completionTokens || 0);
+  const pricePoint = priceFromSddTokens(sddTokens);
   return {
     complexityScore: null,
     suggestedTier: ALWAYS_TIER,
-    priceEur: FLAT_PRICE_EUR,
+    priceEur: pricePoint.priceEur,
+    complexityLabel: pricePoint.label, // "essenziale" | "media" | "complessa"
     breakdown: { taskCount, filesPlanned: Math.round(filesPlanned), sddTokens, isWebsite },
   };
 }
@@ -2150,6 +2165,21 @@ async function notifyUserAppReady(user, target, status) {
   const seconds = status.elapsedSec % 60;
   const elapsedText = minutes > 0 ? `${minutes} min ${seconds} sec` : `${seconds} sec`;
 
+  // Se l'app ha auth (authOk true o false != null), mostra le credenziali
+  // admin/admin che il backend prompt obbliga a creare al primo avvio.
+  // Cosi' l'utente non deve "indovinare" come testare la sua app.
+  const hasAuth = status.authOk === true || status.authOk === false;
+  const adminCredsBlock = hasAuth
+    ? `<div style="margin:24px 0;padding:18px 22px;background:#fef3c7;border-left:4px solid #f59e0b;border-radius:8px">
+         <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:6px;letter-spacing:0.04em;text-transform:uppercase">CREDENZIALI PER IL PRIMO ACCESSO</div>
+         <div style="font-size:14px;color:#451a03;line-height:1.6">
+           Email: <code style="background:#fff;padding:2px 8px;border-radius:4px;font-weight:600">admin@admin.it</code><br>
+           Password: <code style="background:#fff;padding:2px 8px;border-radius:4px;font-weight:600">admin</code>
+         </div>
+         <div style="font-size:12px;color:#78350f;margin-top:8px;font-style:italic">Cambiale subito dopo il primo login dal pannello utenti dell'app.</div>
+       </div>`
+    : "";
+
   const html = allOk
     ? `<!doctype html><html><body style="font-family:Inter,Arial,sans-serif;background:#f4f6fb;padding:40px 20px;margin:0">
        <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;padding:36px 32px;box-shadow:0 4px 24px rgba(15,23,42,0.08)">
@@ -2163,9 +2193,9 @@ async function notifyUserAppReady(user, target, status) {
          <div style="text-align:center;margin:32px 0">
            <a href="${appUrl}" style="display:inline-block;background:linear-gradient(135deg,#5b3ee8,#7c5af0);color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-size:15px;font-weight:600">Apri la tua app →</a>
          </div>
+         ${adminCredsBlock}
          <div style="border-top:1px solid #e5e7eb;padding-top:20px;margin-top:24px;color:#64748b;font-size:13px;line-height:1.7">
            <div><strong style="color:#0b1020">URL:</strong> ${appUrl}</div>
-           <div><strong style="color:#0b1020">Tier:</strong> ${target.generationTier || "base"}</div>
            <div><strong style="color:#0b1020">Tempo totale:</strong> ${elapsedText}</div>
          </div>
        </div>
@@ -2183,9 +2213,15 @@ async function notifyUserAppReady(user, target, status) {
            <li>Smoke test: ${status.smokeOk ? "✓ OK" : "⚠ controllo fallito"}</li>
            ${status.authOk === false ? `<li style="color:#b45309">⚠ Auth: ${escapeHtml(status.authReport || "register/login non funziona")}</li>` : status.authOk === true ? `<li>Auth: ✓ register+login verificati</li>` : ""}
          </ul>
+         ${adminCredsBlock}
          <p style="margin-top:20px"><a href="${appUrl}">${appUrl}</a></p>
        </div>
        </body></html>`;
+  // Versione testuale (fallback per client mail vecchi).
+  const adminCredsText = hasAuth
+    ? `\n\nCREDENZIALI PRIMO ACCESSO:\n  Email: admin@admin.it\n  Password: admin\nCambiale dal pannello utenti dopo il primo login.\n`
+    : "";
+  const text = `${allOk ? "La tua app e' online!" : "App generata con avvisi"}\n\n${target.name}\nURL: ${appUrl}${adminCredsText}\n\nLocoCode - ${new Date().toLocaleString("it-IT")}`;
 
   const transporter = nodemailer.createTransport({
     host: smtpHost,
@@ -2193,7 +2229,7 @@ async function notifyUserAppReady(user, target, status) {
     secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true" || portValue === 465,
     auth: smtpUser && smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
   });
-  await transporter.sendMail({ from, to: userEmail, subject, html });
+  await transporter.sendMail({ from, to: userEmail, subject, html, text });
   console.log(`[notify] Email inviata a ${userEmail} per app ${target.id} (allOk=${allOk})`);
 }
 
@@ -3057,6 +3093,22 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "FONDAMENTALE - Chiamate API: usa SEMPRE const API = import.meta.env.VITE_API_URL || ''; poi chiama fetch(API + '/endpoint'). Non scrivere mai localhost, 127.0.0.1 o porte hardcoded. VITE_API_URL viene iniettato da LocoCode al build e punta al backend reale.",
     "FONDAMENTALE - Gestione risposte fetch ROBUSTA: ogni helper fetch DEVE controllare il Content-Type prima di chiamare res.json(). Se il backend non e attivo, nginx serve l'index.html invece dell'API e res.json() crasherebbe con 'Unexpected token <'. Pattern obbligatorio: const ct = (res.headers.get('content-type')||'').toLowerCase(); if (!ct.includes('application/json')) throw new Error('Servizio temporaneamente non disponibile.'); Poi try/catch su res.json(). Non mostrare MAI all'utente messaggi tecnici come 'Unexpected token' o 'is not valid JSON' — sempre messaggi friendly italiani.",
     "preview/index.html serve solo da fallback statico se il frontend vero non e ancora pronto.",
+    "",
+    "★★★ QUALITA' VISIVA = METRICA PRIMARIA DI SUCCESSO ★★★",
+    "L'utente paga €1.99-4.99 per generare l'app, e DECIDERA' se abbonarsi (€/mese) o acquistare (€una-tantum) BASANDOSI SULLA BELLEZZA. Se l'app generata sembra fatta nel 2010, lui non si abbona e LocoCode perde il cliente. Se sembra Linear/Stripe/Vercel/Notion/Raycast/Arc Browser, lui si abbona. Non c'e' via di mezzo.",
+    "REGOLE DI BELLEZZA NON NEGOZIABILI:",
+    " - SEMPRE dark theme coerente con lc-theme.css (body scuro, card semi-trasparenti glass).",
+    " - SEMPRE micro-animazioni: hover transition, fade-in al mount (animate-fade-in), scale 105% sui tile cliccabili.",
+    " - SEMPRE spaziatura generosa: padding p-6/p-8 sulle card, py-12/16 sulle sezioni, gap-6 nelle grid.",
+    " - SEMPRE ombre e bordi sottili: shadow-xl o ring-1 ring-white/10 sulle card, MAI card a fondo piatto.",
+    " - SEMPRE gradient nei CTA: bg-gradient-to-r from-indigo-600 to-purple-600, hover:from-indigo-500 to-purple-500.",
+    " - SEMPRE icone lucide-react (Sparkles, Activity, TrendingUp, Users, BarChart3, etc.) accanto ai titoli/KPI, mai testi nudi.",
+    " - SEMPRE KPI in evidenza: dashboard con 3-4 numeri grandi (text-4xl font-bold) in card colorate. Anche se l'app non e' un gestionale, una mini-dashboard di overview rende SUBITO l'idea di valore.",
+    " - SEMPRE empty state curato: quando una lista e' vuota, mostra icona grande + frase invitante + CTA, MAI 'nessun risultato' nudo.",
+    " - SEMPRE loading state skeleton (non spinner): usa <div className='animate-pulse bg-slate-800 rounded h-10' /> mentre carichi.",
+    " - SEMPRE responsive: mobile su un colonna, desktop su 2-3 colonne. Usa md:grid-cols-2 lg:grid-cols-3.",
+    " - VIETATO: testi text-white su bg chiari, testi text-slate-300/400 su bianco, card senza bordo/ombra, layout a tabella nuda, font diversi da Inter.",
+    "Se hai dubbi, copia il pattern: header sticky con backdrop-blur + sidebar dark glass + main con cards animate. Vedi App.jsx del design system come riferimento.",
     "",
     "QUALITA' VISIVA OBBLIGATORIA — il frontend DEVE essere bellissimo, moderno e curato come Linear, Stripe Dashboard, Vercel, Notion, Raycast, Arc Browser. Un utente DEVE volerla usare subito e dire 'wow, e bella'. Niente stile bootstrap anni 2010, niente sfondi pure white piatti, niente layout banali.",
     "USA TAILWIND CSS con classi utilitarie direttamente nei JSX. Ogni componente deve avere classi Tailwind complete e dettagliate.",
