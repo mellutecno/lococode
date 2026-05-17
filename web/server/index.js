@@ -3606,7 +3606,7 @@ async function buildFrontendPreview(target) {
 
   if (distMtime && sourceMtime && distMtime >= sourceMtime) return true;
 
-  await ensureFrontendDependencies(frontendDirPath);
+  await ensureFrontendDependencies(frontendDirPath, target);
   await fs.mkdir(outDir, { recursive: true });
 
   // Base assoluto: l'app e servita su /app/{slug}/, quindi gli asset DEVONO usare
@@ -3716,7 +3716,7 @@ async function injectDesignSystem(frontendDirPath) {
   }
 }
 
-async function ensureFrontendDependencies(frontendDirPath) {
+async function ensureFrontendDependencies(frontendDirPath, target) {
   const packageJsonPath = path.join(frontendDirPath, "package.json");
   const nodeModulesPath = path.join(frontendDirPath, "node_modules");
   const markerPath = path.join(nodeModulesPath, ".lococode-install.json");
