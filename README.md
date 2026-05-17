@@ -6,6 +6,8 @@ AI app builder. L'utente descrive un'app, MelluCode la genera completa di fronte
 
 🚧 In costruzione (Fase 1 — backend gestito interno).
 
+Stato attuale: `mellucode-api` e' online su `https://mellucode.mellutecno.it/v1/health` con auth creator base funzionante.
+
 Il codice precedente ("orchestrator monolite + FastAPI generato per ogni app", brand "LocoCode") e' archiviato sul tag git `legacy-v1`. Non viene piu' sviluppato.
 
 ## Architettura (in sintesi)
@@ -25,7 +27,7 @@ Dettagli in [docs/architecture.md](docs/architecture.md) (in arrivo).
 
 ## Dominio
 
-Produzione: `mellucode.mellutecno.it` (sottodominio da configurare in DNS quando v2 e' pronta).
+Produzione API: `https://mellucode.mellutecno.it`
 
 ## License
 

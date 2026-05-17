@@ -99,7 +99,7 @@ Endpoint paralleli sotto `/v1/app-auth/*`. Multi-tenant: header `X-Tenant-Slug: 
 **argon2id** con parametri OWASP 2024: memory 19MB, iterations 2, parallelism 1.
 
 ### JWT
-- Access token: 15 min, RS256 (chiave privata server)
+- Access token: 15 min, HS256 con `JWT_SECRET` server (RS256 valutabile piu avanti)
 - Refresh token: 30 giorni, rotato a ogni refresh, salvato hashato in `mc_sessions`
 - Claim `sub`: SEMPRE stringa (UUID), no integers (lesson learned da v1)
 
@@ -112,13 +112,13 @@ DNS: mellucode.mellutecno.it → 178.104.175.189 (Hetzner)
 
 NGINX (porta 443):
   server_name mellucode.mellutecno.it
-  /              → reverse proxy http://127.0.0.1:5000 (mellucode-api: Fastify)
+  /              → reverse proxy http://127.0.0.1:5200 (mellucode-api: Fastify)
   /v1/*          → idem (API rest)
   /studio/*      → idem (editor live, Fase 3)
   /apps/{slug}/* → reverse proxy http://127.0.0.1:5100 (mellucode-renderer: serve frontend statici)
 
 PM2:
-  mellucode-api      → /opt/mellucode/api      (porta 5000)
+  mellucode-api      → /opt/mellucode/platform/api (porta 5200)
   mellucode-renderer → /opt/mellucode/renderer (porta 5100, Fase 2)
 
 POSTGRES (locale, porta 5432 solo localhost):
@@ -150,9 +150,9 @@ FILE STORAGE (Fase 1: locale, Fase 4: S3-compatible):
 - [x] Schema DB iniziale + migration 0001
 - [x] Endpoint `/v1/health`
 - [x] Endpoint `/v1/auth/{register,login,me,refresh,logout}` per creator
-- [ ] Test locale con curl + vitest
-- [ ] Deploy server: Postgres setup, /opt/mellucode/, PM2, nginx, SSL Let's Encrypt
-- [ ] Test produzione end-to-end
+- [x] Test locale con syntax check + node --test
+- [x] Deploy server: Postgres setup, /opt/mellucode/, PM2, nginx, SSL Let's Encrypt
+- [x] Test produzione end-to-end auth creator
 - [ ] Endpoint `/v1/app-auth/*` per end-user app (multi-tenant)
 - [ ] Endpoint `/v1/data/{collection}` CRUD generico
 - [ ] Endpoint `/v1/files/upload`
