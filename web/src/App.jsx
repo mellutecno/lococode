@@ -329,7 +329,7 @@ Questa azione è irreversibile.`)) return;
     }
   }
 
-  async function generateApp({ text, appId = "", overrideModel = "", name = "", tier = "base", kind = "" }) {
+  async function generateApp({ text, appId = "", overrideModel = "", name = "", tier = "base", kind = "", notifyEmailOnEstimate = false }) {
     if (!requireAuth()) return;
     const cleanPrompt = text.trim();
     if (!cleanPrompt || busy) return;
@@ -357,6 +357,7 @@ Questa azione è irreversibile.`)) return;
           generationTier: tier,
           kind: kind || "webapp",
           openrouterApiKey: apiKey,
+          notifyEmailOnEstimate: !!notifyEmailOnEstimate,
         }),
       });
 
@@ -391,7 +392,11 @@ Questa azione è irreversibile.`)) return;
       const response = await apiFetch(`/api/apps/${appId}/confirm-payment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethod: opts.paymentMethod || "sandbox", orderId: opts.orderId || "" }),
+        body: JSON.stringify({
+          paymentMethod: opts.paymentMethod || "sandbox",
+          orderId: opts.orderId || "",
+          notifyEmailOnReady: !!opts.notifyEmailOnReady,
+        }),
       });
       const data = await readApiJson(response);
       if (!response.ok) throw new Error(data.error || "Conferma pagamento fallita.");
@@ -587,11 +592,11 @@ Questa azione è irreversibile.`)) return;
             setGenerationTier={setGenerationTier}
             tiersCatalog={tiersCatalog}
             isAdmin={currentUser?.isAdmin === true}
-            onGenerate={() => generateApp({ text: prompt, name: projectName, tier: generationTier, kind: "webapp" })}
-            onQuick={(item) => {
+            onGenerate={(notifyMail) => generateApp({ text: prompt, name: projectName, tier: generationTier, kind: "webapp", notifyEmailOnEstimate: notifyMail })}
+            onQuick={(item, notifyMail) => {
               setProjectName(item.label);
               setPrompt(item.prompt);
-              void generateApp({ text: item.prompt, name: item.label, tier: generationTier, kind: "webapp" });
+              void generateApp({ text: item.prompt, name: item.label, tier: generationTier, kind: "webapp", notifyEmailOnEstimate: notifyMail });
             }}
           />
         )}
@@ -1020,6 +1025,10 @@ function TierSelector({ value, onChange, isAdmin, tiersCatalog }) {
 }
 
 function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setModel, busy, onGenerate, onQuick, generationTier, setGenerationTier, isAdmin, tiersCatalog }) {
+  // Opt-in email "preventivo pronto": l'utente puo' chiudere il browser e
+  // ricevere un avviso quando l'analisi SDD finisce.
+  const [notifyMail, setNotifyMail] = useState(false);
+
   return (
     <div className="home-view">
       <section className="hero-block">
@@ -1034,17 +1043,8 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
             placeholder="Esempio: Gestionale studio medico"
           />
         </label>
-        {/* Tier picker visibile SOLO all'admin per test. L'utente normale
-            non sceglie: il tier viene assegnato dal sistema dopo l'analisi
-            in base alla complessita' dell'app (vedi EstimateView). */}
-        {isAdmin && (
-          <TierSelector
-            value={generationTier}
-            onChange={setGenerationTier}
-            isAdmin={isAdmin}
-            tiersCatalog={tiersCatalog}
-          />
-        )}
+        {/* Pricing v3: niente tier picker, niente modello manuale. Tutti gli
+            utenti usano sempre i migliori motori AI e pagano flat €1.99. */}
         <Composer
           value={prompt}
           onChange={setPrompt}
@@ -1052,9 +1052,17 @@ function HomeView({ prompt, setPrompt, projectName, setProjectName, model, setMo
           setModel={setModel}
           busy={busy}
           placeholder="Descrivi l'app da creare..."
-          onSubmit={onGenerate}
-          showModel={isAdmin}
+          onSubmit={() => onGenerate(notifyMail)}
+          showModel={false}
         />
+        <label className="notify-mail-opt" style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 14, color: "#cbd5e1", fontSize: 14 }}>
+          <input
+            type="checkbox"
+            checked={notifyMail}
+            onChange={(e) => setNotifyMail(e.target.checked)}
+          />
+          <span>Avvisami via email quando il preventivo e' pronto (puoi chiudere il browser, riceverai un link per tornare).</span>
+        </label>
       </section>
     </div>
   );
@@ -1389,6 +1397,9 @@ function AnalyzingView({ app, onBackToProjects }) {
 // L'utente vede prezzo, breakdown della complessita', riepilogo cosa verra' creato
 // e decide: conferma (paga sandbox/PayPal) o annulla (nessun addebito).
 function EstimateView({ app, busy, onConfirmPayment, onCancelEstimate, onBackToProjects }) {
+  // Opt-in email "app pronta": chiesto qui, prima di pagare. La preferenza
+  // viene passata a confirm-payment e salvata sull'app.
+  const [notifyReady, setNotifyReady] = useState(false);
   const pf = app?.paymentFlow || {};
   const price = Number(pf.priceEur || 0);
   const score = Number(pf.complexityScore || 0);
@@ -1427,7 +1438,7 @@ function EstimateView({ app, busy, onConfirmPayment, onCancelEstimate, onBackToP
           <span className="estimate-price-label">Costo creazione</span>
           <div className="estimate-price-amount">€{price.toFixed(2)}</div>
           <div className="estimate-price-discount">
-            💚 <strong>Scontato</strong> dal primo mese di abbonamento o dalla licenza permanente
+            💚 <strong>Trial 1 giorno incluso.</strong> Se ti abboni o acquisti l'app, questi €{price.toFixed(2)} verranno scontati dal prezzo finale.
           </div>
         </div>
 
@@ -1438,30 +1449,28 @@ function EstimateView({ app, busy, onConfirmPayment, onCancelEstimate, onBackToP
               {signals.map((s, i) => (
                 <li key={i}><span className="estimate-signal-icon">{s.icon}</span> {s.label}</li>
               ))}
-              {breakdown.taskCount && (
+              {breakdown.taskCount ? (
                 <li><span className="estimate-signal-icon">📋</span> {breakdown.taskCount} task pianificati</li>
-              )}
+              ) : null}
             </ul>
           ) : (
             <p className="estimate-empty-signals">App essenziale, struttura semplice.</p>
           )}
         </div>
 
-        <div className="estimate-complexity">
-          <div className="estimate-complexity-bar">
-            <div className="estimate-complexity-fill" style={{ width: `${score}%` }} />
-          </div>
-          <span className="estimate-complexity-label">Complessità rilevata: <strong>{score}/100</strong> · categoria <strong>{tier}</strong></span>
-        </div>
-
-        <div className="estimate-mismatch upgrade">
-          <strong>Tier assegnato dal sistema:</strong> <em>{tier}</em>. La complessita' della tua idea (score {score}/100) determina il prezzo. Non puoi scegliere un tier inferiore: se non vuoi pagare €{price.toFixed(2)}, annulla qui sotto.
-        </div>
+        <label className="notify-mail-opt" style={{ display: "flex", gap: 10, alignItems: "center", margin: "16px 0", color: "#cbd5e1", fontSize: 14 }}>
+          <input
+            type="checkbox"
+            checked={notifyReady}
+            onChange={(e) => setNotifyReady(e.target.checked)}
+          />
+          <span>Avvisami via email quando l'app e' pronta e online (cosi' puoi chiudere il browser durante la generazione).</span>
+        </label>
 
         <div className="estimate-actions">
           <button
             className="primary estimate-confirm"
-            onClick={() => onConfirmPayment(app.id, { paymentMethod: "sandbox" })}
+            onClick={() => onConfirmPayment(app.id, { paymentMethod: "sandbox", notifyEmailOnReady: notifyReady })}
             disabled={busy}
           >
             {busy ? <><Sparkles size={16} className="spin" /> Conferma in corso…</> : <>💳 Paga €{price.toFixed(2)} e crea l'app</>}

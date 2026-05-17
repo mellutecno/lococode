@@ -76,8 +76,9 @@ const VARIANTS = {
     'bg-slate-900/50 border border-white/10 shadow-sm text-slate-100',
   dark:
     'bg-slate-950/80 backdrop-blur-xl border border-white/10 shadow-xl text-slate-100',
-  light:
-    'bg-white border border-slate-200 shadow-lg text-slate-900',
+  // light variant rimossa: contrastava col body dark facendo "pasticcio".
+  // Se l'AI prova variant="light" l'object lookup torna undefined ->
+  // VARIANTS[variant] || VARIANTS.glass garantisce fallback dark coerente.
 };
 
 export function Card({
@@ -528,19 +529,19 @@ html, body { overflow-x: hidden; }
    2. BODY DARK THEME — bg navy con aurora + dot pattern textura
    ═══════════════════════════════════════════════════════════════ */
 body {
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif !important;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "cv01", "cv03", "cv04", "cv11", "ss03";
   letter-spacing: -0.005em;
-  color: #e7e9f2;
-  background-color: #0a0e1a;
+  color: #e7e9f2 !important;
+  background-color: #0a0e1a !important;
   background-image:
     radial-gradient(ellipse 1100px 600px at 85% -10%, rgba(168, 85, 247, 0.22) 0%, transparent 60%),
     radial-gradient(ellipse 900px 500px at -10% 20%, rgba(91, 62, 232, 0.24) 0%, transparent 60%),
     radial-gradient(ellipse 800px 500px at 50% 110%, rgba(56, 189, 248, 0.12) 0%, transparent 55%),
-    linear-gradient(160deg, #0a0e1a 0%, #0d1126 50%, #0a0f22 100%);
-  background-attachment: fixed;
+    linear-gradient(160deg, #0a0e1a 0%, #0d1126 50%, #0a0f22 100%) !important;
+  background-attachment: fixed !important;
   min-height: 100vh;
   position: relative;
 }

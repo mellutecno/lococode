@@ -36,6 +36,11 @@ const sessionTtlMs = Number(process.env.LOCOCODE_SESSION_TTL_MS || 30 * 24 * 60 
 const heartbeatTimeoutMs = Number(process.env.LOCOCODE_HEARTBEAT_TIMEOUT_MS || 2 * 60 * 1000);
 const publicBaseUrl = String(process.env.LOCOCODE_PUBLIC_URL || "https://lococode.mellutecno.it").replace(/\/$/, "");
 const sharedOpenRouterKey = String(process.env.LOCOCODE_OPENROUTER_KEY || "").trim();
+// Trial PER-APP (dopo pagamento €1.99 l'utente puo' usare l'app per N giorni;
+// scaduto deve abbonarsi o acquistare). Default 1 giorno, configurabile via env.
+// Trial PER-UTENTE (account-level, accesso a chiavi condivise) resta 30gg.
+const appTrialDays = Number(process.env.LOCOCODE_APP_TRIAL_DAYS || 1);
+const appTrialMs = appTrialDays * 24 * 60 * 60 * 1000;
 
 // Restituisce la chiave OpenRouter da usare: personale dell'utente oppure quella condivisa del server.
 // La chiave condivisa è disponibile durante il trial (30gg dall'iscrizione) o se l'utente è abbonato.
@@ -128,7 +133,35 @@ const GENERATION_TIERS = {
 //   - numero di entita'/tabelle (rileva da architecture.md)
 //   - presenza di pagamenti/integrations esterne
 // Output: { complexityScore (0-100), suggestedTier, priceEur }
+// PRICING v3 (2026-05-17): tutte le app sono GENERATE COI MIGLIORI MOTORI
+// (tier "premium": Claude Sonnet 4.5 + GPT-5 review) e l'utente paga sempre
+// €1.99 flat. Scontato dall'abbonamento o dall'acquisto. Nessuno scoring,
+// nessuna scelta tier per l'utente o per l'admin. Costo medio reale per
+// LocoCode misurato su app Premium: ~€1.70-1.80, margine ~€0.20-0.30.
+const FLAT_PRICE_EUR = 1.99;
+const ALWAYS_TIER = "premium";
+
 function computePriceFromSdd(target) {
+  const steps = target.sdd?.steps || [];
+  const taskCount = steps.length;
+  const filesPlanned = (target.fileCount || 0) || taskCount * 2;
+  const isWebsite = target.kind === "website";
+  // Manteniamo i breakdown solo come info diagnostica (UI puo' mostrarle al
+  // creatore) ma NON pesano sul prezzo.
+  const promptBlob = String(target.prompt || "").toLowerCase();
+  const sddTokens =
+    (target.tokenUsage?.sdd?.promptTokens || 0) +
+    (target.tokenUsage?.sdd?.completionTokens || 0);
+  return {
+    complexityScore: null,
+    suggestedTier: ALWAYS_TIER,
+    priceEur: FLAT_PRICE_EUR,
+    breakdown: { taskCount, filesPlanned: Math.round(filesPlanned), sddTokens, isWebsite },
+  };
+}
+
+// Implementazione precedente (scoring v2) tenuta come riferimento storico:
+function _legacyComputePriceFromSdd(target) {
   const steps = target.sdd?.steps || [];
   const taskCount = steps.length;
   const filesPlanned = (target.fileCount || 0) || taskCount * 2;
@@ -755,28 +788,30 @@ app.post("/api/generate", async (req, res) => {
     }
   }
 
-  // Tier di generazione: 3 tier (starter/pro/premium). L'utente NON sceglie:
-  // il tier viene ASSEGNATO dal sistema dopo l'analisi SDD in base allo score
-  // di complessita'. Qui partiamo da "starter" come placeholder iniziale (vale
-  // per la sola fase SDD che usa comunque DeepSeek). Dopo l'analisi
-  // computePriceFromSdd produce suggestedTier che diventa il tier finale.
-  // L'admin puo' forzare un tier via req.body.generationTier per testare.
-  const validTiers = ["starter", "pro", "premium"];
-  const requestedTier = normalizeTier(String(req.body.generationTier || "").trim().toLowerCase());
-  const adminChosenTier = isAdminUser(user) && validTiers.includes(requestedTier) ? requestedTier : null;
-  const effectiveTier = adminChosenTier || "starter";
+  // PRICING v3: tier sempre "premium" per tutti (utente e admin). Non c'e'
+  // piu' scelta: l'utente paga €1.99 e ottiene sempre i migliori modelli AI.
+  const effectiveTier = ALWAYS_TIER;
 
   // Kind: webapp (default, flusso completo con backend) oppure website (sito
   // vetrina statico, niente backend). Influenza prompt e pipeline.
   const requestedKind = String(req.body.kind || "webapp").trim().toLowerCase();
   const appKind = requestedKind === "website" ? "website" : "webapp";
 
+  // Email opt-in: l'utente puo' richiedere di essere avvisato quando il
+  // preventivo e' pronto e/o quando l'app e' pronta dopo il pagamento.
+  // Salviamo i flag sull'app cosi' la pipeline puo' decidere se mandare.
+  const notifyOnEstimate = req.body.notifyEmailOnEstimate === true;
+  const notifyOnReady = req.body.notifyEmailOnReady === true;
+
   if (!target) {
     target = {
       id: `app-${Date.now()}`,
       appToken: crypto.randomUUID(),
       lifecycle: "trial",
-      trialExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      trialExpiresAt: new Date(Date.now() + appTrialMs).toISOString(),
+      notifyEmailOnEstimate: notifyOnEstimate,
+      notifyEmailOnReady: notifyOnReady,
+      ownerEmail: user.email || "",
       ownerId: user.id,
       name: requestedProjectName,
       createdAt: now,
@@ -866,6 +901,13 @@ app.post("/api/apps/:id/confirm-payment", async (req, res) => {
   // con PayPal Orders API v2 prima di marcare paid. Per ora trust del click.
   const paymentMethod = String(req.body.paymentMethod || "sandbox").trim();
   const paymentRef = String(req.body.orderId || `sandbox-${Date.now()}`);
+
+  // Opt-in mail "app pronta": l'utente decide a questo punto (post-preventivo,
+  // pre-generazione) se essere avvisato per email quando l'app e' deployata.
+  if (typeof req.body.notifyEmailOnReady === "boolean") {
+    target.notifyEmailOnReady = req.body.notifyEmailOnReady;
+  }
+  if (user.email && !target.ownerEmail) target.ownerEmail = user.email;
 
   const now = new Date().toISOString();
   target.pricing = {
@@ -2075,6 +2117,13 @@ async function runAuthSmokeTest(target, backendPort) {
 
 // Manda email all'utente quando l'app e' pronta (o quasi).
 async function notifyUserAppReady(user, target, status) {
+  // Opt-in: l'utente riceve la mail di fine lavoro SOLO se ha messo la
+  // spunta nella EstimateView prima di pagare (campo notifyEmailOnReady).
+  // Cosi' chi vuole stare incollato al browser non e' spammato.
+  if (target?.notifyEmailOnReady !== true) {
+    console.log(`[notify] App ${target?.id} pronta — opt-in mail non richiesto, skip.`);
+    return;
+  }
   const userEmail = user?.email;
   if (!userEmail) return;
   const adminEmail = (process.env.LOCOCODE_ADMIN_EMAIL || "mellucciantonio@gmail.com").trim();
@@ -2689,6 +2738,19 @@ async function runInitialOrchestration({ target, apiKey, model, userPrompt, onPr
           target,
           `✓ Analisi pronta. Preventivo €${estimate.priceEur.toFixed(2)} (tier ${estimate.suggestedTier} assegnato, complessita' ${estimate.complexityScore}/100). In attesa di conferma utente.`,
         );
+
+        // Notifica email all'utente se ha richiesto avviso quando preventivo
+        // pronto. Asincrono, non blocca la pipeline se SMTP fallisce.
+        if (target.notifyEmailOnEstimate && target.ownerEmail) {
+          const reviewUrl = `${publicBaseUrl}/`;
+          sendUserNotification({
+            to: target.ownerEmail,
+            subject: `LocoCode: preventivo pronto per "${target.name}"`,
+            text: `Ciao,\n\nIl preventivo per la tua app "${target.name}" e' pronto.\nPrezzo: €${estimate.priceEur.toFixed(2)}\n\nApri LocoCode per confermare o annullare:\n${reviewUrl}\n\nNessun addebito senza la tua conferma.`,
+            html: `<p>Ciao,</p><p>Il preventivo per la tua app <strong>${target.name}</strong> e' pronto.</p><p><strong>Prezzo: €${estimate.priceEur.toFixed(2)}</strong></p><p><a href="${reviewUrl}" style="display:inline-block;background:#5b3ee8;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Apri LocoCode</a></p><p style="color:#666;font-size:13px">Nessun addebito senza la tua conferma.</p>`,
+          }).catch(() => {});
+        }
+
         return {
           summary: `Analisi completata. Preventivo €${estimate.priceEur.toFixed(2)} in attesa di conferma.`,
           touched: [...new Set(touched)],
@@ -2929,6 +2991,10 @@ function buildInitialBackendPrompt(initialPrompt, projectMemory) {
     "",
     "backend/app/main.py deve includere FastAPI con CORS (allow_origins=['*']), endpoint GET / health check, modelli Pydantic completi, inizializzazione SQLite con tabelle e dati di esempio realistici precaricati al primo avvio, e API CRUD complete coerenti con il progetto.",
     "",
+    "UTENTE ADMIN OBBLIGATORIO — Se l'app ha autenticazione utenti, AL PRIMO AVVIO (dentro la funzione che inizializza il DB) crea sempre un utente con:",
+    "  email = 'admin@admin.it'   password = 'admin'   role = 'admin' (o equivalente)",
+    "Lo aggiungi solo se la tabella users e' vuota (idempotente). Documenta queste credenziali nel README e nel campo 'credentialsHint' di deploy/lococode.json cosi' il proprietario dell'app puo' fare login subito per testarla.",
+    "",
     "ROUTE PREFIX OBBLIGATORIO: tutti gli endpoint API DEVONO essere sotto il prefisso /api/. Esempi: POST /api/auth/login, GET /api/lists, POST /api/items. MAI mettere endpoint a /auth/login o /lists. Il backend e' montato dietro un proxy /app/{slug}/api/* quindi DEVE rispondere su /api/*.",
     "",
     "REQUIREMENTS.TXT — REGOLA FERREA: ogni 'import X' nel codice Python DEVE avere il pacchetto giusto in requirements.txt. Mapping tipici da rispettare:",
@@ -3081,53 +3147,9 @@ function buildInitialFrontendPrompt(initialPrompt, projectMemory) {
     "",
     "lucide-react e gia disponibile come alias del server e puo essere importato normalmente.",
     "",
-    "BANNER TRIAL OBBLIGATORIO — devi creare frontend/src/components/TrialBanner.jsx con ESATTAMENTE questo contenuto (poi montalo in App.jsx come primo figlio del root, prima di qualsiasi altro layout):",
-    "```jsx",
-    "import { useEffect, useState } from 'react';",
-    "import { AlertTriangle, Clock, Lock } from 'lucide-react';",
+    "VIETATO BANNER TRIAL — NON creare TrialBanner.jsx o qualsiasi componente che mostri scadenze, attivazioni, licenze, abbonamenti. Trial e' gestito esternamente da LocoCode, l'app generata NON deve sapere niente di trial.",
     "",
-    "function getSlug() {",
-    "  const m = window.location.pathname.match(/\\/app\\/([^/]+)/);",
-    "  return m ? m[1] : null;",
-    "}",
-    "",
-    "export default function TrialBanner() {",
-    "  const [s, setS] = useState(null);",
-    "  useEffect(() => {",
-    "    const slug = getSlug();",
-    "    if (!slug) return;",
-    "    fetch(`/api/public/app-status/${slug}`).then(r => r.ok ? r.json() : null).then(setS).catch(() => {});",
-    "  }, []);",
-    "  if (!s || s.isActive) return null;",
-    "  if (s.expired) {",
-    "    return (",
-    "      <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4'>",
-    "        <div className='max-w-md bg-white rounded-2xl shadow-2xl p-7 text-center'>",
-    "          <div className='w-14 h-14 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center'><Lock className='text-red-600' size={28} /></div>",
-    "          <h2 className='text-xl font-bold text-gray-900 mb-2'>Trial scaduto</h2>",
-    "          <p className='text-gray-600 mb-5 text-sm'>Il periodo di prova di 30 giorni e terminato. Attiva una licenza permanente dal pannello LocoCode.</p>",
-    "          <a href='https://lococode.mellutecno.it' className='inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2.5 rounded-lg text-sm'>Vai al pannello LocoCode</a>",
-    "        </div>",
-    "      </div>",
-    "    );",
-    "  }",
-    "  const days = s.trialDaysLeft;",
-    "  if (days === null || days > 7) return null;",
-    "  const lastDay = days <= 1;",
-    "  const bg = lastDay ? 'bg-red-50 border-red-300 text-red-800' : 'bg-amber-50 border-amber-300 text-amber-800';",
-    "  const Icon = lastDay ? AlertTriangle : Clock;",
-    "  return (",
-    "    <div className={'border-b ' + bg}>",
-    "      <div className='max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-3 text-sm'>",
-    "        <Icon size={18} className='flex-shrink-0' />",
-    "        <div className='flex-1'>{lastDay ? <span><strong>Oggi e l ultimo giorno di trial.</strong> Da domani l app non sara piu utilizzabile.</span> : <span><strong>Trial in scadenza:</strong> mancano {days} giorni.</span>}</div>",
-    "        <a href='https://lococode.mellutecno.it' className='flex-shrink-0 font-semibold underline'>Attiva licenza</a>",
-    "      </div>",
-    "    </div>",
-    "  );",
-    "}",
-    "```",
-    "Monta <TrialBanner /> in App.jsx come PRIMO figlio dentro <ThemeProvider> (o il wrapper top-level), PRIMA di qualsiasi router/layout, affinche sia sempre visibile.",
+    "VIETATO MODIFICARE body IN index.css — il file lc-theme.css (iniettato e importato DOPO index.css) imposta il body con tema dark navy + aurora. Se in index.css tu metti `body { @apply bg-gradient-to-br from-slate-50... }` il body diventa CHIARO e contraddice il tema dark di LocoCode, generando 'testi chiari su sfondi chiari'. REGOLA: in index.css NIENTE selettore body (o se serve, SOLO font-family senza background/color). Tutto il resto del body lo gestisce lc-theme.css.",
     "",
     "Aggiorna il piano dei task completati in questa fase.",
     "Restituisci solo blocchi file.",
@@ -4587,6 +4609,36 @@ function generateLoginToken() {
 
 function hashSecret(value) {
   return crypto.createHmac("sha256", authSecret).update(String(value || "")).digest("hex");
+}
+
+// Notifica generica all'utente via email. Usata per:
+//   - "preventivo pronto" quando l'analisi SDD finisce
+//   - "app pronta" quando la generazione completa termina con smoke OK
+// Silenziosa se SMTP non configurato o se to e' vuoto (log warning, no throw).
+async function sendUserNotification({ to, subject, text, html }) {
+  if (!to) return { sent: false, reason: "no-recipient" };
+  const host = process.env.SMTP_HOST;
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER || "noreply@lococode.local";
+  if (!host) {
+    console.warn(`[notify] SMTP non configurato, salto notifica a ${to}: ${subject}`);
+    return { sent: false, reason: "no-smtp" };
+  }
+  try {
+    const portValue = Number(process.env.SMTP_PORT || 587);
+    const user = process.env.SMTP_USER || "";
+    const pass = process.env.SMTP_PASS || "";
+    const transporter = nodemailer.createTransport({
+      host, port: portValue,
+      secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true" || portValue === 465,
+      auth: user && pass ? { user, pass } : undefined,
+    });
+    await transporter.sendMail({ from, to, subject, text, html: html || `<p>${text}</p>` });
+    console.log(`[notify] Email inviata a ${to}: ${subject}`);
+    return { sent: true };
+  } catch (err) {
+    console.warn(`[notify] Errore invio email a ${to}:`, err.message);
+    return { sent: false, reason: "smtp-error", error: err.message };
+  }
 }
 
 async function sendLoginTokenEmail(email, token) {
