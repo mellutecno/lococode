@@ -7,12 +7,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import { hashPassword, verifyPassword, generateToken, hashToken } from "../utils/hash.js";
 import { config } from "../config.js";
-
-function normalizeEmail(value) {
-  const email = String(value || "").trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "";
-  return email;
-}
+import { normalizeEmail } from "../utils/normalize.js";
 
 // Helper: salva audit log senza far crashare la request se fallisce.
 async function audit(req, event, userId, details = {}) {

@@ -7,6 +7,8 @@ import { config, isDev } from "./config.js";
 import { runMigrations } from "./db/migrate.js";
 import authPlugin from "./plugins/auth.js";
 import authRoutes from "./routes/auth.js";
+import tenantRoutes from "./routes/tenants.js";
+import appAuthRoutes from "./routes/appAuth.js";
 
 async function main() {
   const app = Fastify({
@@ -35,6 +37,8 @@ async function main() {
 
   // ---------- Routes ----------
   await app.register(authRoutes, { prefix: "/v1/auth" });
+  await app.register(tenantRoutes, { prefix: "/v1/tenants" });
+  await app.register(appAuthRoutes, { prefix: "/v1/app-auth" });
 
   // ---------- Migrations on boot ----------
   // In dev applichiamo migrations automatiche cosi' non serve un comando manuale.

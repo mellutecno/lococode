@@ -1,8 +1,6 @@
-// Schema iniziale Fase 1: solo tabelle per auth dei creator MelluCode.
-// Le tabelle multi-tenant per app generate (mc_app_users, mc_app_records, etc.)
-// arrivano dopo, quando facciamo /v1/data e /v1/app-auth.
+// Schema Fase 1: creator MelluCode, tenant/app generate e auth utenti app.
 import {
-  pgTable, uuid, text, timestamp, varchar, jsonb, index, uniqueIndex,
+  pgTable, uuid, text, timestamp, varchar, jsonb, index, uniqueIndex, boolean,
 } from "drizzle-orm/pg-core";
 
 // Utenti di MelluCode: chi accede al pannello, crea app, paga abbonamento.
@@ -50,4 +48,55 @@ export const mcAuditLog = pgTable("mc_audit_log", {
 }, (t) => ({
   userEventIdx: index("mc_audit_user_event_idx").on(t.userId, t.event),
   createdAtIdx: index("mc_audit_created_idx").on(t.createdAt),
+}));
+
+// Ogni app generata e' un tenant. Il backend gestito filtra sempre per tenant_id.
+export const mcTenants = pgTable("mc_tenants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => mcUsers.id, { onDelete: "cascade" }),
+  slug: varchar("slug", { length: 80 }).notNull(),
+  name: varchar("name", { length: 160 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("active"), // active | suspended | archived
+  plan: varchar("plan", { length: 32 }).notNull().default("trial"), // trial | hosted | exported
+  publicRegistrationEnabled: boolean("public_registration_enabled").notNull().default(true),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  slugUx: uniqueIndex("mc_tenants_slug_ux").on(t.slug),
+  ownerIdx: index("mc_tenants_owner_idx").on(t.ownerUserId),
+}));
+
+// Utenti finali delle app generate. Sono separati dai creator MelluCode.
+export const mcAppUsers = pgTable("mc_app_users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => mcTenants.id, { onDelete: "cascade" }),
+  email: varchar("email", { length: 320 }).notNull(),
+  passwordHash: text("password_hash").notNull(),
+  name: varchar("name", { length: 120 }),
+  role: varchar("role", { length: 32 }).notNull().default("user"), // admin | user | custom role
+  mustChangePassword: boolean("must_change_password").notNull().default(false),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tenantEmailUx: uniqueIndex("mc_app_users_tenant_email_ux").on(t.tenantId, t.email),
+  tenantRoleIdx: index("mc_app_users_tenant_role_idx").on(t.tenantId, t.role),
+}));
+
+// Refresh tokens degli utenti finali delle app generate.
+export const mcAppUserSessions = pgTable("mc_app_user_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => mcTenants.id, { onDelete: "cascade" }),
+  appUserId: uuid("app_user_id").notNull().references(() => mcAppUsers.id, { onDelete: "cascade" }),
+  refreshTokenHash: text("refresh_token_hash").notNull(),
+  userAgent: text("user_agent"),
+  ip: varchar("ip", { length: 64 }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tenantUserIdx: index("mc_app_sessions_tenant_user_idx").on(t.tenantId, t.appUserId),
+  tokenHashUx: uniqueIndex("mc_app_sessions_token_hash_ux").on(t.refreshTokenHash),
 }));
