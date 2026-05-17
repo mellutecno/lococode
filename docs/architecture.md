@@ -153,7 +153,8 @@ FILE STORAGE (Fase 1: locale, Fase 4: S3-compatible):
 - [x] Test locale con syntax check + node --test
 - [x] Deploy server: Postgres setup, /opt/mellucode/, PM2, nginx, SSL Let's Encrypt
 - [x] Test produzione end-to-end auth creator
-- [ ] Endpoint `/v1/app-auth/*` per end-user app (multi-tenant)
+- [x] Endpoint `/v1/tenants` per registrare ogni app generata come tenant
+- [x] Endpoint `/v1/app-auth/*` per end-user app (multi-tenant)
 - [ ] Endpoint `/v1/data/{collection}` CRUD generico
 - [ ] Endpoint `/v1/files/upload`
 - [ ] Endpoint `/v1/email/send`
