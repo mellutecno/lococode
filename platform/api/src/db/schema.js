@@ -100,3 +100,37 @@ export const mcAppUserSessions = pgTable("mc_app_user_sessions", {
   tenantUserIdx: index("mc_app_sessions_tenant_user_idx").on(t.tenantId, t.appUserId),
   tokenHashUx: uniqueIndex("mc_app_sessions_token_hash_ux").on(t.refreshTokenHash),
 }));
+
+// Entita' dati delle app generate. L'orchestrator crea/aggiorna queste definizioni,
+// il frontend poi usa /v1/data/{entity} senza avere backend dedicato.
+export const mcAppEntities = pgTable("mc_app_entities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => mcTenants.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 80 }).notNull(),
+  label: varchar("label", { length: 160 }),
+  jsonSchema: jsonb("json_schema").default({}).notNull(),
+  permissions: jsonb("permissions").default({}).notNull(),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tenantNameUx: uniqueIndex("mc_app_entities_tenant_name_ux").on(t.tenantId, t.name),
+  tenantIdx: index("mc_app_entities_tenant_idx").on(t.tenantId),
+}));
+
+// Record generici delle app generate. Ogni record e' JSONB, sempre scoped a tenant.
+export const mcAppRecords = pgTable("mc_app_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => mcTenants.id, { onDelete: "cascade" }),
+  entityId: uuid("entity_id").notNull().references(() => mcAppEntities.id, { onDelete: "cascade" }),
+  entity: varchar("entity", { length: 80 }).notNull(),
+  data: jsonb("data").default({}).notNull(),
+  createdByAppUserId: uuid("created_by_app_user_id").references(() => mcAppUsers.id, { onDelete: "set null" }),
+  updatedByAppUserId: uuid("updated_by_app_user_id").references(() => mcAppUsers.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tenantEntityIdx: index("mc_app_records_tenant_entity_idx").on(t.tenantId, t.entity),
+  entityIdIdx: index("mc_app_records_entity_id_idx").on(t.entityId),
+  tenantCreatedIdx: index("mc_app_records_tenant_created_idx").on(t.tenantId, t.createdAt),
+}));
