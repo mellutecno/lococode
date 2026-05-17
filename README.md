@@ -1,23 +1,32 @@
-# LocoPlatform v2
+# MelluCode
 
-AI app builder con BaaS gestito, multi-tenant, app proprietarie esportabili.
+AI app builder. L'utente descrive un'app, MelluCode la genera completa di frontend, dati e auth, deployata sul nostro server.
 
 ## Stato
 
-🚧 In costruzione (Fase 1 — BaaS interno).
+🚧 In costruzione (Fase 1 — backend gestito interno).
 
-Il codice precedente ("orchestrator monolite + FastAPI generato per app") e' archiviato sul tag git `legacy-v1`.
+Il codice precedente ("orchestrator monolite + FastAPI generato per ogni app", brand "LocoCode") e' archiviato sul tag git `legacy-v1`. Non viene piu' sviluppato.
 
-## Architettura
+## Architettura (in sintesi)
 
-Vedi [docs/locoplatform-architecture.md](docs/locoplatform-architecture.md) (in arrivo).
+- **Backend gestito** `platform/api/` — fornisce auth, data CRUD, file storage, email, AI proxy a tutte le app generate. **L'AI generata non scrive mai codice backend.**
+- **SDK frontend** `platform/sdk/` — libreria che le app generate importano per parlare col backend gestito.
+- **Orchestrator AI** (in arrivo Fase 2) — chiede prompt utente, genera solo schema + frontend React+Tailwind, lascia il backend al servizio gestito.
+
+Dettagli in [docs/architecture.md](docs/architecture.md) (in arrivo).
 
 ## Roadmap
 
-- Fase 1 (3-4 sett.): BaaS interno - auth, data API, file storage, email, AI proxy
-- Fase 2 (2-3 sett.): nuovo orchestrator - AI genera solo schema+frontend
-- Fase 3 (2-3 sett.): editor live + iterazione + sistema crediti AI
+- **Fase 1** (3-4 sett.): backend gestito (auth, data API, storage, email, AI proxy)
+- **Fase 2** (2-3 sett.): nuovo orchestrator (AI scrive solo schema+frontend, mai backend)
+- **Fase 3** (2-3 sett.): editor live + iterazione chat + sistema crediti AI
+- **Fase 4** (1-2 sett.): 3-4 template di partenza (pizzeria, gestionale, marketplace, ecommerce)
+
+## Dominio
+
+Produzione: `mellucode.mellutecno.it` (sottodominio da configurare in DNS quando v2 e' pronta).
 
 ## License
 
-Proprietario (uso interno per ora).
+Proprietario.
