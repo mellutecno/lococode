@@ -3,17 +3,8 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import { normalizeKey } from "../utils/normalize.js";
-
-const DEFAULT_PERMISSIONS = {
-  read: "authenticated",
-  create: "authenticated",
-  update: "owner_or_admin",
-  delete: "owner_or_admin",
-};
-
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
+import { DEFAULT_PERMISSIONS, canAccess } from "../utils/permissions.js";
+import { validateRecordData } from "../utils/recordValidation.js";
 
 function publicEntity(entity) {
   return {
@@ -55,24 +46,6 @@ function requireAppUser(req, reply) {
   return true;
 }
 
-function permissionFor(entity, action) {
-  return {
-    ...DEFAULT_PERMISSIONS,
-    ...(entity.permissions || {}),
-  }[action] || DEFAULT_PERMISSIONS[action];
-}
-
-function canAccess(entity, action, user, record = null) {
-  const mode = permissionFor(entity, action);
-  if (mode === "none") return false;
-  if (mode === "authenticated") return true;
-  if (mode === "admin") return user.role === "admin";
-  if (mode === "owner_or_admin") {
-    return user.role === "admin" || record?.createdByAppUserId === user.id;
-  }
-  return false;
-}
-
 async function currentAppUser(req, reply) {
   if (!requireAppUser(req, reply)) return null;
 
@@ -112,44 +85,6 @@ async function findEntity(tenantId, rawName) {
     .limit(1);
 
   return rows[0] ?? null;
-}
-
-function validateRecordData(entity, data) {
-  if (!isPlainObject(data)) return "Il record deve essere un oggetto JSON.";
-
-  const jsonSchema = isPlainObject(entity.jsonSchema) ? entity.jsonSchema : {};
-  const properties = isPlainObject(jsonSchema.properties) ? jsonSchema.properties : {};
-  const required = Array.isArray(jsonSchema.required) ? jsonSchema.required : [];
-
-  for (const field of required) {
-    if (data[field] === undefined || data[field] === null || data[field] === "") {
-      return `Campo obbligatorio mancante: ${field}.`;
-    }
-  }
-
-  if (jsonSchema.additionalProperties === false) {
-    for (const field of Object.keys(data)) {
-      if (!properties[field]) return `Campo non previsto: ${field}.`;
-    }
-  }
-
-  for (const [field, rules] of Object.entries(properties)) {
-    if (data[field] === undefined || data[field] === null) continue;
-    if (!isPlainObject(rules)) continue;
-
-    const value = data[field];
-    if (rules.type === "string" && typeof value !== "string") return `${field} deve essere testo.`;
-    if (rules.type === "number" && typeof value !== "number") return `${field} deve essere numerico.`;
-    if (rules.type === "integer" && !Number.isInteger(value)) return `${field} deve essere intero.`;
-    if (rules.type === "boolean" && typeof value !== "boolean") return `${field} deve essere vero/falso.`;
-    if (rules.type === "object" && !isPlainObject(value)) return `${field} deve essere un oggetto.`;
-    if (rules.type === "array" && !Array.isArray(value)) return `${field} deve essere una lista.`;
-    if (rules.type === "string" && rules.maxLength && value.length > rules.maxLength) {
-      return `${field} supera la lunghezza massima.`;
-    }
-  }
-
-  return null;
 }
 
 function parseLimit(value) {

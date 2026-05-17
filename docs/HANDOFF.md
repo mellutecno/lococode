@@ -1,166 +1,82 @@
 # HANDOFF MelluCode
 
 ## Data / autore
-- Data: 2026-05-18
-- Tool usato: Codex
+- Data: 2026-05-18 (sera)
+- Tool usato: Claude Code (Opus 4.7)
 
 ## Obiettivo della sessione
-Consolidare l'inizio della v2 MelluCode e portare online il primo backend gestito `mellucode-api` con auth creator reale. Nelle fasi successive sono stati aggiunti il primo blocco multi-tenant, l'auth degli utenti finali delle app generate, la prima Data API gestita e lo SDK frontend base.
+Costruire la prima baseline di test automatici per `mellucode-api`. Prima di questa sessione esistevano solo smoke test manuali in produzione (vedi handoff precedente di Codex). Obiettivo: unit test puri per i moduli "puri" gia' esistenti e integration test (fastify.inject + PostgreSQL) pronti da girare contro un DB di test quando disponibile.
 
 ## Modifiche fatte
-- Creato/committato scaffold `platform/api/`:
-  - Fastify API
-  - PostgreSQL + Drizzle
-  - argon2 password hashing
-  - JWT auth
-  - endpoint `/v1/health`
-  - endpoint `/v1/auth/register`
-  - endpoint `/v1/auth/login`
-  - endpoint `/v1/auth/refresh`
-  - endpoint `/v1/auth/logout`
-  - endpoint `/v1/auth/me`
-- Generata migration iniziale Drizzle:
-  - `mc_users`
-  - `mc_sessions`
-  - `mc_audit_log`
-- Aggiornata architettura in `docs/architecture.md`.
-- Aggiornato `README.md` con stato API produzione.
-- Aggiunto modello multi-tenant:
-  - `mc_tenants`
-  - `mc_app_users`
-  - `mc_app_user_sessions`
-- Aggiunta migration Drizzle `0001_famous_quentin_quire.sql`.
-- Aggiunte route creator protette:
-  - `GET /v1/tenants`
-  - `POST /v1/tenants`
-- Aggiunte route utenti finali app generate:
-  - `POST /v1/app-auth/register`
-  - `POST /v1/app-auth/login`
-  - `POST /v1/app-auth/refresh`
-  - `POST /v1/app-auth/logout`
-  - `GET /v1/app-auth/me`
-  - `POST /v1/app-auth/change-password`
-- Estratti helper `normalizeEmail` e `slugify` in `platform/api/src/utils/normalize.js`.
-- Aggiunto modello dati generico per le app generate:
-  - `mc_app_entities`
-  - `mc_app_records`
-- Aggiunta migration Drizzle `0002_chemical_namor.sql`.
-- Aggiunta route Data API:
-  - `GET /v1/data/entities`
-  - `POST /v1/data/entities`
-  - `GET /v1/data/{entity}`
-  - `POST /v1/data/{entity}`
-  - `GET /v1/data/{entity}/{id}`
-  - `PATCH /v1/data/{entity}/{id}`
-  - `DELETE /v1/data/{entity}/{id}`
-- Le entita' usano `json_schema` per una validazione base: required, type, maxLength, additionalProperties.
-- I record sono sempre filtrati per `tenant_id`; update/delete rispettano permessi base (`authenticated`, `admin`, `owner_or_admin`, `none`).
-- Creato `platform/sdk/`:
-  - package `mellucode-sdk`
-  - `MelluCode` client ESM
-  - `mc.auth.register/login/logout/me/changePassword`
-  - refresh automatico dell'access token su `401`
-  - storage token su `localStorage` in browser e memoria in ambienti non-browser
-  - `mc.entities.list/upsert`
-  - `mc.data(entity).list/get/create/update/delete`
-  - `MelluCodeError`
-  - test `node:test` con fetch mock
-  - README SDK con esempio d'uso
+
+### Refactor mirato per testabilita'
+- Estratti da `platform/api/src/routes/data.js`:
+  - `DEFAULT_PERMISSIONS`, `permissionFor`, `canAccess` -> nuovo `platform/api/src/utils/permissions.js`
+  - `isPlainObject`, `validateRecordData` -> nuovo `platform/api/src/utils/recordValidation.js`
+- Estratto `buildApp()` da `platform/api/src/server.js` in nuovo `platform/api/src/app.js`. `server.js` ora fa solo: build + migrations + listen + shutdown. Lo stesso `buildApp()` viene usato dai test via `fastify.inject` senza listen.
+
+### Test aggiunti
+- `platform/api/src/utils/normalize.test.js` — 6 test (email/slug/key normalization).
+- `platform/api/src/utils/hash.test.js` — 5 test (argon2 hash/verify, token generation + sha256).
+- `platform/api/src/utils/permissions.test.js` — 9 test (DEFAULT_PERMISSIONS, permissionFor fallback, canAccess per ogni mode + edge cases).
+- `platform/api/src/utils/recordValidation.test.js` — 9 test (validazione required, types, maxLength, additionalProperties, payload non-object).
+- `platform/api/src/test/integration.test.js` — 30+ test integration (fastify.inject + DB reale), auto-skip se `TEST_DATABASE_URL` non e' settata. Copre:
+  - `GET /v1/health`
+  - `/v1/auth/*` (register / login / refresh + rotation / logout / me, edge cases password duplicate/invalid)
+  - `/v1/tenants` (auth required, create + initial admin, duplicate slug, scoping per owner)
+  - `/v1/app-auth/*` (login admin, login wrong tenant/password, end-user register + public-registration off, change-password full cycle, rifiuto JWT creator come app-auth)
+  - `/v1/data/*` (entity definita solo da admin, validazione required, CRUD record, isolamento per tenant, owner_or_admin, delete=admin, entita' inesistente)
+
+### Tooling
+- `package.json` script `test` aggiornato da `node --test src/**/*.test.js` (non funziona su Windows perche' la shell non espande il glob) a `node --test` (auto-discovery ricorsiva, supportata da Node 20+).
+- Aggiunto script `test:integration` per lanciare solo la suite integration.
+
+## Stato test
+- `cd platform/api && npm test`:
+  - 29 unit test PASS
+  - 1 suite integration SKIP (correttamente, manca `TEST_DATABASE_URL`)
+- Per girare la suite integration: creare un DB di test e settare la variabile prima di `npm test`:
+  - PowerShell: `$env:TEST_DATABASE_URL = "postgres://USER:PASS@127.0.0.1:5432/mellucode_test"`
+  - Bash: `TEST_DATABASE_URL=postgres://USER:PASS@127.0.0.1:5432/mellucode_test npm test`
+  - La suite applica migrations all'avvio e fa TRUNCATE su tutte le tabelle prima di ogni test (isolamento totale).
+- Postgres non e' installato localmente sulla macchina Windows di Antonio: la suite integration va girata o sul server di produzione (in un DB separato, MAI `mellucode_dev`) o quando si imposta una CI con PG.
+
+## Modifiche al codice di produzione (non solo test)
+- `src/routes/data.js` rifattorizzato per importare da `utils/permissions.js` e `utils/recordValidation.js`. Comportamento identico al codice precedente; gli stessi smoke test manuali in produzione devono continuare a passare (non eseguiti in questa sessione perche' modifiche locali).
+- `src/server.js` ora deriva da `src/app.js` ma il comportamento di avvio (porta, host, logger, migrations, shutdown) e' identico.
 
 ## Git
 - Branch: `mellucode-v2`
-- Commit principali:
-  - `75f0e0d` rebrand a MelluCode
-  - `ad6087f` scaffold API gestito
-  - `03cdc31` handoff deploy API
-  - `7dd1900` tenant + app user auth APIs
-  - `69879ca` handoff app-auth deploy
-  - `88de15e` managed tenant data API
-  - `cb8e7de` handoff data API deploy
-  - prossimo commit atteso: SDK auth/data base
-- Push fatto: si
-- Stato al termine previsto: pulito dopo commit finale di handoff.
+- Stato pre-commit: dirty (file aggiunti e modificati di cui sopra).
+- Commit atteso dopo questo HANDOFF: "Add automated test baseline (unit + integration)".
+- Push fatto: no (da fare).
 
 ## Server
-- Dominio: `https://mellucode.mellutecno.it`
-- Path server nuovo: `/opt/mellucode`
-- Path legacy da non toccare: `/opt/lococode-legacy`
-- Processo PM2: `mellucode-api`
-- Porta interna reale API: `127.0.0.1:5200`
-- Nginx vhost: `/etc/nginx/sites-available/mellucode.mellutecno.it`
-- SSL Let's Encrypt creato per `mellucode.mellutecno.it`
-- Database:
-  - PostgreSQL locale
-  - DB: `mellucode_dev`
-  - user: `mellucode`
-- Sicurezza:
-  - La password DB comparsa in chat e salvata in `/tmp/mellucode-db-pass.tmp` e' stata ruotata.
-  - `/tmp/mellucode-db-pass.tmp` e' stato eliminato.
-  - La password attuale sta solo in `/opt/mellucode/platform/api/.env` con permessi `600`.
+- Nessuna modifica al server in questa sessione.
+- Per girare la suite integration in produzione: creare DB `mellucode_test` separato (NON usare `mellucode_dev`), settare `TEST_DATABASE_URL`, `npm test`. La TRUNCATE distrugge tutti i dati nel DB di test ad ogni test — quindi MAI puntare al DB reale.
 
 ## Test fatti
-- Locale:
-  - syntax check su tutti i file JS in `platform/api/src`
-  - `npm test` (nessuna suite ancora presente, esito senza errori)
-  - `git diff --check`
-- Produzione:
-  - `https://mellucode.mellutecno.it/v1/health` -> `200`
-  - register nuovo utente smoke test -> OK
-  - login utente smoke test -> OK
-  - `/v1/auth/me` con bearer token -> OK
-  - creazione tenant con admin iniziale -> OK
-  - login admin app generata via `/v1/app-auth/login` -> OK
-  - `/v1/app-auth/me` con token app -> OK
-  - cambio password admin app generata -> OK
-  - register utente finale app generata -> OK
-  - refresh token app generata -> OK
-  - logout app generata -> `204`
-  - creazione entita' Data API come admin app -> OK
-  - creazione record Data API come admin app -> OK
-  - lista record Data API -> OK
-  - registrazione utente finale e creazione record -> OK
-  - update record dal proprietario -> OK
-  - delete negata a utente non admin quando `delete=admin` -> `403`
-  - delete concessa ad admin -> `204`
-  - SDK unit test:
-    - login salva token e `/me` manda bearer -> OK
-    - refresh automatico su `401` -> OK
-    - entity + CRUD path Data API -> OK
-    - errori API diventano `MelluCodeError` -> OK
-  - SDK smoke test produzione:
-    - creato tenant temporaneo
-    - login app via SDK -> OK
-    - upsert entity via SDK -> OK
-    - create/update/list/delete record via SDK -> OK
-  - `nginx -t` -> OK
-  - `pm2 status mellucode-api` -> online
-- Pulizia test data:
-  - eliminati dal DB i soli creator temporanei `codex-smoke-*` e `codex-logout-*`; cascade ha rimosso i tenant temporanei collegati.
-  - eliminato anche il creator temporaneo `codex-data-*`; cascade ha rimosso tenant, entita', record e utenti app di test.
-  - eliminato anche il creator temporaneo `codex-sdk-*`; cascade ha rimosso tenant, entita', record e utenti app di test.
+- Locale (Windows):
+  - `node --check` su tutti i file nuovi/modificati: OK
+  - `npm test` (senza `TEST_DATABASE_URL`):
+    - 29 unit PASS / 0 fail / 1 skip
+- Produzione: niente (modifiche solo locali).
 
 ## Stato finale
-- `mellucode-api` e' online e risponde via HTTPS.
-- Auth creator base funziona end-to-end.
-- Tenant e auth utenti finali delle app generate funzionano end-to-end.
-- Data API multi-tenant base funziona end-to-end.
-- SDK frontend base auth/data funzionante e testato contro produzione.
-- Migrations DB vengono applicate al boot.
-- La v1 resta archiviata in `/opt/lococode-legacy` e tag `legacy-v1`.
+- Esiste una baseline di test automatici eseguibile cold (`npm test`) che copre la logica pura (helpers, validazione, permessi).
+- Esiste una suite integration completa che gira appena qualcuno gli da' un PG di test — la stessa che usera' la CI quando la metteremo in piedi.
+- Codice di produzione invariato funzionalmente (refactor solo strutturale).
 
 ## Problemi / attenzioni
-- La porta 5000 sul server era gia occupata da un servizio `gunicorn`, quindi MelluCode usa `5200`.
-- PM2 va avviato direttamente con `src/server.js`, non con `npm start --cwd ...`.
-- Mancano test automatici veri per auth/app-auth/data: attualmente ci sono smoke test manuali in produzione.
-- La validazione `json_schema` della Data API e' volutamente base; prima di produzione commerciale va rafforzata con Ajv completo e test automatici.
-- Il logger PM2 contiene vecchi errori del primo avvio sbagliato con npm; il servizio corrente e' sano.
-- Non rilanciare il vecchio comando che rigenera `/tmp/mellucode-db-pass.tmp`: cambierebbe la password DB e romperebbe il `.env`.
-- Se si testa logout app-auth da PowerShell, `Invoke-WebRequest` puo' comportarsi male con `204 No Content`; usare `curl.exe` o un client HTTP normale. L'endpoint risponde correttamente `204`.
-- Lo SDK non ha ancora build bundle/minified ne pubblicazione npm/CDN: per ora esporta ESM da `src/index.js`.
+- Le modifiche a `data.js` (refactor che importa da `utils/permissions.js` e `utils/recordValidation.js`) non sono ancora state testate contro produzione: prima del prossimo deploy va fatto smoke test manuale come quelli del precedente handoff (creazione entita', create/list/update/delete record con permessi diversi).
+- La suite integration usa `TRUNCATE ... CASCADE RESTART IDENTITY` su tutte le tabelle ad ogni `beforeEach`. **Non puntare mai** `TEST_DATABASE_URL` al DB reale.
+- Validazione `json_schema` server-side e' sempre quella "light" originale (estratta tale e quale in `recordValidation.js`). Quando si fa il giro Ajv (TODO HANDOFF precedente), questi stessi test saranno il safety net per il refactor.
+- Lo SDK in `platform/sdk/` ha la sua suite test (gia' esistente, immutata in questa sessione).
 
 ## Prossimo passo consigliato
-1. Aggiungere test automatici server auth/app-auth/data con `node:test` o Vitest.
-2. Rafforzare la validazione JSON Schema server con Ajv.
-3. Implementare `/v1/files/upload` e poi aggiungere `mc.files` nello SDK.
-4. Implementare email transazionali.
-5. Implementare AI proxy con quota/costi.
+1. Smoke test manuale post-refactor su produzione: creare entita', creare record, update/delete con vari ruoli (rifare la sequenza del precedente handoff sezione "Test fatti / Produzione").
+2. Far girare la suite integration almeno una volta: creare `mellucode_test` su Postgres locale del server (NON il DB di produzione), settare `TEST_DATABASE_URL`, `npm test`.
+3. Sostituire la validazione `validateRecordData` con Ajv completo (i test attuali la inquadrano per evitare regressioni).
+4. Implementare `/v1/files/upload` + `mc.files` SDK (richiede conferma path storage).
+5. Implementare `/v1/email/send` (richiede conferma mittente SMTP).
+6. Implementare `/v1/ai/chat` con quota (richiede chiave OpenRouter da `/opt/lococode-legacy/web/.env` e quota trial di default).
