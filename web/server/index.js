@@ -3742,10 +3742,17 @@ async function ensureFrontendDependencies(frontendDirPath) {
   // vuoto o senza plugin react, e senza il plugin React JSX compila a
   // React.createElement (sintassi vecchia) che richiede React globale
   // -> errore "React is not defined" all'esecuzione.
+  // Nota: base: './' e' CRITICO. Senza, vite genera index.html con
+  // <script src="/assets/..."> (path assoluto da root). Quando l'app
+  // viene servita sotto /app/{slug}/, il browser cerca /assets/... sul
+  // dominio root (lococode.mellutecno.it/assets/...) invece di sotto
+  // /app/{slug}/assets/... -> JS sbagliato/200 vuoto -> pagina blank.
+  // Con base: './', vite usa path relativi ('./assets/...') che si
+  // risolvono correttamente sotto qualsiasi sub-path nginx.
   const viteConfigPath = path.join(frontendDirPath, "vite.config.js");
   await fs.writeFile(
     viteConfigPath,
-    `import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n  server: { host: '127.0.0.1', port: 5174 }\n})\n`,
+    `import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n  base: './',\n  server: { host: '127.0.0.1', port: 5174 }\n})\n`,
     "utf8",
   );
 
