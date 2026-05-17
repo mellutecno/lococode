@@ -3616,11 +3616,6 @@ async function buildFrontendPreview(target) {
   const distIndex = path.join(outDir, "index.html");
   const distMtime = await fileMtimeMs(distIndex);
 
-  if (distMtime && sourceMtime && distMtime >= sourceMtime) return true;
-
-  await ensureFrontendDependencies(frontendDirPath, target);
-  await fs.mkdir(outDir, { recursive: true });
-
   // Base assoluto: l'app e servita su /app/{slug}/, quindi gli asset DEVONO usare
   // path assoluti, altrimenti senza slash finale nell'URL il browser cerca /app/assets/...
   const slug = appPublicSlug(target);
@@ -3632,6 +3627,13 @@ async function buildFrontendPreview(target) {
   const apiUrl = slug
     ? `/app/${slug}`
     : `/apps/${target.id}/${target.appToken || target.demoToken || ""}`;
+
+  const sourceNeedsApiBase = await frontendSourceUsesApiBase(frontendDirPath);
+  const distHasApiBase = !sourceNeedsApiBase || await frontendRuntimeContainsApiBase(outDir, apiUrl);
+  if (distMtime && sourceMtime && distMtime >= sourceMtime && distHasApiBase) return true;
+
+  await ensureFrontendDependencies(frontendDirPath, target);
+  await fs.mkdir(outDir, { recursive: true });
 
   // Build come SUBPROCESS dalla cartella del frontend: cosi CWD e corretta e
   // PostCSS/Tailwind risolvono i config e i content path senza ambiguita.
@@ -3648,6 +3650,49 @@ async function buildFrontendPreview(target) {
   );
 
   return exists(distIndex);
+}
+
+async function frontendSourceUsesApiBase(frontendDirPath) {
+  const srcDir = path.join(frontendDirPath, "src");
+  if (!(await exists(srcDir))) return false;
+  const stack = [srcDir];
+  while (stack.length) {
+    const dir = stack.pop();
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      if (!/\.(jsx?|tsx?|mjs|cjs)$/.test(entry.name)) continue;
+      const content = await fs.readFile(full, "utf8").catch(() => "");
+      if (content.includes("VITE_API_URL") || /fetch\(\s*['"`]\/api\//.test(content)) return true;
+    }
+  }
+  return false;
+}
+
+async function frontendRuntimeContainsApiBase(outDir, apiUrl) {
+  if (!apiUrl) return true;
+  if (!(await exists(outDir))) return false;
+  const stack = [outDir];
+  while (stack.length) {
+    const dir = stack.pop();
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      if (!/\.(html|js|mjs)$/.test(entry.name)) continue;
+      const content = await fs.readFile(full, "utf8").catch(() => "");
+      if (content.includes(apiUrl)) return true;
+    }
+  }
+  return false;
 }
 
 // Cerca pattern problematici nei sorgenti React generati dall'AI e li sanifica.
