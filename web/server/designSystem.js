@@ -442,6 +442,8 @@ export function SidebarNav({ children }) {
   return <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">{children}</nav>;
 }
 
+// PageHeader e' qui (re-esportato anche da PageHeader.jsx dedicato
+// cosi' l'AI puo' importare con path al file singolo).
 export function PageHeader({ title, subtitle, action }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
@@ -455,6 +457,15 @@ export function PageHeader({ title, subtitle, action }) {
 }
 
 export default PageLayout;
+`;
+
+// File DEDICATO per PageHeader. L'AI sbaglia il path 1 volta su 2 e
+// importa da '../components/ui/PageHeader' (file singolo) invece che
+// dall'index.js. Senza un file dedicato il build fallisce con
+// "Could not resolve '../components/ui/PageHeader'" -> blank page.
+const PAGE_HEADER_JSX = `import React from 'react';
+export { PageHeader } from './PageLayout';
+export { PageHeader as default } from './PageLayout';
 `;
 
 const MODAL_JSX = `import React, { useEffect } from 'react';
@@ -823,6 +834,7 @@ export function getDesignSystemFiles(frontendDirPath, pathModule) {
     "src/components/ui/Stat.jsx": STAT_JSX,
     "src/components/ui/AuthLayout.jsx": AUTH_LAYOUT_JSX,
     "src/components/ui/PageLayout.jsx": PAGE_LAYOUT_JSX,
+    "src/components/ui/PageHeader.jsx": PAGE_HEADER_JSX,
     "src/components/ui/Modal.jsx": MODAL_JSX,
     "src/components/ui/index.js": INDEX_JSX,
     "src/components/ui/README.md": USAGE_README,
