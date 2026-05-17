@@ -3742,17 +3742,22 @@ async function ensureFrontendDependencies(frontendDirPath) {
   // vuoto o senza plugin react, e senza il plugin React JSX compila a
   // React.createElement (sintassi vecchia) che richiede React globale
   // -> errore "React is not defined" all'esecuzione.
-  // Nota: base: './' e' CRITICO. Senza, vite genera index.html con
-  // <script src="/assets/..."> (path assoluto da root). Quando l'app
-  // viene servita sotto /app/{slug}/, il browser cerca /assets/... sul
-  // dominio root (lococode.mellutecno.it/assets/...) invece di sotto
-  // /app/{slug}/assets/... -> JS sbagliato/200 vuoto -> pagina blank.
-  // Con base: './', vite usa path relativi ('./assets/...') che si
-  // risolvono correttamente sotto qualsiasi sub-path nginx.
+  //
+  // BASE PATH CRITICO: l'app viene servita da nginx sotto /app/{slug}/.
+  // Se vite usa base assoluto '/' (default) -> <script src="/assets/...">
+  // -> il browser cerca lococode.mellutecno.it/assets/... (root) -> JS
+  // sbagliato -> blank page.
+  // Se vite usa base relativo './' -> <script src="./assets/..."> -> ok
+  // SOLO se l'URL ha il trailing slash. Senza slash il browser risolve
+  // ./assets contro /app/ invece che /app/{slug}/ -> blank page.
+  // Soluzione definitiva: base ASSOLUTO con il path completo /app/{slug}/.
+  // Funziona indipendentemente da trailing slash e bookmark dell'utente.
+  const slugForBase = appPublicSlug(target);
+  const viteBase = `/app/${slugForBase}/`;
   const viteConfigPath = path.join(frontendDirPath, "vite.config.js");
   await fs.writeFile(
     viteConfigPath,
-    `import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n  base: './',\n  server: { host: '127.0.0.1', port: 5174 }\n})\n`,
+    `import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n  base: '${viteBase}',\n  server: { host: '127.0.0.1', port: 5174 }\n})\n`,
     "utf8",
   );
 
