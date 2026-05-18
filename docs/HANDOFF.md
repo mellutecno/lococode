@@ -1,5 +1,79 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Claude Code - 2026-05-19 notte (FIX bug "ID UUID" + admin app UX)
+
+Antonio ha provato a creare un'app palestra e ha segnalato:
+1. Form "Aggiungi corsi" chiede campo "ID *" obbligatorio (UUID) -> rifiutato sempre
+2. Non capisce se lui (creator MelluCode) e' admin DELL'APP palestra
+3. Anteprima invisibile / non sa cosa stia funzionando
+
+### Causa del bug "ID UUID"
+L'AI orchestrator stava includendo `id: {type: string, format: uuid}` come
+field required nel jsonSchema dell'entita'. Il backend `mc_app_records.id`
+e' gia' auto-generato come UUID, quindi `id` in jsonSchema e' inutile e
+dannoso: il form auto-generato dal template `_base` lo mostrava come input
+"ID *", l'utente lo lasciava vuoto, validazione Ajv rifiutava.
+
+### Tre fix combinati (commit `3fcf767`)
+1. **Prompt orchestrator** (`utils/orchestrator.js`): vietato esplicitamente
+   includere id, tenant_id, created_at/updated_at, created_by/updated_by/
+   owner_app_user_id nei field. Spiegato il rischio nel system prompt.
+2. **Template `_base/`** (`lib/entityIntrospect.js`): `isSystemField()` +
+   filtro in `getFields()`. Anche se l'AI sbaglia, il form non mostra
+   mai system fields come input (difesa in profondita').
+3. **Server `recordValidation`** (`utils/recordValidation.js`):
+   `stripSystemFieldsFromSchema()` + `stripSystemFieldsFromData()`. Anche
+   con jsonSchema sporco (gia' salvato in DB) il backend strippa al volo
+   sia da `data` (input client) sia da `properties`/`required` (schema)
+   prima di validare. `routes/data.js` POST e PATCH usano
+   stripSystemFieldsFromData su req.body cosi' "id" sporco mai salvato
+   nel jsonb dei record.
+
+### Patch SQL palestra esistente
+- UPDATE su `mc_app_entities` del tenant palestra: rimosso `id` (e altri
+  system fields se presenti) sia da `properties` sia da `required`.
+- Verifica: `class_courses` ora ha `required = [name, schedule,
+  max_participants]` e properties senza `id`.
+- Rebuild frontend palestra eseguito (24s, HTTP 200 su /apps/palestra/).
+
+### UX admin app (commit `df7e773`)
+Risolve "non so se sono admin dell'app". Distinzione tecnica:
+- MelluCode creator account (mc_users) = per Console
+- App-user admin (mc_app_users role=admin) = per app generata, auth
+  multi-tenant SEPARATA con email/password proprie
+
+Backend:
+- GET  /v1/tenants/:id/app-admin -> info admin app (email, esiste si/no)
+- POST /v1/tenants/:id/app-admin/reset-password -> genera password random
+  leggibile ("Sole-Luna-4729!"), la setta hashata, la ritorna in chiaro
+  UNA volta sola. Se admin non esiste lo crea con email del creator.
+
+Console nuovo `AppAdminCard.jsx`:
+- Mostra email admin app sempre visibile.
+- Se appena rigenerata: password in box verde con "SALVALA, non la rivedrai
+  piu'", bottoni show/hide + copia.
+- Bottone "Genera nuova password" + "Apri l'app" (link diretto).
+- Integrata in AppDetailPage sopra la chat modifiche.
+
+Per la palestra di Antonio, password admin app ripristinata manualmente
+a `Palestra2026!` per email `mellucciantonio@gmail.com` (puo' comunque
+rigenerare da Console se vuole).
+
+### Stato deployato
+- Backend `df7e773` su /opt/mellucode/, PM2 restart, health OK
+- Console statics aggiornati con AppAdminCard
+- Test: 130/131 pass (1 integration skip), 1 nuovo test per stripSystemFields
+- Frontend palestra rifatto, vecchio bug "ID UUID" risolto
+
+### Prossimi step
+1. Mostrare la password admin alla **creazione** del tenant (oggi va
+   rigenerata manualmente dopo). Aggiungere `initialAdminPassword` alla
+   response di POST /v1/tenants se admin auto-creato.
+2. Mobile QA reale (gia' nei consigli precedenti).
+3. Storia builds in Console (storia revisions c'e' nella chat, builds no).
+
+---
+
 ## Aggiornamento Claude Code - 2026-05-18 notte (CHAT MODIFICHE DEPLOYATA + smoke OK)
 
 Pipeline "chat modifiche Lovable-style" DEPLOYATA e VERIFICATA in produzione.
