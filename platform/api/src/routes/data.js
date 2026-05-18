@@ -5,7 +5,7 @@ import { db, schema } from "../db/index.js";
 import { normalizeEntityName } from "../utils/normalize.js";
 import { publicEntity } from "../utils/entities.js";
 import { DEFAULT_PERMISSIONS, canAccess } from "../utils/permissions.js";
-import { validateRecordData } from "../utils/recordValidation.js";
+import { validateRecordData, stripSystemFieldsFromData } from "../utils/recordValidation.js";
 
 function publicRecord(record) {
   return {
@@ -222,7 +222,8 @@ export default async function dataRoutes(fastify) {
       if (!entity) return reply.code(404).send({ error: "Entita' non trovata." });
       if (!canAccess(entity, "create", ctx.user)) return reply.code(403).send({ error: "Creazione non consentita." });
 
-      const validationError = validateRecordData(entity, req.body);
+      const cleanBody = stripSystemFieldsFromData(req.body);
+      const validationError = validateRecordData(entity, cleanBody);
       if (validationError) return reply.code(400).send({ error: validationError });
 
       const rows = await db
@@ -231,7 +232,7 @@ export default async function dataRoutes(fastify) {
           tenantId: ctx.tenant.id,
           entityId: entity.id,
           entity: entity.name,
-          data: req.body,
+          data: cleanBody,
           createdByAppUserId: ctx.user.id,
           updatedByAppUserId: ctx.user.id,
         })
@@ -316,7 +317,8 @@ export default async function dataRoutes(fastify) {
       if (!existing) return reply.code(404).send({ error: "Record non trovato." });
       if (!canAccess(entity, "update", ctx.user, existing)) return reply.code(403).send({ error: "Modifica non consentita." });
 
-      const nextData = { ...(existing.data || {}), ...req.body };
+      const cleanBody = stripSystemFieldsFromData(req.body);
+      const nextData = { ...(existing.data || {}), ...cleanBody };
       const validationError = validateRecordData(entity, nextData);
       if (validationError) return reply.code(400).send({ error: validationError });
 

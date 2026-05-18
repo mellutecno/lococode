@@ -86,7 +86,14 @@ Regole assolute output:
      diventera' il tema dell'app intera.
 3. Genera da 2 a 8 entita' massimo. Concentrati sugli oggetti core del dominio.
 4. Ogni entita' deve avere fra 2 e 15 proprieta'.
-5. NON includere created_at / updated_at: il sistema li traccia automaticamente.
+5. NON INCLUDERE MAI questi campi (li gestisce il sistema, mai l'utente):
+   - id (chiave primaria, generata server-side come UUID)
+   - tenant_id, tenantId (isolamento multi-tenant, automatico)
+   - created_at, createdAt, updated_at, updatedAt (timestamps)
+   - created_by, updated_by, created_by_app_user_id, updated_by_app_user_id
+     (chi ha creato/modificato il record, tracciato automaticamente)
+   Se metti uno di questi nelle properties o required, l'utente vedra' un
+   campo "ID" da riempire a mano nel form -> bug grave, NON FARLO.
 6. Se la descrizione e' vaga, inferisci valori ragionevoli ma resta minimale.`,
   ];
 

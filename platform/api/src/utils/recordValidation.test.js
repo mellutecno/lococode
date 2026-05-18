@@ -117,9 +117,31 @@ test("Ajv format=uri is enforced", () => {
 });
 
 test("Ajv format=uuid is enforced", () => {
-  const entity = { jsonSchema: { properties: { id: { type: "string", format: "uuid" } } } };
-  assert.match(validateRecordData(entity, { id: "abc" }), /id non e' un valore valido \(uuid\)/);
-  assert.equal(validateRecordData(entity, { id: "00000000-0000-4000-8000-000000000000" }), null);
+  // Uso "external_id" perche' "id" e' system field e viene strippato.
+  const entity = { jsonSchema: { properties: { external_id: { type: "string", format: "uuid" } } } };
+  assert.match(validateRecordData(entity, { external_id: "abc" }), /external_id non e' un valore valido \(uuid\)/);
+  assert.equal(validateRecordData(entity, { external_id: "00000000-0000-4000-8000-000000000000" }), null);
+});
+
+test("validateRecordData strips system fields from data and schema (defense)", () => {
+  // Anche se l'AI sbaglia e mette "id" nel jsonSchema come required, il
+  // sistema lo strippa: il record viene accettato anche se il client non
+  // manda "id" (verra' generato server-side come UUID).
+  const entity = {
+    jsonSchema: {
+      properties: {
+        id: { type: "string", format: "uuid" },
+        name: { type: "string" },
+      },
+      required: ["id", "name"],
+    },
+  };
+  // Senza "id" -> deve PASSARE perche' system fields strippati
+  assert.equal(validateRecordData(entity, { name: "Mario" }), null);
+  // Con "id" sporco -> stesso esito (id strippato da data)
+  assert.equal(validateRecordData(entity, { id: "not-uuid-junk", name: "Mario" }), null);
+  // Required vero (name) rispettato
+  assert.match(validateRecordData(entity, { id: "x" }), /Campo obbligatorio mancante: name/);
 });
 
 test("Ajv pattern enforces regex", () => {

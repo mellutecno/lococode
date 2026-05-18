@@ -11,28 +11,47 @@ export function entityLabel(entity) {
   return entity?.label || labelFromName(entity?.name || "");
 }
 
+// Campi "sistema" che il backend MelluCode gestisce automaticamente:
+// id e' generato come UUID server-side in mc_app_records.id
+// tenant_id, created_at, updated_at, created_by_*, updated_by_* sono colonne
+// dedicate. Se l'AI per errore li mette in jsonSchema, li filtriamo qui
+// cosi' il form non li espone come input editabili (difesa in profondita').
+const SYSTEM_FIELDS = new Set([
+  "id", "tenant_id", "tenantId",
+  "created_at", "createdAt", "updated_at", "updatedAt",
+  "created_by", "createdBy", "updated_by", "updatedBy",
+  "created_by_app_user_id", "updated_by_app_user_id",
+  "owner_app_user_id", "ownerAppUserId",
+]);
+
+export function isSystemField(name) {
+  return SYSTEM_FIELDS.has(String(name || ""));
+}
+
 export function getFields(entity) {
   const schema = entity?.schema || {};
   const properties = schema.properties || {};
   const required = new Set(Array.isArray(schema.required) ? schema.required : []);
 
-  return Object.entries(properties).map(([name, def]) => {
-    const field = def && typeof def === "object" ? def : {};
-    return {
-      name,
-      label: field.title || labelFromName(name),
-      type: field.type || "string",
-      format: field.format,
-      enum: Array.isArray(field.enum) ? field.enum : null,
-      required: required.has(name),
-      maxLength: field.maxLength,
-      minLength: field.minLength,
-      minimum: field.minimum,
-      maximum: field.maximum,
-      schema: field,
-      kind: fieldKind(name, field),
-    };
-  });
+  return Object.entries(properties)
+    .filter(([name]) => !isSystemField(name))
+    .map(([name, def]) => {
+      const field = def && typeof def === "object" ? def : {};
+      return {
+        name,
+        label: field.title || labelFromName(name),
+        type: field.type || "string",
+        format: field.format,
+        enum: Array.isArray(field.enum) ? field.enum : null,
+        required: required.has(name),
+        maxLength: field.maxLength,
+        minLength: field.minLength,
+        minimum: field.minimum,
+        maximum: field.maximum,
+        schema: field,
+        kind: fieldKind(name, field),
+      };
+    });
 }
 
 function fieldKind(name, field) {

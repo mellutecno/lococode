@@ -29,6 +29,59 @@ export function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+// Campi gestiti dal sistema, MAI editabili dall'utente:
+// mc_app_records.id e' generato come UUID server-side; tenant_id, created_at,
+// updated_at, created_by_app_user_id, updated_by_app_user_id sono colonne
+// dedicate. Se l'AI per errore li mette nel jsonSchema (campo o required),
+// li ignoriamo durante la validazione cosi' il form utente non si rompe.
+const SYSTEM_FIELDS = new Set([
+  "id", "tenant_id", "tenantId",
+  "created_at", "createdAt", "updated_at", "updatedAt",
+  "created_by", "createdBy", "updated_by", "updatedBy",
+  "created_by_app_user_id", "updated_by_app_user_id",
+  "owner_app_user_id", "ownerAppUserId",
+]);
+
+export function isSystemField(name) {
+  return SYSTEM_FIELDS.has(String(name || ""));
+}
+
+// Restituisce una versione del jsonSchema "pulita" senza system fields
+// (sia in properties sia in required). Cache implicita tramite compileCache
+// che gia' usa la stringa del schema risultante come chiave.
+export function stripSystemFieldsFromSchema(jsonSchema) {
+  if (!isPlainObject(jsonSchema)) return jsonSchema;
+  const props = isPlainObject(jsonSchema.properties) ? jsonSchema.properties : null;
+  const req = Array.isArray(jsonSchema.required) ? jsonSchema.required : null;
+  if (!props && !req) return jsonSchema;
+
+  const next = { ...jsonSchema };
+  if (props) {
+    const cleaned = {};
+    for (const [k, v] of Object.entries(props)) {
+      if (!isSystemField(k)) cleaned[k] = v;
+    }
+    if (Object.keys(cleaned).length !== Object.keys(props).length) {
+      next.properties = cleaned;
+    }
+  }
+  if (req) {
+    const cleanedReq = req.filter((k) => !isSystemField(k));
+    if (cleanedReq.length !== req.length) {
+      next.required = cleanedReq;
+    }
+  }
+  return next;
+}
+
+export function stripSystemFieldsFromData(data) {
+  if (!isPlainObject(data)) return data;
+  let dirty = false;
+  for (const k of Object.keys(data)) if (isSystemField(k)) { dirty = true; break; }
+  if (!dirty) return data;
+  return Object.fromEntries(Object.entries(data).filter(([k]) => !isSystemField(k)));
+}
+
 function compileFor(jsonSchema) {
   const key = JSON.stringify(jsonSchema);
   let validate = compileCache.get(key);
@@ -109,14 +162,19 @@ function formatAjvError(err) {
 export function validateRecordData(entity, data) {
   if (!isPlainObject(data)) return "Il record deve essere un oggetto JSON.";
 
-  const jsonSchema = isPlainObject(entity?.jsonSchema) ? entity.jsonSchema : {};
+  // Filtra system fields sia da data (ricevuti dal client) sia dallo schema
+  // dell'entita' (potrebbero essere stati messi per errore dall'AI). Difesa
+  // in profondita': anche se il template e' aggiornato, l'API resta safe.
+  const cleanData = stripSystemFieldsFromData(data);
+  const rawSchema = isPlainObject(entity?.jsonSchema) ? entity.jsonSchema : {};
+  const jsonSchema = stripSystemFieldsFromSchema(rawSchema);
 
   // Required pre-check (semantica UX form HTML, non standard JSON Schema):
   // undefined / null / "" su un campo required vengono trattati come mancanti.
   // Lo facciamo prima di Ajv perche' Ajv considera null come "valore di tipo null".
   const required = Array.isArray(jsonSchema.required) ? jsonSchema.required : [];
   for (const field of required) {
-    const v = data[field];
+    const v = cleanData[field];
     if (v === undefined || v === null || v === "") {
       return `Campo obbligatorio mancante: ${field}.`;
     }
@@ -127,11 +185,11 @@ export function validateRecordData(entity, data) {
 
   // Per i campi NON required, un null esplicito viene ignorato (compat v1).
   // I valori required null sono gia' stati rifiutati sopra.
-  let dataForAjv = data;
-  const hasNullOptional = Object.values(data).some((v) => v === null);
+  let dataForAjv = cleanData;
+  const hasNullOptional = Object.values(cleanData).some((v) => v === null);
   if (hasNullOptional) {
     dataForAjv = Object.fromEntries(
-      Object.entries(data).filter(([, v]) => v !== null)
+      Object.entries(cleanData).filter(([, v]) => v !== null)
     );
   }
 
