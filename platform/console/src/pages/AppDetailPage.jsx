@@ -26,6 +26,7 @@ import {
 import { tenants, tenantUrl, formatDateIt, slugifyClient } from "../lib/api.js";
 import Modal from "../components/Modal.jsx";
 import AppIcon from "../components/AppIcon.jsx";
+import RevisionChat from "../components/RevisionChat.jsx";
 import { useToast } from "../components/Toast.jsx";
 
 function planTone(plan) {
@@ -515,6 +516,26 @@ export default function AppDetailPage() {
           )}
         </section>
       </div>
+
+      {/* Chat modifiche AI: visibile solo dopo che lo schema esiste,
+          cosi' l'utente non vede una chat inutile su un'app vuota. */}
+      {(stats?.entities > 0 || tenant.metadata?.frontend?.url) && (
+        <section>
+          <RevisionChat
+            tenantId={tenant.id}
+            disabled={isBuilding}
+            onRevisionSent={({ buildId }) => {
+              if (buildId) {
+                setGenerating(true);
+                setFrontendGenerating(true);
+                setBuildStage("queued");
+                setBuildMessages([]);
+                startPolling(buildId);
+              }
+            }}
+          />
+        </section>
+      )}
 
       <div className="grid lg:grid-cols-5 gap-6">
         <div className="card p-6 lg:col-span-3">

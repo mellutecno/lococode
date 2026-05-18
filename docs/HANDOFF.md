@@ -1,5 +1,91 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Claude Code - 2026-05-18 notte (CHAT MODIFICHE DEPLOYATA + smoke OK)
+
+Pipeline "chat modifiche Lovable-style" DEPLOYATA e VERIFICATA in produzione.
+Commit deployati: `c0310de` (backend) + Console dist nuovo bundle.
+
+### Cosa cambia per l'utente
+- Sulla pagina dettaglio app appare una **card chat** ("Chiedi una modifica")
+  visibile dopo che lo schema esiste.
+- Utente scrive in italiano naturale ("aggiungi un campo email ai clienti",
+  "cambia tema in caldo", "aggiungi una tabella per le note interne").
+- L'AI traduce in azioni strutturate, applica al DB, scatena automaticamente
+  un build async che ricostruisce solo il frontend (skipSchema=true).
+- La card avanza con storia messaggi (utente -> AI summary) e l'iframe
+  preview si ricarica quando la rebuild finisce.
+
+### Smoke produzione (sessione corrente, 3 revisioni OK)
+- Tenant "studio: clienti, appuntamenti, fatture" generato (settore non
+  in catalogo, tema scelto dall'AI: navy-trust).
+- Revision 1 "aggiungi data ultimo contatto ai clienti" -> add_field
+  applicato, summary "Aggiungo il campo data ultimo contatto ai clienti".
+- Revision 2 "cambia tema caldo e accogliente" -> change_theme
+  navy-trust -> warm-amber. L'AI ha mappato "caldo" sul tema corretto.
+- Revision 3 "aggiungi tabella note interne dello staff" -> add_entity
+  con name=note_interni, label="Note Interne".
+- GET /revisions ritorna le 3 in ordine cronologico, tutte status=applied.
+
+### Architettura deployata
+- **DB**: nuova tabella `mc_app_revisions` (migration 0007). request_text,
+  interpretation jsonb {summary, actions}, patch_applied jsonb
+  {applied, skipped, themeChanged, promptAppendAdded}, build_id FK,
+  status (pending/interpreting/applied/failed/cancelled), error_message.
+- **Orchestrator** `platform/api/src/orchestrator/revisionEngine.js`:
+  - `runRevision({tenant, requestText, ownerUserId, autoBuild})`
+  - System prompt costruito sullo stato corrente dell'app: lista entita'
+    con fields/types/required + lista 7 temi + 7 actions possibili
+    (add_field, change_field, remove_field, add_entity, remove_entity,
+    change_theme, update_prompt).
+  - Output JSON `{summary, actions[]}` parsed con 3 fallback robusti
+    (diretto, fence markdown, regex obj).
+  - Validazione per ogni action (entity esiste, field esiste, type valido,
+    theme in whitelist, schema field con keyword allowed).
+  - Apply in transazione DB: patch jsonSchema entita', insert/delete
+    entities, update tenant.metadata.theme/initialPrompt.
+  - Auto-enqueueBuild con skipSchema=true (la pipeline async esistente
+    si occupa di rigenerare solo il frontend, riusando il polling
+    esistente in Console).
+  - Throw con err.code mappabile a HTTP: NO_TEXT (400), AI_NOT_CONFIGURED
+    (503), AI_UNAVAILABLE (502), AI_INVALID_RESPONSE/NO_VALID_ACTIONS
+    (422), DB_FAILED (502).
+- **Endpoint** (in `routes/tenants.js`):
+  - POST /v1/tenants/:id/revisions body {requestText, autoBuild?}
+  - GET  /v1/tenants/:id/revisions (storia, asc per chat)
+  - GET  /v1/tenants/:id/revisions/:rid (dettaglio)
+- **Console**: nuovo componente `src/components/RevisionChat.jsx`
+  integrato in `AppDetailPage.jsx`. Visibile solo se ci sono gia'
+  entita' (no chat su app vuota). Mostra storia messaggi (utente +
+  AI summary), suggerimenti "Prova a chiedermi:", input multilinea con
+  Enter per inviare. Callback `onRevisionSent` collega al polling
+  build esistente: ogni revision parte un nuovo build, la chat resta
+  disabled "Aspetta che la build finisca…" durante l'esecuzione.
+- **lib/api.js**: `tenants.sendRevision(id, text, {autoBuild})`,
+  `tenants.listRevisions(id, {limit})`.
+
+### Caveat noti
+- L'AI puo' rifiutare richieste ambigue. Il sistema gestisce con
+  status=applied + applied=[] e mostra il summary AI ("Non posso
+  capire").
+- L'AI a volte propone change_field su field gia' corretto (no-op).
+  Lo accettiamo: l'utente vede "modifica accettata" anche se in pratica
+  niente cambia, ma non e' un bug.
+- L'AI NON puo': rename field/entity (richiede migrazione dati),
+  cambiare permessi, modificare relazioni FK. Restano per Step
+  successivi se servono.
+- L'AI a volte invoca `update_prompt` per registrare l'intenzione
+  futura. OK, viene appended a `tenant.metadata.initialPrompt`.
+
+### Prossimi step possibili
+1. Storia builds in Console (storia revisions c'e' gia' nella chat,
+   manca storia builds dedicata).
+2. Cancellazione build in corso (DELETE /builds/:bid) + sweep orfani.
+3. Mobile QA reale.
+4. UX edit field inline da Console (alternativa a chat per modifiche
+   tecniche precise: l'utente clicca un field, lo modifica, niente AI).
+
+---
+
 ## Aggiornamento Claude Code - 2026-05-18 notte (piano CHAT MODIFICHE Lovable-style)
 
 Prossimo step: l'utente apre una chat sulla pagina app, scrive in linguaggio

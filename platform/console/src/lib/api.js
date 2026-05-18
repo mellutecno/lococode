@@ -155,6 +155,20 @@ export const tenants = {
   // questa app (in entrambi i casi il body e' {build, conflict}). Catturiamo
   // il 409 cosi' il caller riceve sempre lo stesso shape e puo' riprendere
   // il polling sul build attivo.
+  // --- Revisions (chat modifiche Lovable-style) ---
+  // Manda una richiesta in linguaggio naturale ("aggiungi campo email ai clienti")
+  // -> backend interpreta + applica + lancia build async automatico.
+  sendRevision(id, requestText, { autoBuild = true } = {}) {
+    return request(`/v1/tenants/${encodeURIComponent(id)}/revisions`, {
+      method: "POST",
+      body: { requestText, autoBuild },
+    });
+  },
+  listRevisions(id, { limit } = {}) {
+    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : "";
+    return request(`/v1/tenants/${encodeURIComponent(id)}/revisions${qs}`);
+  },
+
   async startBuild(id, { skipSchema = false } = {}) {
     try {
       return await request(`/v1/tenants/${encodeURIComponent(id)}/builds`, {
