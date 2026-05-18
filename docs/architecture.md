@@ -157,9 +157,10 @@ FILE STORAGE (Fase 1: locale, Fase 4: S3-compatible):
 - [x] Endpoint `/v1/app-auth/*` per end-user app (multi-tenant)
 - [x] Endpoint `/v1/data/{collection}` CRUD generico
 - [x] Tabelle `mc_app_entities` e `mc_app_records`
-- [ ] Endpoint `/v1/files/upload`
+- [x] Endpoint `/v1/files/upload`
+- [x] Endpoint `/v1/files` list/get/content/delete
 - [ ] Endpoint `/v1/email/send`
 - [ ] Endpoint `/v1/ai/chat` con quota
-- [x] SDK `platform/sdk/` versione 0.1.0 con auth + data
-- [ ] SDK `platform/sdk/` con files + ai
+- [x] SDK `platform/sdk/` versione 0.1.0 con auth + data + files
+- [ ] SDK `platform/sdk/` con ai
 - [ ] Documentazione API (OpenAPI generato da Fastify schemas)
