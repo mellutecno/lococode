@@ -10,7 +10,6 @@ Fase 1 del backend gestito e' avanzata: auth, tenant, app-auth, Data API, file s
 Restano da chiudere:
 - `/v1/ai/chat` con quota/costi
 - eventuale build/distribuzione SDK come bundle/npm package
-- configurazione SMTP reale in produzione
 
 ## Commit principali recenti
 - `4bc3d51` Add MelluCode frontend SDK
@@ -33,6 +32,7 @@ Server:
 - porta interna: `127.0.0.1:5200`
 - commit deployato: `04decef`
 - health: OK
+- SMTP reale configurato e smoke test invio OK
 
 Database:
 - `mellucode_dev` produzione
@@ -114,8 +114,9 @@ Dettagli email:
 - supporta `replyTo` e `metadata`
 - scrive audit tecnico in `mc_email_log` con tenant, app user, destinatari, subject, stato e provider message id
 - in test usa `SMTP_TRANSPORT=json`, quindi non invia email reali
-- in produzione ora `SMTP_FROM` e' presente ma `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` non risultano configurati
-- finche' non configuriamo SMTP reale, `/v1/email/send` risponde `503 Email non configurata.`
+- in produzione SMTP reale e' configurato in `.env` senza `SMTP_TRANSPORT`
+- sorgente iniziale credenziali: variabili mail gia' presenti su `/opt/approfittOffro/execution/.env`, copiate server-side senza stamparle
+- e' stato creato backup `/opt/mellucode/platform/api/.env.backup.smtp.<timestamp>`
 
 ## SDK
 Cartella: `platform/sdk`
@@ -144,6 +145,12 @@ Server produzione/test:
 - `mellucode-api` PM2 online
 - tabella `mc_email_log` presente su `mellucode_dev`
 - suite server con `TEST_DATABASE_URL` su `mellucode_test` e `SMTP_TRANSPORT=json`: **100/100 PASS**
+- smoke test produzione `/v1/email/send` reale:
+  - creator temporaneo `smtp-smoke-*` creato
+  - tenant temporaneo creato
+  - admin app login OK
+  - invio email verso `SMTP_FROM` OK (`acceptedCount: 1`)
+  - creator temporaneo rimosso dal DB produzione con cascade
 - i test email coprono:
   - admin app invia email e scrive `mc_email_log`
   - app user non-admin riceve `403`
@@ -156,16 +163,8 @@ Attenzione test:
 - Per generare `TEST_DATABASE_URL` sul server senza stampare segreti e' stato usato Node + dotenv leggendo `.env`.
 
 ## Prossimo passo consigliato
-1. Configurare SMTP reale in `.env` server:
-   - `SMTP_HOST`
-   - `SMTP_PORT`
-   - `SMTP_SECURE`
-   - `SMTP_USER`
-   - `SMTP_PASS`
-   - `SMTP_FROM`
-2. Fare smoke test reale `/v1/email/send` verso una casella controllata.
-3. Implementare `/v1/ai/chat` con quota/costi.
-4. Poi build/distribuzione SDK e integrazione orchestrator che genera frontend usando solo `mellucode-sdk`.
+1. Implementare `/v1/ai/chat` con quota/costi.
+2. Poi build/distribuzione SDK e integrazione orchestrator che genera frontend usando solo `mellucode-sdk`.
 
 ## Note importanti
 - Non toccare `/opt/lococode-legacy`.
