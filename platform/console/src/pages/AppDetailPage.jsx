@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
   ArrowLeft,
@@ -78,6 +78,7 @@ function StatTile({ icon: Icon, label, value }) {
 export default function AppDetailPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
 
   const [tenant, setTenant] = useState(null);
@@ -89,12 +90,16 @@ export default function AppDetailPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editSlug, setEditSlug] = useState("");
+  const [editPrompt, setEditPrompt] = useState("");
   const [editPublicReg, setEditPublicReg] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [frontendGenerating, setFrontendGenerating] = useState(false);
+  const [buildStage, setBuildStage] = useState("idle");
+  const [buildMessages, setBuildMessages] = useState([]);
+  const [autoBuildStarted, setAutoBuildStarted] = useState(false);
   const [genResult, setGenResult] = useState(null);
 
   async function load() {
@@ -124,6 +129,13 @@ export default function AppDetailPage() {
 
   useEffect(() => { load(); }, [slug]);
 
+  useEffect(() => {
+    if (!tenant || autoBuildStarted || searchParams.get("build") !== "1") return;
+    setAutoBuildStarted(true);
+    setSearchParams({}, { replace: true });
+    handleBuildApp();
+  }, [tenant, autoBuildStarted, searchParams, setSearchParams]);
+
   async function copySlug() {
     if (!tenant) return;
     await navigator.clipboard.writeText(tenant.slug);
@@ -135,6 +147,7 @@ export default function AppDetailPage() {
   function openEdit() {
     setEditName(tenant.name || "");
     setEditSlug(tenant.slug || "");
+    setEditPrompt(tenant.metadata?.initialPrompt || "");
     setEditPublicReg(Boolean(tenant.publicRegistrationEnabled));
     setFormError(null);
     setEditOpen(true);
@@ -149,6 +162,7 @@ export default function AppDetailPage() {
       const res = await tenants.update(tenant.id, {
         name: editName.trim(),
         slug: slugifyClient(editSlug),
+        initialPrompt: editPrompt.trim(),
         publicRegistrationEnabled: editPublicReg,
       });
       setTenant(res.tenant);
@@ -211,6 +225,45 @@ export default function AppDetailPage() {
     }
   }
 
+  function pushBuildMessage(message) {
+    setBuildMessages((prev) => [...prev.slice(-4), message]);
+  }
+
+  async function handleBuildApp() {
+    if (!tenant) return;
+    setGenerating(true);
+    setFrontendGenerating(true);
+    setBuildStage("schema");
+    setBuildMessages([]);
+    pushBuildMessage("Leggo la richiesta e preparo la struttura dell'app.");
+
+    try {
+      const schemaRes = await tenants.generateSchema(tenant.id);
+      setGenResult(schemaRes);
+      pushBuildMessage(`Struttura pronta: ${schemaRes.created} tabelle dati preparate.`);
+
+      const statRes = await tenants.stats(tenant.id);
+      setTenant(statRes.tenant);
+      setStats(statRes.stats);
+
+      setBuildStage("frontend");
+      pushBuildMessage("Creo l'interfaccia e preparo la preview pubblica.");
+
+      const frontendRes = await tenants.generateFrontend(tenant.id);
+      setTenant(frontendRes.tenant);
+      pushBuildMessage("Preview pubblicata. Ora puoi aprire e provare l'app.");
+      setBuildStage("done");
+      toast.success("App costruita e pubblicata.");
+    } catch (err) {
+      setBuildStage("error");
+      pushBuildMessage(err.message);
+      toast.error(err.message);
+    } finally {
+      setGenerating(false);
+      setFrontendGenerating(false);
+    }
+  }
+
   if (error) {
     return (
       <div className="card p-6 border-rose-400/30 bg-rose-500/5 max-w-lg mx-auto">
@@ -233,6 +286,9 @@ export default function AppDetailPage() {
 
   const url = tenantUrl(tenant.slug);
   const frontend = tenant.metadata?.frontend || null;
+  const publicUrl = frontend?.url || url;
+  const canOpenApp = Boolean(frontend?.url);
+  const isBuilding = buildStage === "schema" || buildStage === "frontend";
   const aiCalls = stats ? stats.ai.callsSucceeded + stats.ai.callsFailed : 0;
   const aiPercent = stats?.ai.monthlyLimitCredits > 0
     ? Math.max(0, Math.min(100, (stats.ai.remainingCredits / stats.ai.monthlyLimitCredits) * 100))
@@ -276,11 +332,110 @@ export default function AppDetailPage() {
             <button type="button" onClick={openEdit} className="btn-secondary">
               <Pencil className="w-4 h-4" /> Modifica
             </button>
-            <a href={url} target="_blank" rel="noreferrer" className="btn-primary">
-              Apri l'app <ExternalLink className="w-4 h-4" />
-            </a>
+            {canOpenApp ? (
+              <a href={publicUrl} target="_blank" rel="noreferrer" className="btn-primary">
+                Apri l'app <ExternalLink className="w-4 h-4" />
+              </a>
+            ) : (
+              <button type="button" disabled className="btn-secondary">
+                In costruzione
+              </button>
+            )}
           </div>
         </div>
+      </div>
+
+      <div className="grid lg:grid-cols-5 gap-6 items-start">
+        <section className="card p-6 lg:col-span-3">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Costruzione app</h2>
+              <p className="text-sm text-zinc-300 mt-2 max-w-2xl">
+                MelluCode prepara la struttura, costruisce l'interfaccia e pubblica una preview reale sul tuo link.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleBuildApp}
+              disabled={isBuilding}
+              className="btn-primary shrink-0"
+            >
+              {isBuilding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              {isBuilding ? " Sto lavorando..." : frontend?.url ? " Aggiorna app" : " Costruisci app"}
+            </button>
+          </div>
+
+          <div className="grid sm:grid-cols-3 gap-3 mt-5">
+            <div className={`rounded-xl border p-3 ${buildStage === "schema" ? "border-accent-400/50 bg-accent-500/10" : stats?.entities ? "border-emerald-400/25 bg-emerald-500/10" : "border-white/[0.06] bg-white/[0.02]"}`}>
+              <p className="text-xs uppercase tracking-wider text-zinc-500">1. Struttura</p>
+              <p className="text-sm text-zinc-100 mt-1">{stats?.entities ? "Pronta" : "Da preparare"}</p>
+            </div>
+            <div className={`rounded-xl border p-3 ${buildStage === "frontend" ? "border-accent-400/50 bg-accent-500/10" : frontend?.url ? "border-emerald-400/25 bg-emerald-500/10" : "border-white/[0.06] bg-white/[0.02]"}`}>
+              <p className="text-xs uppercase tracking-wider text-zinc-500">2. Interfaccia</p>
+              <p className="text-sm text-zinc-100 mt-1">{frontend?.url ? "Pubblicata" : "Da creare"}</p>
+            </div>
+            <div className={`rounded-xl border p-3 ${frontend?.url ? "border-emerald-400/25 bg-emerald-500/10" : "border-white/[0.06] bg-white/[0.02]"}`}>
+              <p className="text-xs uppercase tracking-wider text-zinc-500">3. Preview</p>
+              <p className="text-sm text-zinc-100 mt-1">{frontend?.url ? "Disponibile" : "In attesa"}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 min-h-[96px]">
+            {buildMessages.length > 0 ? (
+              <div className="space-y-2">
+                {buildMessages.map((m, idx) => (
+                  <p key={`${m}-${idx}`} className="text-sm text-zinc-300 flex gap-2">
+                    <span className="mt-2 w-1.5 h-1.5 rounded-full bg-accent-300 shadow-[0_0_8px_currentColor] shrink-0" />
+                    <span>{m}</span>
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500">
+                Premi Costruisci app: qui vedrai i passaggi principali, senza dettagli tecnici inutili.
+              </p>
+            )}
+          </div>
+        </section>
+
+        <section className="card p-5 lg:col-span-2">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Preview</h2>
+              <p className="text-xs text-zinc-500 mt-1">La tua app appena diventa navigabile.</p>
+            </div>
+            {frontend?.url && (
+              <a href={frontend.url} target="_blank" rel="noreferrer" className="btn-secondary btn-sm">
+                Apri <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </div>
+          {frontend?.url ? (
+            <div className="rounded-2xl overflow-hidden border border-white/[0.08] bg-white">
+              <iframe
+                title={`Preview ${tenant.name}`}
+                src={frontend.url}
+                className="w-full h-[460px] bg-white"
+              />
+            </div>
+          ) : (
+            <div className="grid place-items-center rounded-2xl border border-dashed border-white/[0.10] bg-white/[0.02] h-[320px] text-center p-6">
+              <div>
+                {isBuilding ? (
+                  <Loader2 className="w-6 h-6 animate-spin text-accent-300 mx-auto mb-3" />
+                ) : (
+                  <MonitorUp className="w-6 h-6 text-zinc-500 mx-auto mb-3" />
+                )}
+                <p className="text-sm text-zinc-300 font-medium">
+                  {isBuilding ? "Sto preparando la preview..." : "La preview comparira' appena possibile."}
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Quando la pubblicazione finisce, la vedrai direttamente qui.
+                </p>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
 
       <div className="grid lg:grid-cols-5 gap-6">
@@ -394,9 +549,9 @@ export default function AppDetailPage() {
       <div className="card p-6">
         <div className="flex items-center justify-between gap-4 mb-4">
           <div>
-            <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Schema AI</h2>
+            <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Struttura dati</h2>
             <p className="text-xs text-zinc-500 mt-1">
-              Genera automaticamente le tabelle dati partendo dalla descrizione dell'app.
+              Se serve, puoi rigenerare solo la struttura senza pubblicare subito la preview.
             </p>
           </div>
           <button
@@ -406,7 +561,7 @@ export default function AppDetailPage() {
             className="btn-primary"
           >
             {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            {generating ? " Genero..." : " Genera schema"}
+            {generating ? " Genero..." : " Rigenera struttura"}
           </button>
         </div>
 
@@ -437,9 +592,9 @@ export default function AppDetailPage() {
       <div className="card p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Frontend app</h2>
+            <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Pubblicazione</h2>
             <p className="text-xs text-zinc-500 mt-1">
-              Crea l'interfaccia vera dell'app dal template premium e pubblicala sul link pubblico.
+              Se hai gia' una struttura pronta, puoi aggiornare solo il frontend pubblicato.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -472,7 +627,7 @@ export default function AppDetailPage() {
             </div>
           ) : (
             <p className="text-sm text-zinc-400">
-              Genera prima lo schema dati, poi pubblica il frontend. Da quel momento il link dell'app smette di essere vuoto.
+              La pubblicazione viene fatta automaticamente dal pulsante Costruisci app. Questo comando resta come controllo manuale.
             </p>
           )}
         </div>
@@ -528,6 +683,17 @@ export default function AppDetailPage() {
               />
             </div>
             <div className="help">Cambiare indirizzo cambia anche il link pubblico dell'app.</div>
+          </div>
+          <div className="field">
+            <label className="label">Richiesta dell'app</label>
+            <textarea
+              className="textarea min-h-[160px]"
+              maxLength={5000}
+              value={editPrompt}
+              onChange={(e) => setEditPrompt(e.target.value)}
+              placeholder="Descrivi cosa deve fare l'app, quali utenti la usano, quali dati gestisce..."
+            />
+            <div className="help">Modifica questa richiesta e poi usa Aggiorna app per rigenerare struttura e preview.</div>
           </div>
           <label className="flex items-center gap-2 text-sm text-zinc-300">
             <input

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Plus, ExternalLink, Boxes, CheckCircle2, Loader2, Search, Sparkles,
   ArrowRight, Shield, AlertCircle,
@@ -172,6 +172,7 @@ function CreateAppForm({ onCreated, onClose }) {
 }
 
 export default function AppsDashboardPage({ user }) {
+  const navigate = useNavigate();
   const [list, setList] = useState(null);
   const [error, setError] = useState(null);
   const [q, setQ] = useState("");
@@ -359,7 +360,10 @@ export default function AppsDashboardPage({ user }) {
         maxWidth="xl"
       >
         <CreateAppForm
-          onCreated={() => load()}
+          onCreated={(res) => {
+            load();
+            navigate(`/app/${res.tenant.slug}?build=1`);
+          }}
           onClose={() => setCreateOpen(false)}
         />
       </Modal>

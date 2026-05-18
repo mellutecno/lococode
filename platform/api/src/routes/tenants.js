@@ -169,6 +169,7 @@ export default async function tenantRoutes(fastify) {
           properties: {
             name: { type: "string", minLength: 2, maxLength: 160 },
             slug: { type: "string", minLength: 2, maxLength: 80 },
+            initialPrompt: { type: "string", maxLength: 5000 },
             publicRegistrationEnabled: { type: "boolean" },
           },
           additionalProperties: false,
@@ -177,14 +178,45 @@ export default async function tenantRoutes(fastify) {
     },
     async (req, reply) => {
       const updates = {};
+      let existingTenant = null;
+
+      async function loadExistingTenant() {
+        if (existingTenant) return existingTenant;
+        const rows = await db
+          .select()
+          .from(schema.mcTenants)
+          .where(and(
+            eq(schema.mcTenants.id, req.params.id),
+            eq(schema.mcTenants.ownerUserId, req.user.sub)
+          ))
+          .limit(1);
+        existingTenant = rows[0] || null;
+        return existingTenant;
+      }
 
       if (req.body.name !== undefined) {
         updates.name = String(req.body.name || "").trim();
       }
       if (req.body.slug !== undefined) {
+        const current = await loadExistingTenant();
+        if (!current) return reply.code(404).send({ error: "App non trovata." });
         const nextSlug = slugify(req.body.slug);
         if (!nextSlug) return reply.code(400).send({ error: "Indirizzo app non valido." });
         updates.slug = nextSlug;
+        if (nextSlug !== current.slug) {
+          updates.metadata = {
+            ...(current.metadata || {}),
+            frontend: null,
+          };
+        }
+      }
+      if (req.body.initialPrompt !== undefined) {
+        const current = await loadExistingTenant();
+        if (!current) return reply.code(404).send({ error: "App non trovata." });
+        updates.metadata = {
+          ...(updates.metadata || current.metadata || {}),
+          initialPrompt: String(req.body.initialPrompt || "").trim(),
+        };
       }
       if (req.body.publicRegistrationEnabled !== undefined) {
         updates.publicRegistrationEnabled = req.body.publicRegistrationEnabled;
@@ -207,6 +239,9 @@ export default async function tenantRoutes(fastify) {
           .returning();
 
         if (!rows[0]) return reply.code(404).send({ error: "App non trovata." });
+        if (existingTenant && rows[0].slug !== existingTenant.slug) {
+          await deleteGeneratedFrontend(existingTenant.slug).catch(() => {});
+        }
         return { tenant: publicTenant(rows[0]) };
       } catch (err) {
         if (duplicateError(err)) {

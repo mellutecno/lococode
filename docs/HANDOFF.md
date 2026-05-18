@@ -1,5 +1,38 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Codex - 2026-05-18 (Flusso Lovable-style + preview)
+
+Stato dopo questo giro:
+- Branch: `mellucode-v2`
+- Obiettivo: avvicinare la Console a un flusso tipo Lovable, riducendo i passaggi tecnici visibili e mostrando preview/stato costruzione.
+- File sensibile non tracciato: `deploy.py` resta fuori dal commit.
+
+### Fatto
+- Console:
+  - dopo `Nuova app`, l'utente viene portato direttamente al dettaglio app con query `?build=1`;
+  - il dettaglio app avvia automaticamente la pipeline `generate-schema -> generate-frontend`;
+  - aggiunta sezione **Costruzione app** con 3 step leggibili: struttura, interfaccia, preview;
+  - aggiunti messaggi umani di avanzamento, senza log tecnici;
+  - aggiunta sezione **Preview** con iframe della web app generata appena disponibile;
+  - il pulsante principale diventa `Costruisci app` / `Aggiorna app`;
+  - i comandi manuali restano sotto come controlli tecnici: `Rigenera struttura` e `Rigenera frontend`;
+  - la modale `Modifica app` ora permette anche di modificare la richiesta iniziale (`initialPrompt`);
+  - topbar resa piu' responsive: la navigazione non sparisce piu' sotto `md`, quindi la voce `Admin` resta accessibile anche su smartphone.
+- Backend:
+  - `PATCH /v1/tenants/:id` accetta anche `initialPrompt`;
+  - se si cambia slug, il frontend pubblicato precedente viene invalidato e la cartella generata del vecchio slug viene rimossa best-effort.
+
+### Verifiche
+- `npm test` in `platform/api`: PASS (129 pass, 1 integration skip).
+- `npm run build` in `platform/console`: PASS.
+
+### Prossimo passo consigliato
+1. Rendere la pipeline non bloccante con job server + polling stato, cosi' la pagina non resta appesa su chiamate lunghe.
+2. Migliorare la modifica app: campo "chiedi una modifica" stile chat, che aggiorna prompt/schema/frontend senza passare da textarea tecnica.
+3. Mobile QA reale: verificare topbar, modali e preview iframe da viewport smartphone.
+
+---
+
 ## Aggiornamento Codex - 2026-05-18 (Frontend builder Lovable-style)
 
 Stato dopo questo giro:

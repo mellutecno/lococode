@@ -35,14 +35,14 @@ function useAuth() {
 function TopBar({ user, onLogout }) {
   return (
     <header className="sticky top-0 z-30 glass border-b border-white/[0.06]">
-      <div className="max-w-6xl mx-auto px-5 sm:px-8 h-16 flex items-center gap-6">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 min-h-16 py-3 flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-5">
         <Link to="/" className="group transition hover:opacity-90">
           <Logo />
         </Link>
         <span className="hidden sm:inline pill-accent !text-[10px] uppercase tracking-wider">
           Console
         </span>
-        <nav className="hidden md:flex items-center gap-1 ml-2">
+        <nav className="order-3 sm:order-none w-full sm:w-auto flex items-center gap-1 sm:ml-2 overflow-x-auto no-scrollbar pt-2 sm:pt-0 border-t sm:border-t-0 border-white/[0.06]">
           <Link to="/" className="btn-ghost btn-sm">
             <LayoutGrid className="w-3.5 h-3.5" /> Le tue app
           </Link>
@@ -55,9 +55,9 @@ function TopBar({ user, onLogout }) {
         <div className="flex-1" />
         {user && (
           <>
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06]">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.06] min-w-0">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_currentColor]" />
-              <span className="text-xs text-zinc-300 truncate max-w-[180px]">{user.email}</span>
+              <span className="text-xs text-zinc-300 truncate max-w-[120px] lg:max-w-[180px]">{user.email}</span>
             </div>
             <button onClick={onLogout} className="btn-ghost btn-sm" title="Esci">
               <LogOut className="w-3.5 h-3.5" />
