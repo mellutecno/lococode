@@ -64,6 +64,7 @@ export class MelluCode {
     this.auth = new AuthClient(this);
     this.entities = new EntitiesClient(this);
     this.files = new FilesClient(this);
+    this.email = new EmailClient(this);
   }
 
   data(entity) {
@@ -318,6 +319,26 @@ class FilesClient {
   // funziona in <img src>. Utile per debug o per costruire fetch custom.
   url(id) {
     return `${this.client.apiUrl}/v1/files/${encodeURIComponent(id)}/content`;
+  }
+}
+
+class EmailClient {
+  constructor(client) {
+    this.client = client;
+  }
+
+  send({ to, subject, text, html, replyTo, metadata } = {}) {
+    return this.client.request("/v1/email/send", {
+      method: "POST",
+      body: {
+        to,
+        subject,
+        text,
+        html,
+        replyTo,
+        metadata,
+      },
+    });
   }
 }
 

@@ -29,9 +29,12 @@ if (!TEST_DB) {
   process.env.STORAGE_DIR = STORAGE_ROOT;
   // Limite basso per testare il 413 senza dover allocare 10 MB.
   process.env.UPLOAD_MAX_BYTES = "2048";
+  // Email test-safe: Nodemailer produce JSON, non apre connessioni SMTP reali.
+  process.env.SMTP_TRANSPORT = "json";
+  process.env.SMTP_FROM = "noreply@test.mellucode.local";
 
   const { buildApp } = await import("../app.js");
-  const { db } = await import("../db/index.js");
+  const { db, schema } = await import("../db/index.js");
   const { runMigrations } = await import("../db/migrate.js");
   const { sql } = await import("drizzle-orm");
 
@@ -53,6 +56,7 @@ if (!TEST_DB) {
     await db.execute(sql`
       TRUNCATE TABLE
         mc_audit_log,
+        mc_email_log,
         mc_app_files,
         mc_app_records,
         mc_app_entities,
@@ -872,6 +876,103 @@ if (!TEST_DB) {
     test("GET /v1/files/:id requires bearer", async () => {
       const res = await app.inject({ method: "GET", url: "/v1/files/00000000-0000-4000-8000-000000000000" });
       assert.equal(res.statusCode, 401);
+    });
+  });
+
+  // ================================================================
+  // /v1/email
+  // ================================================================
+  describe("/v1/email", () => {
+    async function setupTenantAndUsers() {
+      const reg = await registerCreator();
+      const t = await createTenant(reg.res.json().accessToken);
+      const tenant = t.res.json().tenant;
+      const adminLogin = await appLogin(tenant.slug, t.body.adminEmail, t.body.adminPassword);
+      const adminToken = adminLogin.json().accessToken;
+
+      const userEmail = `mail-user-${rand()}@test.local`;
+      await app.inject({
+        method: "POST", url: "/v1/app-auth/register",
+        payload: { tenantSlug: tenant.slug, email: userEmail, password: "User1Pass!" },
+      });
+      const userLogin = await appLogin(tenant.slug, userEmail, "User1Pass!");
+      return { tenant, adminToken, userToken: userLogin.json().accessToken };
+    }
+
+    test("admin can send email and write log", async () => {
+      const { adminToken } = await setupTenantAndUsers();
+      const res = await app.inject({
+        method: "POST", url: "/v1/email/send",
+        headers: bearer(adminToken),
+        payload: {
+          to: ["Cliente@Example.com", "cliente@example.com"],
+          subject: "Benvenuto",
+          text: "La tua app e' pronta.",
+          metadata: { reason: "welcome" },
+        },
+      });
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.json().ok, true);
+      assert.ok(res.json().messageId);
+
+      const logs = await db.select().from(schema.mcEmailLog);
+      assert.equal(logs.length, 1);
+      assert.deepEqual(logs[0].to, ["cliente@example.com"]);
+      assert.equal(logs[0].subject, "Benvenuto");
+      assert.equal(logs[0].status, "sent");
+      assert.equal(logs[0].metadata.reason, "welcome");
+    });
+
+    test("non-admin app user cannot send email", async () => {
+      const { userToken } = await setupTenantAndUsers();
+      const res = await app.inject({
+        method: "POST", url: "/v1/email/send",
+        headers: bearer(userToken),
+        payload: {
+          to: "cliente@example.com",
+          subject: "No",
+          text: "No",
+        },
+      });
+      assert.equal(res.statusCode, 403);
+    });
+
+    test("creator token is rejected", async () => {
+      const reg = await registerCreator();
+      const res = await app.inject({
+        method: "POST", url: "/v1/email/send",
+        headers: bearer(reg.res.json().accessToken),
+        payload: {
+          to: "cliente@example.com",
+          subject: "No",
+          text: "No",
+        },
+      });
+      assert.equal(res.statusCode, 401);
+    });
+
+    test("invalid recipient and empty body are rejected", async () => {
+      const { adminToken } = await setupTenantAndUsers();
+      const badTo = await app.inject({
+        method: "POST", url: "/v1/email/send",
+        headers: bearer(adminToken),
+        payload: {
+          to: "not-an-email",
+          subject: "No",
+          text: "No",
+        },
+      });
+      assert.equal(badTo.statusCode, 400);
+
+      const emptyContent = await app.inject({
+        method: "POST", url: "/v1/email/send",
+        headers: bearer(adminToken),
+        payload: {
+          to: "cliente@example.com",
+          subject: "No",
+        },
+      });
+      assert.equal(emptyContent.statusCode, 400);
     });
   });
 }

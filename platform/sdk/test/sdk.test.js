@@ -214,6 +214,36 @@ test("files.list and files.delete hit the right paths", async () => {
   assert.equal(calls[1].method, "DELETE");
 });
 
+test("email.send posts to /v1/email/send", async () => {
+  const { fetchImpl, calls } = createFetchMock([
+    (call) => {
+      assert.equal(call.path, "/v1/email/send");
+      assert.equal(call.method, "POST");
+      assert.equal(call.headers.Authorization, "Bearer access-1");
+      assert.equal(call.body.to, "cliente@example.com");
+      assert.equal(call.body.subject, "Benvenuto");
+      return jsonResponse({ ok: true, messageId: "m-1", accepted: ["cliente@example.com"], rejected: [] });
+    },
+  ]);
+
+  const mc = new MelluCode({
+    apiUrl: "https://api.example.test",
+    tenantSlug: "gym",
+    storage: createMemoryStorage({ "mellucode:gym:accessToken": "access-1" }),
+    fetchImpl,
+  });
+
+  const res = await mc.email.send({
+    to: "cliente@example.com",
+    subject: "Benvenuto",
+    text: "La tua app e' pronta.",
+  });
+
+  assert.equal(res.ok, true);
+  assert.equal(res.messageId, "m-1");
+  assert.equal(calls.length, 1);
+});
+
 test("API errors throw MelluCodeError", async () => {
   const { fetchImpl } = createFetchMock([
     () => jsonResponse({ error: "Accesso non consentito." }, 403),

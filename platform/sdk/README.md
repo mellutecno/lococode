@@ -38,6 +38,12 @@ await mc.data("members").create({
 });
 
 const members = await mc.data("members").list();
+
+await mc.email.send({
+  to: "cliente@example.com",
+  subject: "Benvenuto",
+  text: "La tua app e' pronta.",
+});
 ```
 
 ## API incluse
@@ -54,6 +60,12 @@ const members = await mc.data("members").list();
 - `mc.data(entity).create(data)`
 - `mc.data(entity).update(id, data)`
 - `mc.data(entity).delete(id)`
+- `mc.files.upload(file, { filename, metadata })`
+- `mc.files.list({ limit, offset })`
+- `mc.files.get(id)`
+- `mc.files.downloadBlob(id)`
+- `mc.files.delete(id)`
+- `mc.email.send({ to, subject, text, html, replyTo, metadata })`
 
 ## Note
 

@@ -13,6 +13,7 @@ import tenantRoutes from "./routes/tenants.js";
 import appAuthRoutes from "./routes/appAuth.js";
 import dataRoutes from "./routes/data.js";
 import filesRoutes from "./routes/files.js";
+import emailRoutes from "./routes/email.js";
 
 export async function buildApp(opts = {}) {
   const loggerOpt = opts.logger !== undefined
@@ -52,6 +53,7 @@ export async function buildApp(opts = {}) {
   await app.register(appAuthRoutes, { prefix: "/v1/app-auth" });
   await app.register(dataRoutes, { prefix: "/v1/data" });
   await app.register(filesRoutes, { prefix: "/v1/files" });
+  await app.register(emailRoutes, { prefix: "/v1/email" });
 
   return app;
 }

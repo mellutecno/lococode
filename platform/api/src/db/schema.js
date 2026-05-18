@@ -137,6 +137,24 @@ export const mcAppFiles = pgTable("mc_app_files", {
   tenantCreatedIdx: index("mc_app_files_tenant_created_idx").on(t.tenantId, t.createdAt),
 }));
 
+// Log invii email delle app generate. Serve per audit, debug e future quote.
+// Il contenuto completo non viene salvato: solo envelope, subject e stato provider.
+export const mcEmailLog = pgTable("mc_email_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => mcTenants.id, { onDelete: "cascade" }),
+  appUserId: uuid("app_user_id").references(() => mcAppUsers.id, { onDelete: "set null" }),
+  to: jsonb("to").default([]).notNull(),
+  subject: varchar("subject", { length: 200 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("sent"), // sent | failed
+  providerMessageId: text("provider_message_id"),
+  error: text("error"),
+  metadata: jsonb("metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tenantCreatedIdx: index("mc_email_log_tenant_created_idx").on(t.tenantId, t.createdAt),
+  appUserIdx: index("mc_email_log_app_user_idx").on(t.appUserId),
+}));
+
 // Record generici delle app generate. Ogni record e' JSONB, sempre scoped a tenant.
 export const mcAppRecords = pgTable("mc_app_records", {
   id: uuid("id").primaryKey().defaultRandom(),

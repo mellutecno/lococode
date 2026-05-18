@@ -44,6 +44,10 @@ export const config = {
   },
 
   smtp: {
+    // Valori speciali per test/dev:
+    // - json: Nodemailer non apre connessioni, produce solo un messaggio JSON.
+    // - stream: Nodemailer produce un buffer RFC822 senza spedire davvero.
+    transport: opt("SMTP_TRANSPORT"),
     host: opt("SMTP_HOST"),
     port: Number(opt("SMTP_PORT", "587")),
     secure: opt("SMTP_SECURE", "false") === "true",

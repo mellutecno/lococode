@@ -54,6 +54,7 @@ mc_app_user_sessions    — sessioni utenti delle app generate
 mc_app_entities         — schema dinamico: definizione delle entita' per tenant
 mc_app_records          — record EAV: payload JSON per ogni record di ogni entita'
 mc_app_files            — metadata file (path su disco, mime, owner)
+mc_email_log            — log invii email tenant-scoped per audit, debug e quote future
 
 mc_ai_quotas            — credito AI residuo per tenant
 mc_ai_usage             — log per-call delle chiamate AI (modello, token, costo)
@@ -159,8 +160,8 @@ FILE STORAGE (Fase 1: locale, Fase 4: S3-compatible):
 - [x] Tabelle `mc_app_entities` e `mc_app_records`
 - [x] Endpoint `/v1/files/upload`
 - [x] Endpoint `/v1/files` list/get/content/delete
-- [ ] Endpoint `/v1/email/send`
+- [x] Endpoint `/v1/email/send`
 - [ ] Endpoint `/v1/ai/chat` con quota
-- [x] SDK `platform/sdk/` versione 0.1.0 con auth + data + files
+- [x] SDK `platform/sdk/` versione 0.1.0 con auth + data + files + email
 - [ ] SDK `platform/sdk/` con ai
 - [ ] Documentazione API (OpenAPI generato da Fastify schemas)
