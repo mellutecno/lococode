@@ -19,15 +19,17 @@ export async function callOpenRouterChat({
   user,
 }, openrouter = config.openrouter) {
   if (openrouter.transport === "mock") {
+    const forcedContent = process.env.OPENROUTER_MOCK_SCHEMA_RESPONSE;
+    const content = forcedContent || "Risposta AI di test MelluCode.";
     const promptTokens = 12;
-    const completionTokens = 8;
+    const completionTokens = forcedContent ? Math.max(8, Math.ceil(forcedContent.length / 4)) : 8;
     return {
       id: `mock-${Date.now()}`,
       model,
       choices: [{
         index: 0,
         finish_reason: "stop",
-        message: { role: "assistant", content: "Risposta AI di test MelluCode." },
+        message: { role: "assistant", content },
       }],
       usage: {
         prompt_tokens: promptTokens,
@@ -35,7 +37,7 @@ export async function callOpenRouterChat({
         total_tokens: promptTokens + completionTokens,
         cost: Number(process.env.OPENROUTER_MOCK_COST || "0.00002"),
       },
-      reply: "Risposta AI di test MelluCode.",
+      reply: content,
     };
   }
 

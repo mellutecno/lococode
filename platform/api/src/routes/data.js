@@ -2,23 +2,10 @@
 // Il frontend generato usa queste route invece di avere backend custom.
 import { and, desc, eq } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
-import { normalizeKey } from "../utils/normalize.js";
+import { normalizeEntityName } from "../utils/normalize.js";
+import { publicEntity } from "../utils/entities.js";
 import { DEFAULT_PERMISSIONS, canAccess } from "../utils/permissions.js";
 import { validateRecordData } from "../utils/recordValidation.js";
-
-function publicEntity(entity) {
-  return {
-    id: entity.id,
-    tenantId: entity.tenantId,
-    name: entity.name,
-    label: entity.label ?? entity.name,
-    schema: entity.jsonSchema,
-    permissions: { ...DEFAULT_PERMISSIONS, ...(entity.permissions || {}) },
-    metadata: entity.metadata || {},
-    createdAt: entity.createdAt,
-    updatedAt: entity.updatedAt,
-  };
-}
 
 function publicRecord(record) {
   return {
@@ -31,11 +18,6 @@ function publicRecord(record) {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
-}
-
-function normalizeEntityName(value) {
-  const name = normalizeKey(value);
-  return name && /^[a-z][a-z0-9_]{0,79}$/.test(name) ? name : "";
 }
 
 function requireAppUser(req, reply) {

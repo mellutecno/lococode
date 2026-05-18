@@ -519,6 +519,88 @@ if (!TEST_DB) {
       });
       assert.equal(list.json().tenants.length, 1);
     });
+
+    test("POST /:id/generate-schema creates entities from initialPrompt", async () => {
+      const reg = await registerCreator();
+      const token = reg.res.json().accessToken;
+      const { res } = await createTenant(token, {
+        initialPrompt: "Gestionale palestra con membri.",
+      });
+      const tenant = res.json().tenant;
+
+      process.env.OPENROUTER_MOCK_SCHEMA_RESPONSE = JSON.stringify([
+        { name: "members", label: "Membri", schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
+      ]);
+
+      const gen = await app.inject({
+        method: "POST",
+        url: `/v1/tenants/${tenant.id}/generate-schema`,
+        headers: bearer(token),
+      });
+
+      delete process.env.OPENROUTER_MOCK_SCHEMA_RESPONSE;
+
+      assert.equal(gen.statusCode, 201);
+      const body = gen.json();
+      assert.equal(body.created, 1);
+      assert.equal(body.entities[0].name, "members");
+      assert.equal(body.entities[0].label, "Membri");
+
+      // Verify DB
+      const rows = await db
+        .select()
+        .from(schema.mcAppEntities)
+        .where(eq(schema.mcAppEntities.tenantId, tenant.id));
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].name, "members");
+    });
+
+    test("POST /:id/generate-schema returns 400 without prompt", async () => {
+      const reg = await registerCreator();
+      const token = reg.res.json().accessToken;
+      const { res } = await createTenant(token, { initialPrompt: "" });
+      const tenant = res.json().tenant;
+
+      const gen = await app.inject({
+        method: "POST",
+        url: `/v1/tenants/${tenant.id}/generate-schema`,
+        headers: bearer(token),
+      });
+      assert.equal(gen.statusCode, 400);
+      assert.ok(gen.json().error.includes("Nessun prompt"));
+    });
+
+    test("POST /:id/generate-schema returns 404 for non-owner", async () => {
+      const owner = await registerCreator();
+      const other = await registerCreator();
+      const { res } = await createTenant(owner.res.json().accessToken, {
+        initialPrompt: "Test.",
+      });
+      const tenant = res.json().tenant;
+
+      const gen = await app.inject({
+        method: "POST",
+        url: `/v1/tenants/${tenant.id}/generate-schema`,
+        headers: bearer(other.res.json().accessToken),
+      });
+      assert.equal(gen.statusCode, 404);
+    });
+
+    test("POST /:id/generate-schema returns 502 on invalid AI response", async () => {
+      const reg = await registerCreator();
+      const token = reg.res.json().accessToken;
+      const { res } = await createTenant(token, { initialPrompt: "Test." });
+      const tenant = res.json().tenant;
+
+      // Mock AI is already active with default non-JSON text.
+      const gen = await app.inject({
+        method: "POST",
+        url: `/v1/tenants/${tenant.id}/generate-schema`,
+        headers: bearer(token),
+      });
+      assert.equal(gen.statusCode, 502);
+      assert.ok(gen.json().error.includes("Risposta AI non valida"));
+    });
   });
 
   // ================================================================

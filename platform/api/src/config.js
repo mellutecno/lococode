@@ -2,6 +2,8 @@
 // In dev .env e' opzionale; in production le var devono essere settate fuori.
 import "dotenv/config";
 
+const DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini";
+
 function req(key, fallback) {
   const v = process.env[key] ?? fallback;
   if (v === undefined || v === "") {
@@ -45,7 +47,7 @@ export const config = {
     transport: opt("OPENROUTER_TRANSPORT"),
     appUrl: opt("OPENROUTER_APP_URL", "https://mellucode.mellutecno.it"),
     appTitle: opt("OPENROUTER_APP_TITLE", "MelluCode"),
-    defaultModel: opt("OPENROUTER_DEFAULT_MODEL", "openai/gpt-4o-mini"),
+    defaultModel: opt("OPENROUTER_DEFAULT_MODEL", DEFAULT_OPENROUTER_MODEL),
     allowedModels: opt("OPENROUTER_ALLOWED_MODELS", "").split(",").map(s => s.trim()).filter(Boolean),
     timeoutMs: Number(opt("OPENROUTER_TIMEOUT_MS", "120000")),
     maxTokensDefault: Number(opt("AI_DEFAULT_MAX_TOKENS", "512")),
@@ -66,6 +68,12 @@ export const config = {
     user: opt("SMTP_USER"),
     pass: opt("SMTP_PASS"),
     from: opt("SMTP_FROM", "noreply@mellucode.local"),
+  },
+
+  orchestrator: {
+    model: opt("ORCHESTRATOR_MODEL", DEFAULT_OPENROUTER_MODEL),
+    maxTokens: Number(opt("ORCHESTRATOR_MAX_TOKENS", "2048")),
+    maxEntities: Number(opt("ORCHESTRATOR_MAX_ENTITIES", "8")),
   },
 };
 

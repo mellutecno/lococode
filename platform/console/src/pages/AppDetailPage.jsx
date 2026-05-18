@@ -91,6 +91,8 @@ export default function AppDetailPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [genResult, setGenResult] = useState(null);
 
   async function load() {
     try {
@@ -170,6 +172,23 @@ export default function AppDetailPage() {
       toast.error(err.message);
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function handleGenerateSchema() {
+    if (!tenant) return;
+    setGenerating(true);
+    try {
+      const res = await tenants.generateSchema(tenant.id);
+      setGenResult(res);
+      toast.success(`${res.created} tabelle dati generate.`);
+      // Refresh stats so entity count updates
+      const statRes = await tenants.stats(tenant.id);
+      setStats(statRes.stats);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -351,6 +370,49 @@ export default function AppDetailPage() {
           </div>
         </div>
       )}
+
+      <div className="card p-6">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Schema AI</h2>
+            <p className="text-xs text-zinc-500 mt-1">
+              Genera automaticamente le tabelle dati partendo dalla descrizione dell'app.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleGenerateSchema}
+            disabled={generating}
+            className="btn-primary"
+          >
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {generating ? " Genero..." : " Genera schema"}
+          </button>
+        </div>
+
+        {tenant.metadata?.initialPrompt && (
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5 mb-4">
+            <p className="text-[11px] uppercase tracking-wider text-zinc-500 mb-1">Richiesta iniziale</p>
+            <p className="text-sm text-zinc-300">{tenant.metadata.initialPrompt}</p>
+          </div>
+        )}
+
+        {genResult && (
+          <div className="space-y-2">
+            {genResult.entities?.map((e) => (
+              <div key={e.id} className="flex items-center gap-2 text-sm text-zinc-200">
+                <Database className="w-4 h-4 text-accent-400" />
+                {e.label} <code className="text-zinc-500 text-xs">({e.name})</code>
+              </div>
+            ))}
+            {genResult.errors?.length > 0 && (
+              <div className="text-xs text-rose-300 mt-2">
+                {genResult.errors.length} entità non valide ignorate.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="card p-6 border-rose-400/20 bg-rose-500/[0.03]">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

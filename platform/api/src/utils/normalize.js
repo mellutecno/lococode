@@ -25,3 +25,8 @@ export function normalizeKey(value) {
     .replace(/^_+|_+$/g, "")
     .slice(0, 80);
 }
+
+export function normalizeEntityName(value) {
+  const name = normalizeKey(value);
+  return name && /^[a-z][a-z0-9_]{0,79}$/.test(name) ? name : "";
+}

@@ -1,10 +1,14 @@
 // Tenant/app registry. Ogni app generata da MelluCode e' un tenant.
 import { and, eq, sql } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
+import { config } from "../config.js";
 import { hashPassword } from "../utils/hash.js";
 import { microsToCredits } from "../utils/aiCost.js";
 import { deleteFile } from "../utils/fileStorage.js";
 import { normalizeEmail, slugify } from "../utils/normalize.js";
+import { callOpenRouterChat } from "../utils/openRouterClient.js";
+import { buildSystemPrompt, extractJsonArray, validateEntityDef } from "../utils/orchestrator.js";
+import { publicEntity } from "../utils/entities.js";
 
 function publicTenant(t) {
   if (!t) return null;
@@ -339,6 +343,135 @@ export default async function tenantRoutes(fastify) {
           return reply.code(409).send({ error: "Esiste gia' un'app con questo indirizzo o con questo admin." });
         }
         throw err;
+      }
+    }
+  );
+
+  fastify.post(
+    "/:id/generate-schema",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+        body: {
+          type: "object",
+          properties: {
+            promptOverride: { type: "string", maxLength: 5000 },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const tenantRows = await db
+        .select()
+        .from(schema.mcTenants)
+        .where(and(
+          eq(schema.mcTenants.id, req.params.id),
+          eq(schema.mcTenants.ownerUserId, req.user.sub)
+        ))
+        .limit(1);
+
+      const tenant = tenantRows[0];
+      if (!tenant) return reply.code(404).send({ error: "App non trovata." });
+
+      const prompt = String(req.body.promptOverride || tenant.metadata?.initialPrompt || "").trim();
+      if (!prompt) {
+        return reply.code(400).send({ error: "Nessun prompt disponibile per questa app." });
+      }
+
+      let ai;
+      try {
+        ai = await callOpenRouterChat({
+          messages: [
+            { role: "system", content: buildSystemPrompt() },
+            { role: "user", content: prompt.slice(0, 5000) },
+          ],
+          model: config.orchestrator.model,
+          maxTokens: config.orchestrator.maxTokens,
+          temperature: 0.2,
+          metadata: { feature: "schema-generation", tenantId: tenant.id },
+          user: req.user.sub,
+        });
+      } catch (err) {
+        const status = err?.code === "OPENROUTER_NOT_CONFIGURED" ? 503 : 502;
+        return reply.code(status).send({
+          error: err?.code === "OPENROUTER_NOT_CONFIGURED"
+            ? "AI non configurata."
+            : "Servizio AI temporaneamente non disponibile.",
+        });
+      }
+
+      const array = extractJsonArray(ai.reply);
+      if (!Array.isArray(array)) {
+        return reply.code(502).send({ error: "Risposta AI non valida." });
+      }
+
+      const capped = array.slice(0, config.orchestrator.maxEntities);
+      const validated = capped.map((raw, i) => validateEntityDef(raw, i));
+      const valid = validated.filter((v) => v.ok);
+      const invalid = validated.filter((v) => !v.ok);
+
+      if (valid.length === 0) {
+        return reply.code(400).send({
+          error: "Nessuna entita' valida generata.",
+          details: invalid.map((v) => v.error),
+        });
+      }
+
+      try {
+        const created = await db.transaction(async (tx) => {
+          const out = [];
+          for (const v of valid) {
+            const values = {
+              tenantId: tenant.id,
+              name: v.values.name,
+              label: v.values.label,
+              jsonSchema: v.values.schema,
+              permissions: v.values.permissions,
+              metadata: v.values.metadata,
+              updatedAt: new Date(),
+            };
+
+            const existing = await tx
+              .select({ id: schema.mcAppEntities.id })
+              .from(schema.mcAppEntities)
+              .where(and(
+                eq(schema.mcAppEntities.tenantId, tenant.id),
+                eq(schema.mcAppEntities.name, v.values.name)
+              ))
+              .limit(1);
+
+            if (existing[0]) {
+              const rows = await tx
+                .update(schema.mcAppEntities)
+                .set(values)
+                .where(eq(schema.mcAppEntities.id, existing[0].id))
+                .returning();
+              out.push(publicEntity(rows[0]));
+            } else {
+              const rows = await tx
+                .insert(schema.mcAppEntities)
+                .values(values)
+                .returning();
+              out.push(publicEntity(rows[0]));
+            }
+          }
+          return out;
+        });
+
+        return reply.code(201).send({
+          entities: created,
+          created: created.length,
+          errors: invalid.map((e) => e.error),
+        });
+      } catch (err) {
+        return reply.code(502).send({ error: "Errore durante il salvataggio delle entita'." });
       }
     }
   );

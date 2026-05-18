@@ -1,52 +1,82 @@
 # HANDOFF MelluCode
 
-## Aggiornamento urgente Codex - 2026-05-18 mattina
+## Aggiornamento Claude Code - 2026-05-18 pomeriggio
 
-Ultimo commit online prima di questo blocco:
-- `3dfcd48` Fix Console modal scrolling and add design quality brief
+Stato attuale verificato:
+- branch: `mellucode-v2`
+- ultimo commit locale: `_______` Add schema generation endpoint (Fase 2 Step 0)
+- commit deployato server precedente: `0883cd5`
+- **NON ancora deployato su server**
 
-Stato server:
-- branch server: `mellucode-v2`
-- commit deployato server: `3dfcd48`
+Modifiche fatte (Fase 2 — Step 0: Schema Generation):
+- **Nuovo endpoint API**: `POST /v1/tenants/:id/generate-schema`
+  - Legge `tenant.metadata.initialPrompt` (o `promptOverride` opzionale nel body)
+  - Chiama OpenRouter con system prompt rigido che forza output JSON array di entità
+  - Estrae, valida e inserisce entità in `mc_app_entities` per il tenant (upsert per nome)
+  - Auth: solo creator-owner dell'app; 404 se non owner; 400 se nessun prompt; 502 se AI non risponde JSON valido
+- **Utilities nuove**:
+  - `platform/api/src/utils/orchestrator.js` — `buildSystemPrompt()`, `extractJsonArray()`, `validateEntityDef()`
+  - `platform/api/src/utils/entities.js` — `publicEntity()` condiviso tra `data.js` e `tenants.js`
+  - `platform/api/src/utils/normalize.js` — `normalizeEntityName()` estratto da `data.js`
+- **Config aggiornata**: blocco `orchestrator` con `ORCHESTRATOR_MODEL`, `ORCHESTRATOR_MAX_TOKENS`, `ORCHESTRATOR_MAX_ENTITIES`
+- **Mock AI per test**: `OPENROUTER_MOCK_SCHEMA_RESPONSE` in `openRouterClient.js` per forzare risposta JSON nei test
+- **Test**:
+  - Unit test `platform/api/src/test/orchestrator.test.js`: 19/19 PASS
+  - Integration test in `integration.test.js`: 4 nuovi test per generate-schema (happy path, no prompt, non-owner, invalid AI response)
+  - Suite completa locale: **77/77 PASS** (1 integration skip senza TEST_DATABASE_URL)
+- **Console UI aggiornata**:
+  - `platform/console/src/pages/AppDetailPage.jsx`: nuova card "Schema AI" con bottone "Genera schema"
+  - Mostra `initialPrompt` del tenant
+  - Lista entità generate dopo il click
+  - Refresh automatico delle stats per aggiornare conteggio "Tabelle dati"
+  - `platform/console/src/lib/api.js`: aggiunto `tenants.generateSchema(id)`
+  - Build Console produzione: OK (222 KB js / 68 KB gz, 38 KB css / 7 KB gz)
+
+Prossimo passo consigliato:
+1. Deploy su server: `git push`, `npm install` in `platform/api`, PM2 restart, build Console e copia dist
+2. Verificare da browser: aprire app detail, cliccare "Genera schema", controllare che le entità compaiano e che `GET /v1/data/entities` (con app-user admin) le mostri
+3. Iniziare Step 1 della Fase 2: scaffolding frontend da template palestra + build + deploy su `/apps/{slug}/`
+
+## Aggiornamento Codex - 2026-05-18 mattina
+
+Stato attuale verificato:
+- branch locale/remoto/server: `mellucode-v2`
+- ultimo commit deployato server: `0883cd5` Fix Console modals and require app prompt
+- commit precedente deployato: `5818aff` Add app lifecycle actions and humanize Console copy
 - Console root online: `https://mellucode.mellutecno.it/`
 - API health online: `https://mellucode.mellutecno.it/v1/health`
 - `palestra-demo` e' assegnata a `mellutecno@gmail.com`
 
-Verifiche gia' fatte su server dopo `cb3e206`:
-- suite API server con `TEST_DATABASE_URL=mellucode_test`: **111/111 PASS**
-- smoke `GET /`, `GET /v1/health`, `GET /demo/palestra/`: OK
-- ownership `palestra-demo`: owner `mellutecno@gmail.com`, stato `active`, plan `trial`
+Verifiche fatte dopo deploy `0883cd5`:
+- build Console produzione: OK
+- PM2 `mellucode-api`: online
+- nginx config test + reload: OK
+- smoke `GET /v1/health`: OK
+- suite API server con `TEST_DATABASE_URL=mellucode_test`, SMTP json e OpenRouter mock: **115/115 PASS**
 
-Documenti aggiunti:
+Modifiche online importanti:
+- Console: il componente `Modal` ora usa `createPortal(document.body)`, overlay `z-[100]`, scroll sulla pagina del popup e non piu' sul box interno con `overflow-hidden`. Questo serve a correggere i popup tagliati/non scrollabili e il caso "schermo scuro ma finestra non visibile".
+- Console: `Nuova app` ora richiede anche il campo **Cosa vuoi creare?**. Non crea piu' solo un contenitore col titolo: salva le istruzioni iniziali in `tenant.metadata.initialPrompt`.
+- Console: rimossi altri testi tecnici visibili all'utente, ad esempio "slug" diventa "indirizzo app" e "Entita'" diventa "Tabelle dati".
+- Console: pagina dettaglio app con azioni `Modifica` e `Elimina app`; icona generica app invece della lettera gigante.
+- API: `POST /v1/tenants` accetta `initialPrompt` e lo salva in `metadata.initialPrompt`.
+- API: `PATCH /v1/tenants/:id` modifica nome, indirizzo app e registrazione pubblica.
+- API: `DELETE /v1/tenants/:id` elimina app/tenant di proprieta' del creator, con cascade DB e rimozione best-effort dei file fisici.
+
+Documenti aggiunti/da tenere presenti:
 - `docs/orchestrator-design-quality.md`
   Regola prodotto per iniettare nei prompt dell'orchestrator: le app generate devono avere UI premium, non generica, con palette coerente al settore, contrasto leggibile, responsive, stati loading/empty/error curati.
 - `docs/app-lifecycle.md`
   Flusso prodotto per ciclo di vita app: modifica, eliminazione, future change request AI, preview, approvazione e deploy.
 
-Lavoro in corso locale NON ancora deployato al momento di questo aggiornamento:
-- API tenant:
-  - aggiunto `PATCH /v1/tenants/:id` per modificare nome, slug e registrazione pubblica;
-  - aggiunto `DELETE /v1/tenants/:id` per eliminare una app/tenant di proprieta' del creator;
-  - delete fa cascade DB e rimozione best-effort dei file fisici in storage;
-  - aggiunti test integration per update, duplicate slug, delete owned tenant, deny delete/update di tenant altrui.
-- Console:
-  - aggiunte azioni "Modifica" e "Elimina app" nella pagina dettaglio app;
-  - aggiunti modal di modifica e conferma eliminazione;
-  - aggiunto `platform/console/src/components/AppIcon.jsx`, icona generica app al posto della letterona iniziale;
-  - ripulite frasi troppo tecniche visibili all'utente: meno "tenant/backend/quota", piu' linguaggio umano;
-  - aggiornato client Console con `tenants.update()` e `tenants.delete()`.
-- Build Console locale dopo queste modifiche: OK (`npm run build`).
-- Test API locale dopo API update: OK sui test unitari; integration locale skippata per assenza `TEST_DATABASE_URL`.
-
 Prossimi passi per chi riprende:
-1. Lanciare test server completi con `TEST_DATABASE_URL` su `mellucode_test`.
-2. Se verdi, fare commit/push delle modifiche locali.
-3. Deploy API + Console su `/opt/mellucode`.
-4. Verificare da browser:
-   - modifica nome/indirizzo app;
-   - eliminazione app;
-   - app eliminata sparisce dalla dashboard;
-   - app altrui non modificabile/cancellabile.
+1. Verificare da browser reale:
+   - popup `Nuova app` scrollabile su desktop;
+   - popup `Modifica app` scrollabile;
+   - popup `Elimina app` visibile quando si clicca "Elimina app";
+   - app eliminata sparisce dalla dashboard.
+2. Collegare `initialPrompt` alla futura pipeline orchestrator Fase 2: prompt utente -> SDD -> prezzo -> conferma pagamento/credito -> generazione app.
+3. Progettare il flusso "modifica app con AI": change request, preventivo costo, approvazione, patch, preview, deploy.
 
 ## Data / autore
 - Data: 2026-05-18 (notte)
