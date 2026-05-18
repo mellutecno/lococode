@@ -22,21 +22,21 @@ export default function Modal({ open, onClose, title, subtitle, children, maxWid
   }[maxWidth] || "max-w-lg";
 
   return (
-    <div className="fixed inset-0 z-40 overflow-y-auto p-4 sm:p-6 animate-fade-in">
+    <div className="fixed inset-0 z-40 overflow-y-auto p-3 sm:p-5 animate-fade-in">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-md"
+        className="fixed inset-0 bg-black/60 backdrop-blur-md"
         onClick={() => closeOnBackdrop && onClose?.()}
         aria-hidden
       />
       {/* Dialog */}
       <div
         role="dialog" aria-modal="true"
-        className={`relative my-6 sm:my-10 mx-auto w-full ${maxW} max-h-[calc(100vh-3rem)] sm:max-h-[calc(100vh-5rem)] animate-scale-in glass rounded-2xl shadow-glow-lg overflow-hidden flex flex-col`}
+        className={`relative my-3 sm:my-6 mx-auto w-full ${maxW} max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] animate-scale-in glass rounded-2xl shadow-glow-lg overflow-hidden flex flex-col`}
       >
         {/* Top accent bar */}
-        <div className="h-px bg-gradient-to-r from-transparent via-accent-400 to-transparent" />
-        <div className="px-6 py-5 border-b border-white/[0.06] flex items-start gap-4">
+        <div className="h-px shrink-0 bg-gradient-to-r from-transparent via-accent-400 to-transparent" />
+        <div className="px-5 sm:px-6 py-5 border-b border-white/[0.06] flex items-start gap-4 shrink-0">
           <div className="flex-1 min-w-0">
             {title && <h2 className="text-lg font-semibold text-white">{title}</h2>}
             {subtitle && <p className="text-sm text-zinc-400 mt-1">{subtitle}</p>}
@@ -49,7 +49,7 @@ export default function Modal({ open, onClose, title, subtitle, children, maxWid
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="px-6 py-5 overflow-y-auto">{children}</div>
+        <div className="px-5 sm:px-6 py-5 overflow-y-auto min-h-0 flex-1 overscroll-contain">{children}</div>
       </div>
     </div>
   );

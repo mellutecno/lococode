@@ -142,7 +142,7 @@ function CreateAppForm({ onCreated, onClose }) {
         </div>
       )}
 
-      <div className="flex items-center justify-end gap-2 pt-2">
+      <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 px-5 sm:px-6 py-4 border-t border-white/[0.06] bg-ink-900/95 backdrop-blur-xl flex items-center justify-end gap-2">
         <button type="button" onClick={onClose} className="btn-ghost">Annulla</button>
         <button type="submit" disabled={busy} className="btn-primary">
           {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Creo…</>
