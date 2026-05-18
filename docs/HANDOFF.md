@@ -1,5 +1,45 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Claude Code — 2026-05-18 notte (Fix bias palestra)
+
+Commit: `7a115be` Fix orchestrator bias verso palestra: keyword cleanup + threshold + stem IT.
+
+### Bug fixato
+Antonio ha notato che ogni nuova app generata finiva con lo schema palestra come riferimento, anche quando il prompt era completamente diverso. Causa: `inferSector` matchava troppo facilmente (keyword troppo trasversali come "corsi", "abbonamento", "sport", "clienti", "ordini", "prenotazione") -> sectorHintBlock proponeva palestra all'AI -> l'AI seguiva il template.
+
+### Tre fix combinati
+1. **Keyword cleanup** in tutti i 6 settori: solo parole settore-specifiche. Vedi commit message per il dettaglio per settore. Le parole trasversali sono state rimosse; quelle composte (es. "personal trainer", "studio legale", "case study") sono state preservate perche' inequivoche.
+2. **Threshold + stem IT** in `inferSector`: ora normalizza con uno stem italiano basico (rimuove flessione sing/plur tipo "pazienti"->"pazient") e richiede score >= 3 per ritornare un settore. Sotto soglia: null (l'orchestrator genera senza sector hint).
+3. **sectorHintBlock indebolito**: non mostra piu' lo schema completo del settore (con i field) ma solo i nomi delle entita'. Aggiunge regole esplicite di priorita': "il PROMPT UTENTE e' la fonte di verita', il riferimento e' solo orientamento".
+
+### Smoke OpenRouter reale dopo deploy
+Testati 5 prompt "anti-bias" che PRIMA finivano in palestra:
+
+| Prompt | sector | theme | entita' generate |
+|---|---|---|---|
+| Gelateria artigianale | `null` | warm-amber | gelato_flavors, suppliers |
+| Parrucchiere con prenotazione | `null` | warm-amber | class_services, class_bookings, class_customers |
+| Scuola di musica con corsi | `null` | warm-amber | class_corsi, class_allievi, class_insegnanti |
+| Club lettura con abbonamenti | `null` | editorial-rose | club_lettura, abbonamenti, utenti |
+| Officina meccanica | `null` | dark-electric | vehicle, repair, spare_part |
+
+Tutti FUORI dal catalogo settori -> nessun bias palestra applicato. L'AI ha scelto autonomamente entita' coerenti col business reale e theme dalla lista chiusa.
+
+### Test
+- 114 totali (113 PASS + 1 integration skip)
+- 5 nuovi casi anti-bias (scuola di musica, club lettura, CRM commerciale, parrucchiere, fotografo matrimoni)
+- `inferSectorWithScore` aggiunto per debug della soglia
+
+### Nota su settori non in catalogo
+Quando l'AI non riceve sector hint (perche' il prompt non matcha nulla con score >= 3), genera comunque uno schema decente perche' il system prompt include comunque:
+- design brief
+- lista 7 temi
+- catalogo settori (solo come riferimento di vibe, non come schema)
+
+L'AI sceglie autonomamente un theme dalla lista chiusa. Quindi anche per "gelateria" o "officina" — settori non in catalogo — la qualita' resta alta.
+
+---
+
 ## Aggiornamento Claude Code — 2026-05-18 sera (Step 1 + Step 2 orchestrator)
 
 Stato attuale verificato:
