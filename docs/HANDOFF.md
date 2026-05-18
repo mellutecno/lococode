@@ -23,6 +23,7 @@ Stato dopo questo giro:
   - aggiunti test unit per `pickPrimaryEntity`, `buildTemplateReplacements`, `applyTemplateTokens`;
   - prova reale locale del builder: generata e compilata app temporanea `test-builder-local` con theme `dark-cyan`, build riuscita;
   - smoke produzione iniziale ha rilevato che con `NODE_ENV=production` npm ometteva le devDependencies, quindi mancava `vite`; fixato install builder con `npm install --include=dev`;
+  - smoke produzione finale: creato tenant temporaneo, inserita entity `contacts`, chiamato `POST /v1/tenants/:id/generate-frontend`, pubblicata app su `/apps/smoke-frontend-.../`, verifica HTTP 200, cleanup tenant + cartella generata riuscito;
   - `npm test` API: PASS (129 pass, 1 integration skip);
   - `npm run build` Console: PASS.
 
@@ -33,6 +34,7 @@ Stato dopo questo giro:
   - SDK: `/opt/mellucode/platform/sdk`;
   - output app: `/opt/mellucode/apps/{slug}/`.
 - Nginx deve avere una location `/apps/{slug}/` che serve staticamente `/opt/mellucode/apps/{slug}/` con fallback SPA su `index.html`.
+- Produzione aggiornata: nginx `mellucode.mellutecno.it` contiene gia' le location `/apps/{slug}/assets/` e `/apps/{slug}/`.
 
 ### Prossimo passo consigliato
 1. Deploy e test reale su un tenant con schema gia' generato.
