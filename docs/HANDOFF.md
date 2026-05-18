@@ -4,7 +4,7 @@
 
 Stato attuale verificato:
 - branch: `mellucode-v2`
-- ultimo commit locale/remoto/server: `6065384` Add schema generation from initialPrompt: orchestrator, endpoint, tests, Console UI
+- ultimo commit locale/remoto/server: `74c210e` Fix Console generateSchema: send empty object body to avoid Fastify 400
 - commit deployato server precedente: `0883cd5`
 - **Deploy su server completato con successo**
 
@@ -33,10 +33,14 @@ Modifiche fatte (Fase 2 — Step 0: Schema Generation):
   - Build Console produzione: OK (222 KB js / 68 KB gz, 38 KB css / 7 KB gz)
 
 Deploy server eseguito:
-- `git pull origin mellucode-v2` su `/opt/mellucode` → fast-forward a `6065384`
+- `git pull origin mellucode-v2` su `/opt/mellucode` → fast-forward a `74c210e`
 - `npm install` + `pm2 restart mellucode-api` su `platform/api` → online (PID 967924)
 - `npm install` + `npm run build` su `platform/console` → OK
 - `cp -r platform/console/dist/* /opt/mellucode/console/` → dist deployata
+
+Fix post-deploy:
+- **Demo palestra 500**: directory `/opt/mellucode/demo/palestra/` mancante → nginx ciclo di redirect. Fix: copiati i file da `platform/templates/palestra/dist/` e reload nginx. Stato: HTTP 200 OK
+- **Console "Genera schema" 400**: il frontend mandava una POST senza body; Fastify con `schema: { body: { type: "object" } }` rifiutava con 400. Fix: `api.js` ora invia `body: {}`. Commit `74c210e` deployato
 
 Prossimo passo consigliato:
 1. Verificare da browser: aprire app detail, cliccare "Genera schema", controllare che le entità compaiano e che `GET /v1/data/entities` (con app-user admin) le mostri
