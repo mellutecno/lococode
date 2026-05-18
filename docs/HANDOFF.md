@@ -1,5 +1,75 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Claude Code - 2026-05-18 sera (build async DEPLOYATA + smoke OK)
+
+Pipeline asincrona schema→frontend con polling DEPLOYATA e VERIFICATA in produzione.
+Commit deployati: `e164429` (backend) + Console dist `index-BhoB9VKA.js`.
+
+### Cosa cambia per l'utente
+- Cliccare "Costruisci app" non blocca piu' la pagina per 60+ secondi.
+- La Console mostra avanzamento live: queued → schema → frontend → done con
+  messaggi human-readable e progress bar.
+- Se l'utente refresha durante la build, al ricaricamento la Console rileva
+  automaticamente il build attivo e riprende il polling (vedi useEffect
+  AppDetailPage che fa listBuilds(limit:1) al mount).
+- Se l'utente clicca "Costruisci" mentre c'e' gia' un build attivo, riceve
+  il build esistente e riprende il polling (no race, no doppio build).
+
+### Smoke produzione (sessione corrente, OK 32 sec totali)
+- Creator temporaneo, app "AsyncDemo" con prompt "parrucchiere clienti
+  servizi appuntamenti" (settore non in catalogo, no bias).
+- startBuild → 201 immediato, status=queued.
+- 2o startBuild → 409 + stesso buildId (lock funziona).
+- Polling 16 iterazioni 2s: stages osservati schema→frontend→done.
+- /apps/async-{ts}/ → HTTP 200, contiene riferimento app.
+- Cleanup OK (DB + cartella apps).
+
+### Architettura deployata
+- **DB**: nuova tabella `mc_app_builds` (migration 0006, applicata al boot)
+  con status (queued/running/succeeded/failed), stage, progress, messages
+  jsonb push-only, options, errorMessage/errorDetails, timestamps.
+- **Worker**: `platform/api/src/orchestrator/buildRunner.js`
+  - `enqueueBuild` controlla lock (no doppio attivo per tenant), insert row
+    queued, lancia `runBuild(buildId)` con setImmediate (fire-and-forget).
+  - `runBuild` aggiorna stato in DB man mano, esegue schema (via
+    `runSchemaGeneration` estratto) poi frontend (via `buildGeneratedFrontend`
+    esistente). Su crash imprevisto -> markFailed best-effort.
+- **Endpoint** (in `routes/tenants.js`):
+  - POST /v1/tenants/:id/builds -> enqueue (201 nuovo / 409 conflitto)
+  - GET  /v1/tenants/:id/builds/:bid -> polling
+  - GET  /v1/tenants/:id/builds?limit=20 -> storia
+- **Console** (in `pages/AppDetailPage.jsx`):
+  - `handleBuildApp` → `startBuild` → `startPolling` ogni 2s
+  - `useEffect` al mount riprende polling se c'e' build attivo
+  - `useEffect` cleanup stop polling su unmount/cambio tenant
+  - `applyBuildSnapshot` aggiorna stage/progress/messages dal server
+- **Backward-compat**: route sincrone `/generate-schema` e `/generate-frontend`
+  restano funzionanti. `/generate-schema` ora delega a `runSchemaGeneration`
+  (DRY: stessa funzione del worker).
+
+### Caveat noti / da migliorare in futuro
+- **Build orfani**: se il process Node muore mid-build, la row resta
+  status=running per sempre. Serve sweep periodico che marchi failed dopo
+  N minuti senza heartbeat. Per ora: PM2 restart manuale + UPDATE manuale.
+- **Concorrenza**: il lock e' best-effort (race possibile fra select e
+  insert). Se diventa problema, advisory lock Postgres.
+- **Cancellazione build**: non implementata (DELETE /builds/:bid). Per ora
+  l'utente deve aspettare succeeded/failed.
+- **Streaming live (SSE)**: polling 2s funziona ma per UX sub-secondo
+  servirebbe Server-Sent Events. Non urgente.
+
+### Prossimi step consigliati
+1. **Chat modifiche** (UX Lovable vero): bottone "Chiedi una modifica"
+   apre un input chat, l'utente scrive "aggiungi campo email ai clienti",
+   il backend interpreta, ri-genera schema/frontend via build async.
+2. **Cancellazione build**: DELETE /v1/tenants/:id/builds/:bid + sweeper
+   per orfani.
+3. **Storia builds in Console**: card "Build precedenti" con click per
+   vedere log/errori dei build passati.
+4. **Mobile QA reale** (gia' consigliato da Codex).
+
+---
+
 ## Aggiornamento Claude Code - 2026-05-18 sera (piano build async + polling)
 
 Riprendo dopo Codex (`8c5c5dd`). Stato verificato:

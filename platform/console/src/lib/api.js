@@ -150,6 +150,31 @@ export const tenants = {
   generateFrontend(id) {
     return request(`/v1/tenants/${encodeURIComponent(id)}/generate-frontend`, { method: "POST", body: {} });
   },
+  // --- Build asincroni (Lovable-style polling) ---
+  // Avvia un nuovo build. 201 = nuovo, 409 = c'era gia' un build attivo per
+  // questa app (in entrambi i casi il body e' {build, conflict}). Catturiamo
+  // il 409 cosi' il caller riceve sempre lo stesso shape e puo' riprendere
+  // il polling sul build attivo.
+  async startBuild(id, { skipSchema = false } = {}) {
+    try {
+      return await request(`/v1/tenants/${encodeURIComponent(id)}/builds`, {
+        method: "POST",
+        body: { skipSchema },
+      });
+    } catch (err) {
+      if (err?.status === 409 && err?.payload?.build) {
+        return err.payload; // { build, conflict: true }
+      }
+      throw err;
+    }
+  },
+  getBuild(id, buildId) {
+    return request(`/v1/tenants/${encodeURIComponent(id)}/builds/${encodeURIComponent(buildId)}`);
+  },
+  listBuilds(id, { limit } = {}) {
+    const qs = limit ? `?limit=${encodeURIComponent(limit)}` : "";
+    return request(`/v1/tenants/${encodeURIComponent(id)}/builds${qs}`);
+  },
 };
 
 // ---- Platform Admin API ----

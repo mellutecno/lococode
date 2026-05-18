@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Activity,
@@ -101,6 +101,9 @@ export default function AppDetailPage() {
   const [buildMessages, setBuildMessages] = useState([]);
   const [autoBuildStarted, setAutoBuildStarted] = useState(false);
   const [genResult, setGenResult] = useState(null);
+  const [activeBuildId, setActiveBuildId] = useState(null);
+  const [buildProgress, setBuildProgress] = useState(0);
+  const pollTimerRef = useRef(null);
 
   async function load() {
     try {
@@ -229,40 +232,115 @@ export default function AppDetailPage() {
     setBuildMessages((prev) => [...prev.slice(-4), message]);
   }
 
+  // ---------- Pipeline build asincrona (polling) ----------
+  // Il server esegue schema + frontend in background e aggiorna mc_app_builds.
+  // La Console fa polling ogni 2 secondi su getBuild(buildId) finche' lo stato
+  // diventa succeeded o failed, poi ricarica tenant + stats per la preview.
+  function stopPolling() {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }
+
+  function applyBuildSnapshot(b) {
+    if (!b) return;
+    if (b.stage) setBuildStage(b.stage);
+    if (typeof b.progress === "number") setBuildProgress(b.progress);
+    if (Array.isArray(b.messages)) {
+      setBuildMessages(b.messages.map((m) => (typeof m === "string" ? m : m.text)));
+    }
+  }
+
+  async function pollOnce(buildId) {
+    try {
+      const res = await tenants.getBuild(tenant.id, buildId);
+      const b = res?.build;
+      applyBuildSnapshot(b);
+
+      if (b?.status === "succeeded") {
+        stopPolling();
+        setGenerating(false);
+        setFrontendGenerating(false);
+        setActiveBuildId(null);
+        const statRes = await tenants.stats(tenant.id);
+        setTenant(statRes.tenant);
+        setStats(statRes.stats);
+        toast.success("App pronta!");
+      } else if (b?.status === "failed") {
+        stopPolling();
+        setGenerating(false);
+        setFrontendGenerating(false);
+        setActiveBuildId(null);
+        toast.error(b.errorMessage || "Build fallita.");
+      }
+    } catch (err) {
+      // Rete giu' o errore transitorio: non stoppiamo, riprova al prossimo tick.
+      // Solo se il build e' sparito (404) stoppiamo.
+      if (err?.status === 404) {
+        stopPolling();
+        setGenerating(false);
+        setFrontendGenerating(false);
+        setActiveBuildId(null);
+      }
+    }
+  }
+
+  function startPolling(buildId) {
+    stopPolling();
+    setActiveBuildId(buildId);
+    // Primo poll immediato, poi ogni 2s
+    pollOnce(buildId);
+    pollTimerRef.current = setInterval(() => pollOnce(buildId), 2000);
+  }
+
   async function handleBuildApp() {
     if (!tenant) return;
     setGenerating(true);
     setFrontendGenerating(true);
-    setBuildStage("schema");
+    setBuildStage("queued");
+    setBuildProgress(0);
     setBuildMessages([]);
-    pushBuildMessage("Leggo la richiesta e preparo la struttura dell'app.");
 
     try {
-      const schemaRes = await tenants.generateSchema(tenant.id);
-      setGenResult(schemaRes);
-      pushBuildMessage(`Struttura pronta: ${schemaRes.created} tabelle dati preparate.`);
-
-      const statRes = await tenants.stats(tenant.id);
-      setTenant(statRes.tenant);
-      setStats(statRes.stats);
-
-      setBuildStage("frontend");
-      pushBuildMessage("Creo l'interfaccia e preparo la preview pubblica.");
-
-      const frontendRes = await tenants.generateFrontend(tenant.id);
-      setTenant(frontendRes.tenant);
-      pushBuildMessage("Preview pubblicata. Ora puoi aprire e provare l'app.");
-      setBuildStage("done");
-      toast.success("App costruita e pubblicata.");
+      const res = await tenants.startBuild(tenant.id);
+      if (res?.conflict) {
+        // Era gia' un build attivo: riprendi polling su quello.
+        toast.info("Ripresa build in corso.");
+      }
+      startPolling(res.build.id);
     } catch (err) {
       setBuildStage("error");
-      pushBuildMessage(err.message);
-      toast.error(err.message);
-    } finally {
+      setBuildMessages([err.message]);
       setGenerating(false);
       setFrontendGenerating(false);
+      toast.error(err.message);
     }
   }
+
+  // Cleanup polling su unmount (cambio pagina) o cambio tenant.
+  useEffect(() => () => stopPolling(), []);
+  useEffect(() => { stopPolling(); }, [slug]);
+
+  // Al mount, se c'e' gia' un build attivo per questo tenant (es. utente ha
+  // refreshato la pagina mentre la build girava), riprendi il polling.
+  useEffect(() => {
+    if (!tenant?.id || activeBuildId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await tenants.listBuilds(tenant.id, { limit: 1 });
+        const last = res?.builds?.[0];
+        if (!cancelled && last && (last.status === "queued" || last.status === "running")) {
+          setGenerating(true);
+          setFrontendGenerating(true);
+          applyBuildSnapshot(last);
+          startPolling(last.id);
+        }
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [tenant?.id]);
 
   if (error) {
     return (
@@ -288,7 +366,7 @@ export default function AppDetailPage() {
   const frontend = tenant.metadata?.frontend || null;
   const publicUrl = frontend?.url || url;
   const canOpenApp = Boolean(frontend?.url);
-  const isBuilding = buildStage === "schema" || buildStage === "frontend";
+  const isBuilding = ["queued", "running", "schema", "frontend"].includes(buildStage);
   const aiCalls = stats ? stats.ai.callsSucceeded + stats.ai.callsFailed : 0;
   const aiPercent = stats?.ai.monthlyLimitCredits > 0
     ? Math.max(0, Math.min(100, (stats.ai.remainingCredits / stats.ai.monthlyLimitCredits) * 100))
