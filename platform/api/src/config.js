@@ -3,6 +3,13 @@
 import "dotenv/config";
 
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini";
+// Default orchestrator (schema generation + revision chat): modello PREMIUM
+// per dare app vere, non scarabocchi. Override possibile via env
+// ORCHESTRATOR_MODEL. Smoke 2026-05-18: claude-sonnet-4 produce schemi
+// notevolmente migliori (capisce dominio italiano, format giusti, enum
+// sensati) rispetto a gpt-4o-mini. Costo ~$0.01-0.05/app vs $0.0006
+// (sempre margine enorme rispetto a un prezzo €1.99+).
+const DEFAULT_ORCHESTRATOR_MODEL = "anthropic/claude-sonnet-4";
 
 function req(key, fallback) {
   const v = process.env[key] ?? fallback;
@@ -78,7 +85,7 @@ export const config = {
   },
 
   orchestrator: {
-    model: opt("ORCHESTRATOR_MODEL", DEFAULT_OPENROUTER_MODEL),
+    model: opt("ORCHESTRATOR_MODEL", DEFAULT_ORCHESTRATOR_MODEL),
     maxTokens: Number(opt("ORCHESTRATOR_MAX_TOKENS", "2048")),
     maxEntities: Number(opt("ORCHESTRATOR_MAX_ENTITIES", "8")),
   },
