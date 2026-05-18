@@ -65,8 +65,17 @@ Per ogni sotto-step: codice + test locali + commit + push. Deploy server e nginx
 - Bias palestra: fixato (commit `7a115be`).
 - Manca: Step 3a (questo), Step 3b (codegen avanzato), billing tenants.
 
-### Prossimo sotto-step
-Sotto-step 1 (theme palette mapping). Niente cambiamenti server in questo commit, solo file nuovi sotto `platform/api/src/orchestrator/themePalettes.js` + test.
+### Avanzamento sotto-step (aggiornato a ogni commit)
+
+- [x] **Sotto-step 1 — Theme palette mapping** (commit pendente)
+  - `platform/api/src/orchestrator/themePalettes.js` — 7 palette complete (ink 50..950, accent 50..900, glow sm/md/lg + card/card-hover, bg aurora, font, selection). Helper `themePalette()`, `themePaletteWithFallback()`, `themeReplaceMap()` per token replace.
+  - 13 test PASS, hex valid check, fallback check, coverage check.
+  - Niente cambiamenti server, solo logica.
+- [ ] Sotto-step 2 — Template parametrico `_base/`
+- [ ] Sotto-step 3 — frontendBuilder server module
+- [ ] Sotto-step 4 — endpoint `POST /v1/tenants/:id/generate-frontend`
+- [ ] Sotto-step 5 — nginx location dinamica `/apps/SLUG/`
+- [ ] Sotto-step 6 — Console card Frontend + bottoni
 
 ---
 
