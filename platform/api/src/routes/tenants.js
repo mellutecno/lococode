@@ -177,7 +177,7 @@ export default async function tenantRoutes(fastify) {
       }
       if (req.body.slug !== undefined) {
         const nextSlug = slugify(req.body.slug);
-        if (!nextSlug) return reply.code(400).send({ error: "Slug tenant non valido." });
+        if (!nextSlug) return reply.code(400).send({ error: "Indirizzo app non valido." });
         updates.slug = nextSlug;
       }
       if (req.body.publicRegistrationEnabled !== undefined) {
@@ -268,6 +268,7 @@ export default async function tenantRoutes(fastify) {
             adminEmail: { type: "string", maxLength: 320 },
             adminPassword: { type: "string", minLength: 8, maxLength: 200 },
             adminName: { type: "string", maxLength: 120 },
+            initialPrompt: { type: "string", maxLength: 5000 },
             publicRegistrationEnabled: { type: "boolean" },
           },
           additionalProperties: false,
@@ -277,7 +278,7 @@ export default async function tenantRoutes(fastify) {
     async (req, reply) => {
       const name = String(req.body.name || "").trim();
       const slug = slugify(req.body.slug || name);
-      if (!slug) return reply.code(400).send({ error: "Slug tenant non valido." });
+      if (!slug) return reply.code(400).send({ error: "Indirizzo app non valido." });
 
       const wantsInitialAdmin = Boolean(req.body.adminEmail || req.body.adminPassword);
       if (wantsInitialAdmin) {
@@ -296,6 +297,9 @@ export default async function tenantRoutes(fastify) {
               slug,
               name,
               publicRegistrationEnabled: req.body.publicRegistrationEnabled ?? true,
+              metadata: {
+                initialPrompt: String(req.body.initialPrompt || "").trim(),
+              },
             })
             .returning();
           const tenant = tenantRows[0];
@@ -332,7 +336,7 @@ export default async function tenantRoutes(fastify) {
         });
       } catch (err) {
         if (duplicateError(err)) {
-          return reply.code(409).send({ error: "Esiste gia' un tenant con questo slug o admin." });
+          return reply.code(409).send({ error: "Esiste gia' un'app con questo indirizzo o con questo admin." });
         }
         throw err;
       }

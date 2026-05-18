@@ -43,6 +43,7 @@ function CreateAppForm({ onCreated, onClose }) {
   const [slugTouched, setSlugTouched] = useState(false);
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
+  const [initialPrompt, setInitialPrompt] = useState("");
   const [publicReg, setPublicReg] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -59,6 +60,7 @@ function CreateAppForm({ onCreated, onClose }) {
       const payload = {
         name: name.trim(),
         slug: slug.trim() || slugifyClient(name),
+        initialPrompt: initialPrompt.trim(),
         publicRegistrationEnabled: publicReg,
       };
       if (adminEmail.trim() && adminPassword) {
@@ -84,8 +86,23 @@ function CreateAppForm({ onCreated, onClose }) {
         <input
           className="input" required maxLength={160}
           value={name} onChange={(e) => onNameChange(e.target.value)}
-          placeholder="Es. Studio Mellucci, Cantina del Sole, …"
+          placeholder="Es. Studio Mellucci, Cantina del Sole..."
         />
+      </div>
+
+      <div className="field">
+        <label className="label">Cosa vuoi creare? *</label>
+        <textarea
+          className="textarea min-h-[140px]"
+          required
+          maxLength={5000}
+          value={initialPrompt}
+          onChange={(e) => setInitialPrompt(e.target.value)}
+          placeholder="Descrivi la web app: cosa deve fare, chi la usa, quali schermate servono, quali dati deve gestire..."
+        />
+        <div className="help">
+          Qui scrivi le istruzioni iniziali. Saranno la base per il generatore dell'app.
+        </div>
       </div>
 
       <div className="field">
@@ -103,7 +120,7 @@ function CreateAppForm({ onCreated, onClose }) {
             pattern="[a-z0-9-]+"
           />
         </div>
-        <div className="help">L'indirizzo viene creato automaticamente dal nome. Puoi modificarlo se vuoi.</div>
+        <div className="help">Sara' la parte finale del link pubblico della tua app. Puoi modificarla se vuoi.</div>
       </div>
 
       <details className="rounded-xl border border-white/[0.06] bg-white/[0.02] open:bg-white/[0.04] transition">
@@ -143,10 +160,10 @@ function CreateAppForm({ onCreated, onClose }) {
         </div>
       )}
 
-      <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 px-5 sm:px-6 py-4 border-t border-white/[0.06] bg-ink-900/95 backdrop-blur-xl flex items-center justify-end gap-2">
+      <div className="-mx-5 sm:-mx-6 -mb-5 px-5 sm:px-6 py-4 border-t border-white/[0.06] bg-ink-900/95 backdrop-blur-xl flex items-center justify-end gap-2">
         <button type="button" onClick={onClose} className="btn-ghost">Annulla</button>
         <button type="submit" disabled={busy} className="btn-primary">
-          {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Creo…</>
+          {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Creo...</>
                 : <><Sparkles className="w-4 h-4" /> Crea app</>}
         </button>
       </div>
@@ -229,7 +246,7 @@ export default function AppsDashboardPage({ user }) {
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
           <input
             className="input pl-10"
-            placeholder="Cerca per nome o slug…"
+            placeholder="Cerca per nome o indirizzo..."
             value={q} onChange={(e) => setQ(e.target.value)}
           />
         </div>
@@ -338,7 +355,7 @@ export default function AppsDashboardPage({ user }) {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Crea una nuova app"
-        subtitle="Dai un nome alla tua app: prepariamo il suo spazio di lavoro in pochi secondi."
+        subtitle="Dai un nome alla tua app e descrivi cosa deve fare. MelluCode preparera' il progetto partendo da queste istruzioni."
         maxWidth="xl"
       >
         <CreateAppForm

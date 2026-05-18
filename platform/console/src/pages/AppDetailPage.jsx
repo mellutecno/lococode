@@ -345,7 +345,7 @@ export default function AppDetailPage() {
           </div>
           <div className="grid sm:grid-cols-4 gap-3">
             <StatTile icon={Users} label="Utenti" value={stats.appUsers} />
-            <StatTile icon={Database} label="Entita'" value={stats.entities} />
+            <StatTile icon={Database} label="Tabelle dati" value={stats.entities} />
             <StatTile icon={Boxes} label="Record" value={stats.records} />
             <StatTile icon={Files} label="File" value={formatBytes(stats.files.sizeBytes)} />
           </div>
@@ -401,7 +401,7 @@ export default function AppDetailPage() {
                 onChange={(e) => setEditSlug(slugifyClient(e.target.value))}
               />
             </div>
-            <div className="help">Cambiare slug cambia anche il link pubblico dell'app.</div>
+            <div className="help">Cambiare indirizzo cambia anche il link pubblico dell'app.</div>
           </div>
           <label className="flex items-center gap-2 text-sm text-zinc-300">
             <input
@@ -417,7 +417,7 @@ export default function AppDetailPage() {
               {formError}
             </div>
           )}
-          <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 px-5 sm:px-6 py-4 border-t border-white/[0.06] bg-ink-900/95 backdrop-blur-xl flex items-center justify-end gap-2">
+          <div className="-mx-5 sm:-mx-6 -mb-5 px-5 sm:px-6 py-4 border-t border-white/[0.06] bg-ink-900/95 backdrop-blur-xl flex items-center justify-end gap-2">
             <button type="button" onClick={() => setEditOpen(false)} className="btn-ghost">Annulla</button>
             <button type="submit" disabled={saving} className="btn-primary">
               {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvo...</> : <><Save className="w-4 h-4" /> Salva</>}

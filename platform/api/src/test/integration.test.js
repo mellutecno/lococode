@@ -293,11 +293,14 @@ if (!TEST_DB) {
     test("POST creates tenant + initial admin", async () => {
       const reg = await registerCreator();
       const token = reg.res.json().accessToken;
-      const { res, body } = await createTenant(token);
+      const { res, body } = await createTenant(token, {
+        initialPrompt: "Gestionale palestra con corsi, iscritti e abbonamenti.",
+      });
       assert.equal(res.statusCode, 201);
       const json = res.json();
       assert.equal(json.tenant.slug, body.slug);
       assert.equal(json.tenant.status, "active");
+      assert.equal(json.tenant.metadata.initialPrompt, body.initialPrompt);
       assert.equal(json.initialAdmin.email, body.adminEmail);
       assert.equal(json.initialAdmin.role, "admin");
       assert.equal(json.initialAdmin.mustChangePassword, true);

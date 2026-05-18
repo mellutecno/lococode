@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 // Modal premium con backdrop blur + scale-in. Niente dep esterne.
@@ -21,8 +22,8 @@ export default function Modal({ open, onClose, title, subtitle, children, maxWid
     sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg", xl: "max-w-xl", "2xl": "max-w-2xl",
   }[maxWidth] || "max-w-lg";
 
-  return (
-    <div className="fixed inset-0 z-40 overflow-y-auto p-3 sm:p-5 animate-fade-in">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] overflow-y-auto p-3 sm:p-5 animate-fade-in">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/60 backdrop-blur-md"
@@ -32,7 +33,7 @@ export default function Modal({ open, onClose, title, subtitle, children, maxWid
       {/* Dialog */}
       <div
         role="dialog" aria-modal="true"
-        className={`relative my-3 sm:my-6 mx-auto w-full ${maxW} max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] animate-scale-in glass rounded-2xl shadow-glow-lg overflow-hidden flex flex-col`}
+        className={`relative z-10 my-3 sm:my-6 mx-auto w-full ${maxW} animate-scale-in glass rounded-2xl shadow-glow-lg overflow-visible`}
       >
         {/* Top accent bar */}
         <div className="h-px shrink-0 bg-gradient-to-r from-transparent via-accent-400 to-transparent" />
@@ -49,8 +50,9 @@ export default function Modal({ open, onClose, title, subtitle, children, maxWid
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="px-5 sm:px-6 py-5 overflow-y-auto min-h-0 flex-1 overscroll-contain">{children}</div>
+        <div className="px-5 sm:px-6 py-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
