@@ -29,6 +29,21 @@ function duplicateError(err) {
   return err?.code === "23505";
 }
 
+// Genera una password leggibile e memorabile per l'admin app:
+// 2 sillabe italiane + 4 cifre + simbolo. Esempio: "Sole-Vento-4729!".
+// 64 bit di entropia (~16 sillabe da 80 + 10000 cifre). Sufficiente per un
+// admin app di una piccola app generata, e l'utente puo' comunque cambiarla.
+function generateReadablePassword() {
+  const SYL = [
+    "Sole", "Luna", "Mare", "Vento", "Fiore", "Stella", "Bosco", "Pioggia",
+    "Nuvola", "Roccia", "Onda", "Faro", "Alba", "Tramonto", "Tigre", "Lupo",
+    "Aquila", "Falco", "Pesce", "Cervo", "Volpe", "Drago", "Fulmine", "Cielo",
+  ];
+  const pick = () => SYL[Math.floor(Math.random() * SYL.length)];
+  const num = String(Math.floor(1000 + Math.random() * 9000));
+  return `${pick()}-${pick()}-${num}!`;
+}
+
 function numberFrom(row, key) {
   return Number(row?.[key] ?? 0);
 }
@@ -719,6 +734,146 @@ export default async function tenantRoutes(fastify) {
       if (!tenant) return reply;
       const revisions = await listRevisions(tenant.id, { limit: req.query.limit });
       return { revisions };
+    }
+  );
+
+  // ============================================================
+  // App admin: utility per il creator per gestire l'admin DELL'APP generata
+  // (diverso dal creator MelluCode: e' l'utente admin dentro la app fra
+  // gli mc_app_users di quel tenant).
+  // ============================================================
+
+  // GET /v1/tenants/:id/app-admin -> info admin app (email, esiste si/no)
+  fastify.get(
+    "/:id/app-admin",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const tenant = await loadOwnedTenant(req, reply);
+      if (!tenant) return reply;
+      const rows = await db
+        .select({
+          id: schema.mcAppUsers.id,
+          email: schema.mcAppUsers.email,
+          name: schema.mcAppUsers.name,
+          role: schema.mcAppUsers.role,
+          mustChangePassword: schema.mcAppUsers.mustChangePassword,
+          createdAt: schema.mcAppUsers.createdAt,
+        })
+        .from(schema.mcAppUsers)
+        .where(and(
+          eq(schema.mcAppUsers.tenantId, tenant.id),
+          eq(schema.mcAppUsers.role, "admin")
+        ))
+        .limit(1);
+      return { admin: rows[0] || null };
+    }
+  );
+
+  // POST /v1/tenants/:id/app-admin/reset-password -> genera password
+  // random nuova, la setta hashata, la restituisce IN CHIARO una volta
+  // sola al creator owner. Se non c'e' admin app, lo crea (email = email
+  // del creator owner per default, sovrascrivibile via body.email).
+  fastify.post(
+    "/:id/app-admin/reset-password",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+        body: {
+          type: "object",
+          properties: {
+            email: { type: "string", maxLength: 320 },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const tenant = await loadOwnedTenant(req, reply);
+      if (!tenant) return reply;
+
+      // Trova l'admin esistente
+      const adminRows = await db
+        .select()
+        .from(schema.mcAppUsers)
+        .where(and(
+          eq(schema.mcAppUsers.tenantId, tenant.id),
+          eq(schema.mcAppUsers.role, "admin")
+        ))
+        .limit(1);
+      let admin = adminRows[0] || null;
+
+      // Recupera email del creator owner (default per nuovo admin)
+      const ownerRows = await db
+        .select({ email: schema.mcUsers.email, name: schema.mcUsers.name })
+        .from(schema.mcUsers)
+        .where(eq(schema.mcUsers.id, req.user.sub))
+        .limit(1);
+      const creator = ownerRows[0];
+
+      const targetEmail = normalizeEmail(req.body?.email || admin?.email || creator?.email || "");
+      if (!targetEmail) {
+        return reply.code(400).send({ error: "Email admin non valida." });
+      }
+
+      // Genera password leggibile (3 syllabe + 4 cifre)
+      const newPassword = generateReadablePassword();
+      const passwordHash = await hashPassword(newPassword);
+
+      try {
+        if (!admin) {
+          // Crea
+          const rows = await db.insert(schema.mcAppUsers).values({
+            tenantId: tenant.id,
+            email: targetEmail,
+            passwordHash,
+            name: creator?.name || "Admin",
+            role: "admin",
+            mustChangePassword: false,
+          }).returning();
+          admin = rows[0];
+        } else {
+          // Aggiorna
+          const updates = { passwordHash, mustChangePassword: false, updatedAt: new Date() };
+          if (targetEmail !== admin.email) updates.email = targetEmail;
+          const rows = await db.update(schema.mcAppUsers)
+            .set(updates)
+            .where(eq(schema.mcAppUsers.id, admin.id))
+            .returning();
+          admin = rows[0];
+        }
+      } catch (err) {
+        if (duplicateError(err)) {
+          return reply.code(409).send({ error: "Esiste gia' un utente con questa email per questa app." });
+        }
+        throw err;
+      }
+
+      return reply.code(200).send({
+        admin: {
+          id: admin.id,
+          email: admin.email,
+          name: admin.name,
+          role: admin.role,
+        },
+        password: newPassword, // mostrato UNA volta sola, mai loggato
+        loginUrl: `/apps/${tenant.slug}/`,
+      });
     }
   );
 

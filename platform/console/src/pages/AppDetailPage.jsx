@@ -27,6 +27,7 @@ import { tenants, tenantUrl, formatDateIt, slugifyClient } from "../lib/api.js";
 import Modal from "../components/Modal.jsx";
 import AppIcon from "../components/AppIcon.jsx";
 import RevisionChat from "../components/RevisionChat.jsx";
+import AppAdminCard from "../components/AppAdminCard.jsx";
 import { useToast } from "../components/Toast.jsx";
 
 function planTone(plan) {
@@ -516,6 +517,15 @@ export default function AppDetailPage() {
           )}
         </section>
       </div>
+
+      {/* Accesso admin app: visibile sempre, anche su app appena creata.
+          Risolve la confusione "non so se sono admin dell'app" — l'app
+          generata ha auth separata dal MelluCode account. */}
+      {(stats?.entities > 0 || tenant.metadata?.frontend?.url) && (
+        <section>
+          <AppAdminCard tenant={tenant} />
+        </section>
+      )}
 
       {/* Chat modifiche AI: visibile solo dopo che lo schema esiste,
           cosi' l'utente non vede una chat inutile su un'app vuota. */}

@@ -155,6 +155,17 @@ export const tenants = {
   // questa app (in entrambi i casi il body e' {build, conflict}). Catturiamo
   // il 409 cosi' il caller riceve sempre lo stesso shape e puo' riprendere
   // il polling sul build attivo.
+  // --- App admin (utente admin DELL'APP generata, non MelluCode) ---
+  appAdmin(id) {
+    return request(`/v1/tenants/${encodeURIComponent(id)}/app-admin`);
+  },
+  resetAppAdminPassword(id, { email } = {}) {
+    return request(`/v1/tenants/${encodeURIComponent(id)}/app-admin/reset-password`, {
+      method: "POST",
+      body: email ? { email } : {},
+    });
+  },
+
   // --- Revisions (chat modifiche Lovable-style) ---
   // Manda una richiesta in linguaggio naturale ("aggiungi campo email ai clienti")
   // -> backend interpreta + applica + lancia build async automatico.
