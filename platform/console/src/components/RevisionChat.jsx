@@ -83,77 +83,102 @@ export default function RevisionChat({ tenantId, disabled = false, onRevisionSen
   const empty = items?.length === 0;
   const loading = items === null;
 
+  const hasHistory = items && items.length > 0;
+
   return (
-    <div className="card flex flex-col h-[28rem]">
-      <div className="px-5 py-3 border-b border-white/[0.06] flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="grid place-items-center w-7 h-7 rounded-lg bg-gradient-to-br from-accent-400 to-violet-500 shadow-glow-sm flex-shrink-0">
-            <Sparkles className="w-3.5 h-3.5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-white truncate">Chiedi una modifica</h3>
-            <p className="text-[11px] text-zinc-500 truncate">Scrivi in italiano cosa cambiare.</p>
-          </div>
+    <div className="card">
+      {/* HEADER */}
+      <div className="px-5 py-4 border-b border-white/[0.06] flex items-center gap-2.5">
+        <div className="grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-accent-400 to-violet-500 shadow-glow-sm flex-shrink-0">
+          <Sparkles className="w-4 h-4 text-white" />
+        </div>
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold text-white">Modifica l'app con un messaggio</h3>
+          <p className="text-xs text-zinc-400">Scrivi cosa vuoi cambiare e premi Invia. L'app si aggiorna da sola.</p>
         </div>
       </div>
 
-      {/* Stream messaggi */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-        {loading && (
-          <div className="flex items-center gap-2 text-xs text-zinc-500 justify-center py-8">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-400" />
-            Carico storico…
+      {/* INPUT IN ALTO, GROSSO, CHIARO */}
+      <form onSubmit={handleSubmit} className="p-5 border-b border-white/[0.06]">
+        <label htmlFor="revision-input" className="label">
+          Cosa vuoi cambiare?
+        </label>
+        <div className="relative">
+          <textarea
+            id="revision-input"
+            ref={textareaRef}
+            className="textarea min-h-[88px] pr-14 text-[15px] leading-relaxed"
+            rows={3}
+            placeholder={disabled
+              ? "Aspetta che l'app finisca di aggiornarsi…"
+              : "Es. aggiungi un campo telefono ai clienti, oppure cambia il tema in caldo"}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKey}
+            disabled={disabled || sending}
+            maxLength={2000}
+          />
+          <button
+            type="submit"
+            disabled={!text.trim() || sending || disabled}
+            className="btn-primary !h-10 !w-10 !p-0 absolute right-2 bottom-2 flex-shrink-0"
+            title="Invia (Enter)"
+            aria-label="Invia"
+          >
+            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          </button>
+        </div>
+        {empty && !loading && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[
+              "Aggiungi un campo telefono ai clienti",
+              "Cambia tema in caldo",
+              "Aggiungi una tabella per le note interne",
+            ].map((sug) => (
+              <button
+                key={sug}
+                type="button"
+                onClick={() => { setText(sug); textareaRef.current?.focus(); }}
+                disabled={disabled || sending}
+                className="text-xs px-2.5 py-1 rounded-full bg-white/[0.04] border border-white/[0.06] text-zinc-300 hover:bg-white/[0.08] hover:border-accent-500/30 hover:text-white transition disabled:opacity-50"
+              >
+                {sug}
+              </button>
+            ))}
           </div>
         )}
-        {empty && (
-          <div className="text-center py-8 max-w-sm mx-auto">
-            <p className="text-sm text-zinc-300 font-medium mb-1.5">Prova a chiedermi:</p>
-            <ul className="space-y-1.5 text-xs text-zinc-500 italic">
-              <li>"Aggiungi un campo telefono ai clienti"</li>
-              <li>"Cambia tema in caldo"</li>
-              <li>"Aggiungi una tabella per le note interne"</li>
-            </ul>
-          </div>
-        )}
-        {(items || []).map((r) => (
-          <RevisionMessage key={r.id} revision={r} />
-        ))}
-        {sending && (
-          <div className="flex items-start gap-2 animate-fade-in">
-            <div className="grid place-items-center w-6 h-6 rounded-full bg-gradient-to-br from-accent-400 to-violet-500 flex-shrink-0">
-              <Sparkles className="w-3 h-3 text-white" />
-            </div>
-            <div className="flex-1 pt-1">
-              <p className="text-xs text-zinc-400 italic flex items-center gap-1.5">
-                <Loader2 className="w-3 h-3 animate-spin" /> Sto pensando…
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Input */}
-      <form onSubmit={handleSubmit} className="border-t border-white/[0.06] p-3 flex items-end gap-2">
-        <textarea
-          ref={textareaRef}
-          className="textarea !min-h-0 flex-1 resize-none"
-          rows={2}
-          placeholder={disabled ? "Aspetta che la build finisca…" : "Es: aggiungi un campo email ai clienti"}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKey}
-          disabled={disabled || sending}
-          maxLength={2000}
-        />
-        <button
-          type="submit"
-          disabled={!text.trim() || sending || disabled}
-          className="btn-primary !h-10 !px-3 flex-shrink-0"
-          title="Invia (Enter)"
-        >
-          {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-        </button>
+        <p className="help mt-2">Premi <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-[10px]">Invio</kbd> per inviare, <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-[10px]">Shift+Invio</kbd> per andare a capo.</p>
       </form>
+
+      {/* STORIA SOTTO L'INPUT, OPZIONALE */}
+      {(loading || hasHistory || sending) && (
+        <div ref={scrollRef} className="px-5 py-4 max-h-[24rem] overflow-y-auto space-y-4">
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-zinc-500 justify-center py-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-400" />
+              Carico storico…
+            </div>
+          )}
+          {hasHistory && (
+            <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">Cronologia modifiche</p>
+          )}
+          {(items || []).map((r) => (
+            <RevisionMessage key={r.id} revision={r} />
+          ))}
+          {sending && (
+            <div className="flex items-start gap-2 animate-fade-in">
+              <div className="grid place-items-center w-6 h-6 rounded-full bg-gradient-to-br from-accent-400 to-violet-500 flex-shrink-0">
+                <Sparkles className="w-3 h-3 text-white" />
+              </div>
+              <div className="flex-1 pt-1">
+                <p className="text-xs text-zinc-400 italic flex items-center gap-1.5">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Sto pensando…
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

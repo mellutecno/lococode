@@ -436,12 +436,22 @@ export default function AppDetailPage() {
             </div>
             <button
               type="button"
-              onClick={handleBuildApp}
+              onClick={() => {
+                if (frontend?.url && !confirm(
+                  "Rigenerare l'app da zero?\n\n" +
+                  "Verra' rifatta la struttura dati con l'AI e ricostruita l'interfaccia. " +
+                  "Le modifiche fatte via chat NON andranno perse (sono salvate nella struttura), " +
+                  "ma se hai inserito dati di prova vengono mantenuti.\n\n" +
+                  "Tip: per piccole modifiche usa la chat sotto, non rigenerare tutto."
+                )) return;
+                handleBuildApp();
+              }}
               disabled={isBuilding}
               className="btn-primary shrink-0"
+              title={frontend?.url ? "Rifa struttura + interfaccia da zero. Usa la chat per modifiche puntuali." : ""}
             >
               {isBuilding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              {isBuilding ? " Sto lavorando..." : frontend?.url ? " Aggiorna app" : " Costruisci app"}
+              {isBuilding ? " Sto lavorando..." : frontend?.url ? " Rigenera da zero" : " Costruisci app"}
             </button>
           </div>
 
