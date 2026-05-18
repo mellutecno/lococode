@@ -4,9 +4,9 @@
 
 Stato attuale verificato:
 - branch: `mellucode-v2`
-- ultimo commit locale: `_______` Add schema generation endpoint (Fase 2 Step 0)
+- ultimo commit locale/remoto/server: `6065384` Add schema generation from initialPrompt: orchestrator, endpoint, tests, Console UI
 - commit deployato server precedente: `0883cd5`
-- **NON ancora deployato su server**
+- **Deploy su server completato con successo**
 
 Modifiche fatte (Fase 2 — Step 0: Schema Generation):
 - **Nuovo endpoint API**: `POST /v1/tenants/:id/generate-schema`
@@ -32,10 +32,15 @@ Modifiche fatte (Fase 2 — Step 0: Schema Generation):
   - `platform/console/src/lib/api.js`: aggiunto `tenants.generateSchema(id)`
   - Build Console produzione: OK (222 KB js / 68 KB gz, 38 KB css / 7 KB gz)
 
+Deploy server eseguito:
+- `git pull origin mellucode-v2` su `/opt/mellucode` → fast-forward a `6065384`
+- `npm install` + `pm2 restart mellucode-api` su `platform/api` → online (PID 967924)
+- `npm install` + `npm run build` su `platform/console` → OK
+- `cp -r platform/console/dist/* /opt/mellucode/console/` → dist deployata
+
 Prossimo passo consigliato:
-1. Deploy su server: `git push`, `npm install` in `platform/api`, PM2 restart, build Console e copia dist
-2. Verificare da browser: aprire app detail, cliccare "Genera schema", controllare che le entità compaiano e che `GET /v1/data/entities` (con app-user admin) le mostri
-3. Iniziare Step 1 della Fase 2: scaffolding frontend da template palestra + build + deploy su `/apps/{slug}/`
+1. Verificare da browser: aprire app detail, cliccare "Genera schema", controllare che le entità compaiano e che `GET /v1/data/entities` (con app-user admin) le mostri
+2. Iniziare Step 1 della Fase 2: scaffolding frontend da template palestra + build + deploy su `/apps/{slug}/`
 
 ## Aggiornamento Codex - 2026-05-18 mattina
 
