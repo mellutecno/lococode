@@ -145,7 +145,7 @@ export const tenants = {
     return request(`/v1/tenants/${encodeURIComponent(id)}/stats`);
   },
   generateSchema(id) {
-    return request(`/v1/tenants/${encodeURIComponent(id)}/generate-schema`, { method: "POST" });
+    return request(`/v1/tenants/${encodeURIComponent(id)}/generate-schema`, { method: "POST", body: {} });
   },
 };
 
