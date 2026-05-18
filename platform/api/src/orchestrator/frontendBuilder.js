@@ -187,7 +187,7 @@ export async function buildGeneratedFrontend({ tenant, entities }) {
   try {
     await copyTemplate(templateDir, workDir);
     await replaceTokensInTree(workDir, replacements, sdkDir);
-    await runNpm(["install", "--silent", "--no-audit", "--no-fund"], workDir, timeoutMs);
+    await runNpm(["install", "--silent", "--no-audit", "--no-fund", "--include=dev"], workDir, timeoutMs);
     await runNpm(["run", "build"], workDir, timeoutMs);
 
     const distDir = path.join(workDir, "dist");

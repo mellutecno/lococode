@@ -22,6 +22,7 @@ Stato dopo questo giro:
 - Test:
   - aggiunti test unit per `pickPrimaryEntity`, `buildTemplateReplacements`, `applyTemplateTokens`;
   - prova reale locale del builder: generata e compilata app temporanea `test-builder-local` con theme `dark-cyan`, build riuscita;
+  - smoke produzione iniziale ha rilevato che con `NODE_ENV=production` npm ometteva le devDependencies, quindi mancava `vite`; fixato install builder con `npm install --include=dev`;
   - `npm test` API: PASS (129 pass, 1 integration skip);
   - `npm run build` Console: PASS.
 
