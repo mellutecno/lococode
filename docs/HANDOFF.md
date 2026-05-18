@@ -1,14 +1,18 @@
 # HANDOFF MelluCode
 
 ## Data / autore
-- Data: 2026-05-18
+- Data: 2026-05-18 (notte)
 - Tool usati nelle ultime sessioni: Claude Code + Codex
+- Ultimo lavoro: demo template "Palestra" (Claude Code)
 
 ## Stato globale Fase 1
-Fase 1 del backend gestito e' avanzata: auth, tenant, app-auth, Data API, file storage, invio email gestito, AI proxy con quota/costi e SDK base sono implementati e verificati.
+Fase 1 del backend gestito e' **chiusa**: auth, tenant, app-auth, Data API, file storage, invio email gestito, AI proxy con quota/costi e SDK base sono implementati, testati e verificati in produzione.
+
+E' online la **prima demo end-to-end**: gestione palestra, costruita usando SOLO il backend MelluCode + SDK (zero codice server custom). E' visitabile, e' la prova tangibile che lo stack v2 regge.
 
 Restano da chiudere:
 - eventuale build/distribuzione SDK come bundle/npm package
+- orchestrator AI Fase 2 (genera schema + frontend da prompt utente)
 
 ## Commit principali recenti
 - `4bc3d51` Add MelluCode frontend SDK
@@ -199,10 +203,38 @@ Attenzione test:
 - usare solo `mellucode_test`, mai `mellucode_dev`.
 - Per generare `TEST_DATABASE_URL` sul server senza stampare segreti e' stato usato Node + dotenv leggendo `.env`.
 
+## Demo live `palestra-demo`
+
+🌐 https://mellucode.mellutecno.it/demo/palestra/
+
+- Credenziali demo:
+  - email: `admin@palestra-demo.it`
+  - password: `Palestra2026!`
+- Sorgente: `platform/templates/palestra/` (React + Vite + Tailwind, SDK importato via `file:../../sdk`).
+- Backend: nessun endpoint custom. Auth → `mc.auth.login`. Lista/create/update/delete membri → `mc.data("members")`. Upload foto → `mc.files.upload` + `downloadBlob` (perche' il binario richiede bearer). AI → `mc.ai.chat` con gestione esplicita del `402` quando il credito e' esaurito.
+- Tenant pre-seedato sul server (`mellucode_dev.mc_tenants.slug='palestra-demo'`):
+  - creator owner: `demo-owner@mellucode.mellutecno.it` (password generata random, salvata solo nella sessione di seed)
+  - app admin: `admin@palestra-demo.it` / `Palestra2026!` (mustChangePassword=false per la demo)
+  - `publicRegistrationEnabled=false`
+  - entity `members` con schema Ajv completo: required `name`, `format:email` su `email`, `enum` su `subscription_type`, `format:date` su `subscription_until`, `maxLength` su `notes`. Permessi: read/create authenticated, update owner_or_admin, delete admin.
+  - quota AI: `mc_ai_quotas.monthly_limit_micros = 100000` (~0.1 credito; bastano qualche migliaio di chiamate gpt-4o-mini)
+  - 3 membri di esempio: Mario Rossi (mensile in corso), Lucia Bianchi (annuale), Giulia Verdi (scaduto)
+- Deploy:
+  - static in `/opt/mellucode/demo/palestra/` (root:root, perms default)
+  - nginx vhost esteso con `location /demo/palestra/` + `alias` + `try_files` per SPA + cache aggressiva su `/assets/`
+  - backup vhost pre-modifica in `/opt/mellucode-backups/nginx/mellucode.mellutecno.it.before-demo.20260518-074920`
+- Verifiche fatte (this session):
+  - `GET /demo/palestra/` -> 200 HTML
+  - `GET /demo/palestra/assets/index-*.js` -> 200 application/javascript
+  - `POST /v1/app-auth/login` per palestra-demo -> 200 token
+  - `GET /v1/data/members` -> 3 record pre-seedati
+
 ## Prossimo passo consigliato
-1. Decidere come il billing abilita/ricarica `mc_ai_quotas` per tenant.
-2. Configurare eventuale lista esplicita `OPENROUTER_ALLOWED_MODELS` se vogliamo limitare i modelli disponibili alle app generate.
-3. Build/distribuzione SDK e integrazione orchestrator che genera frontend usando solo `mellucode-sdk`.
+1. **Aprire l'URL nel browser** e cliccare in giro: login, crea un membro nuovo con foto, prova "✨ Genera messaggio". Se qualcosa non funziona, l'iterazione di refinement va su `platform/templates/palestra/`.
+2. **Decidere come il billing abilita/ricarica `mc_ai_quotas` per tenant** (oggi e' a 0 di default, qui per la demo abbiamo settato 100000 micros a mano). Un endpoint admin `/v1/admin/tenants/:id/ai-credits` sembrerebbe il prossimo blocco.
+3. **Configurare eventuale lista esplicita `OPENROUTER_ALLOWED_MODELS`** se vogliamo limitare i modelli disponibili alle app generate (oggi solo `OPENROUTER_DEFAULT_MODEL` se non specificata).
+4. **Build/distribuzione SDK** come UMD/CDN per consumo da `<script>` (oggi e' solo ESM via `file:` symlink); abilita Fase 2 orchestrator a iniettarlo nei template generati.
+5. **Orchestrator Fase 2**: il template `palestra/` mostra la forma dei file generati. Prossimo: pipeline AI che da prompt utente → schema entita' + frontend basato su questo template scheletro.
 
 ## Note importanti
 - Non toccare `/opt/lococode-legacy`.
