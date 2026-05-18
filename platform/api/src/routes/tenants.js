@@ -7,8 +7,10 @@ import { microsToCredits } from "../utils/aiCost.js";
 import { deleteFile } from "../utils/fileStorage.js";
 import { normalizeEmail, slugify } from "../utils/normalize.js";
 import { callOpenRouterChat } from "../utils/openRouterClient.js";
-import { buildSystemPrompt, extractJsonArray, validateEntityDef } from "../utils/orchestrator.js";
+import { buildSystemPrompt, extractJsonArray, validateEntityDef, pickThemeFromEntities } from "../utils/orchestrator.js";
 import { publicEntity } from "../utils/entities.js";
+import { inferSector } from "../orchestrator/sectors/_index.js";
+import { isValidThemeId } from "../orchestrator/themes.js";
 
 function publicTenant(t) {
   if (!t) return null;
@@ -385,17 +387,28 @@ export default async function tenantRoutes(fastify) {
         return reply.code(400).send({ error: "Nessun prompt disponibile per questa app." });
       }
 
+      // Inferenza settore (deterministica, keyword-based). Il risultato viene
+      // passato come contesto extra al system prompt: l'AI vede uno schema
+      // di riferimento mirato + sa che tema raccomandato usare.
+      const inferredSector = inferSector(prompt);
+      const systemPrompt = buildSystemPrompt({
+        sector: inferredSector,
+        designBrief: true,
+        themes: true,
+        includeCatalog: true,
+      });
+
       let ai;
       try {
         ai = await callOpenRouterChat({
           messages: [
-            { role: "system", content: buildSystemPrompt() },
+            { role: "system", content: systemPrompt },
             { role: "user", content: prompt.slice(0, 5000) },
           ],
           model: config.orchestrator.model,
           maxTokens: config.orchestrator.maxTokens,
           temperature: 0.2,
-          metadata: { feature: "schema-generation", tenantId: tenant.id },
+          metadata: { feature: "schema-generation", tenantId: tenant.id, sectorHint: inferredSector?.id ?? null },
           user: req.user.sub,
         });
       } catch (err) {
@@ -424,8 +437,26 @@ export default async function tenantRoutes(fastify) {
         });
       }
 
+      // Theme finale per il tenant: priorita' a quello scelto dall'AI nelle
+      // metadata, poi quello del settore inferito, infine fallback safe.
+      const finalTheme = pickThemeFromEntities(valid, inferredSector?.theme || "dark-electric");
+      const finalSector = inferredSector?.id ?? null;
+
       try {
         const created = await db.transaction(async (tx) => {
+          // Aggiorna metadata tenant con sector + theme (preserva initialPrompt
+          // e altri campi gia' presenti).
+          const nextTenantMeta = {
+            ...(tenant.metadata || {}),
+            sector: finalSector,
+            theme: finalTheme,
+            schemaGeneratedAt: new Date().toISOString(),
+          };
+          await tx
+            .update(schema.mcTenants)
+            .set({ metadata: nextTenantMeta, updatedAt: new Date() })
+            .where(eq(schema.mcTenants.id, tenant.id));
+
           const out = [];
           for (const v of valid) {
             const values = {
@@ -468,6 +499,8 @@ export default async function tenantRoutes(fastify) {
         return reply.code(201).send({
           entities: created,
           created: created.length,
+          sector: finalSector,
+          theme: finalTheme,
           errors: invalid.map((e) => e.error),
         });
       } catch (err) {

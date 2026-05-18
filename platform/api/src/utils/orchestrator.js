@@ -1,26 +1,94 @@
 import { normalizeEntityName } from "./normalize.js";
 import { DEFAULT_PERMISSIONS, PERMISSION_MODES } from "./permissions.js";
+import { THEME_IDS, themesPromptList } from "../orchestrator/themes.js";
+import { sectorsPromptList } from "../orchestrator/sectors/_index.js";
 
-export function buildSystemPrompt() {
-  return `Sei MelluCode Schema Generator. Converti la descrizione dell'app in definizioni di entità (tabelle dati).
+// Brief estetico distillato per il system prompt orchestrator.
+// Versione condensata di docs/orchestrator-design-quality.md adatta a stare
+// dentro un token budget ragionevole.
+const DESIGN_BRIEF_SHORT = `BRIEF DESIGN (obbligatorio):
+Le app generate da MelluCode devono avere qualita' estetica premium ispirata
+ai migliori siti su Awwwards, CSS Design Awards, Land-book, Godly. Non
+generare mai schemi pensati per UI generiche o "amministrativi grigi".
 
-Regole assolute:
-1. Rispondi SOLO con un JSON array. Nessun markdown, nessuna spiegazione, nessun commento.
-2. Ogni elemento è un oggetto con queste chiavi:
-   - name: stringa, lowercase, inizia con a-z, max 80 caratteri, solo a-z, 0-9, underscore. Es: "class_bookings".
-   - label: stringa, nome leggibile in italiano, max 160 caratteri. Es: "Prenotazioni Corsi".
-   - schema: JSON Schema draft-07 compatibile Ajv che descrive i campi del record.
-     - Deve avere type: "object" al top level.
-     - Usa properties, required, type, format, enum, minLength, maxLength, minimum, maximum, pattern.
-     - Formati supportati: email, uri, date-time, uuid, ipv4, ipv6, date.
-     - Nomi campi in snake_case.
-   - permissions: opzionale. Oggetto con chiavi read, create, update, delete. Valori ammessi: "none", "authenticated", "admin", "owner_or_admin". Se omesso usa i default.
-   - metadata: opzionale. Oggetto libero per hint UI (icon, color). Se vuoto omesso.
-3. Genera da 2 a 8 entità massimo. Concentrati sugli oggetti core del dominio.
-4. Ogni entità deve avere almeno 2 proprietà e al massimo 15.
+Le label delle entita' e dei campi devono essere in italiano corretto,
+naturali, da prodotto vero. Mai testi tipo "Entita' X" o "Campo Y".
+
+Per ogni entita' includi sempre, dove ha senso, un campo immagine/foto
+(\`*_file_id\` di tipo string) o un campo cover, cosi' il frontend
+generato puo' produrre card visivamente forti e non solo righe di tabella.
+Includi date/timestamp dove modellano lo stato reale (es. \`starts_at\`,
+\`subscription_until\`, \`status\` enum). Niente \`created_at\`/\`updated_at\`:
+li traccia il sistema.
+
+La qualita' visiva e' parte del valore. Schema brutto -> UI brutta.`;
+
+const THEMES_BLOCK = `TEMI VISIVI DISPONIBILI (id da scegliere — non inventarne altri):
+${themesPromptList()}`;
+
+const SECTORS_BLOCK = `CATALOGO SETTORI (per orientamento — puoi anche generare per settori non in lista):
+${sectorsPromptList()}`;
+
+function sectorHintBlock(sector) {
+  if (!sector) return "";
+  const examples = sector.entities.slice(0, 3).map((e) => ({
+    name: e.name,
+    label: e.label,
+    fields: Object.keys(e.schema?.properties || {}).slice(0, 6),
+  }));
+  return `\n\nSETTORE INFERITO: "${sector.id}" (${sector.label}). Tema raccomandato: "${sector.theme}".
+Schema di riferimento per questo settore (NON copiarlo letteralmente — usalo come ispirazione, adattalo al prompt):
+${JSON.stringify(examples, null, 2)}
+
+Se il prompt utente conferma questo settore, parti da queste entita' e adattale.
+Se il prompt va in altra direzione, ignora questo riferimento.`;
+}
+
+// `buildSystemPrompt(context)` produce il system prompt completo dell'orchestrator.
+// `context` opzionale: { sector?, designBrief?, themes?, includeCatalog? }
+// Default (chiamata senza args) restituisce il prompt minimo storico — i test
+// vecchi continuano a passare.
+export function buildSystemPrompt(context = {}) {
+  const {
+    sector = null,
+    designBrief = true,
+    themes = true,
+    includeCatalog = true,
+  } = context;
+
+  const parts = [
+    `Sei MelluCode Schema Generator. Trasformi la descrizione di un'app in definizioni di entita' (tabelle dati) gia' pronte per il database e per il frontend.
+
+Regole assolute output:
+1. Rispondi SOLO con un JSON array. Nessun markdown, nessuna spiegazione, nessun commento prima/dopo.
+2. Ogni elemento e' un oggetto con queste chiavi:
+   - name: stringa, lowercase, ^[a-z][a-z0-9_]{0,79}$. snake_case. Es: "class_bookings".
+   - label: stringa italiana naturale, max 160 caratteri. Es: "Prenotazioni Corsi".
+   - schema: JSON Schema draft-07 compatibile Ajv:
+     - type: "object" al top level
+     - properties con campi snake_case
+     - required: array dei campi obbligatori
+     - usa: type, format (email|uri|uuid|date-time|date), enum, minLength,
+       maxLength, minimum, maximum, pattern, items per array
+   - permissions: opzionale. { read, create, update, delete } con valori
+     "none" | "authenticated" | "admin" | "owner_or_admin". Default: read/create
+     authenticated, update/delete owner_or_admin.
+   - metadata: opzionale. { icon?: string (nome lucide), primary?: boolean,
+     theme?: id valido }. Theme se presente DEVE essere uno della lista temi
+     disponibili sotto. Mettilo solo sulla PRIMA entita' (quella primary),
+     diventera' il tema dell'app intera.
+3. Genera da 2 a 8 entita' massimo. Concentrati sugli oggetti core del dominio.
+4. Ogni entita' deve avere fra 2 e 15 proprieta'.
 5. NON includere created_at / updated_at: il sistema li traccia automaticamente.
-6. Non inventare campi non impliciti dalla descrizione utente.
-7. Se la descrizione è vaga, inferisci valori ragionevoli ma mantieni gli schemi minimali e usabili.`;
+6. Se la descrizione e' vaga, inferisci valori ragionevoli ma resta minimale.`,
+  ];
+
+  if (designBrief) parts.push(DESIGN_BRIEF_SHORT);
+  if (themes) parts.push(THEMES_BLOCK);
+  if (includeCatalog) parts.push(SECTORS_BLOCK);
+  if (sector) parts.push(sectorHintBlock(sector));
+
+  return parts.join("\n\n");
 }
 
 export function extractJsonArray(text) {
@@ -102,11 +170,16 @@ export function validateEntityDef(raw) {
     }
   }
 
-  // metadata
+  // metadata (libero ma con whitelist per theme)
   let metadata = {};
   if (raw.metadata !== undefined) {
     if (raw.metadata && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)) {
-      metadata = raw.metadata;
+      metadata = { ...raw.metadata };
+      if (metadata.theme !== undefined && metadata.theme !== null && metadata.theme !== "") {
+        if (typeof metadata.theme !== "string" || !THEME_IDS.includes(metadata.theme)) {
+          errors.push(`metadata.theme "${metadata.theme}" non è un tema valido. Ammessi: ${THEME_IDS.join(", ")}.`);
+        }
+      }
     } else {
       errors.push("metadata deve essere un oggetto.");
     }
@@ -126,4 +199,15 @@ export function validateEntityDef(raw) {
       metadata,
     },
   };
+}
+
+// Estrae il tema scelto dall'AI scorrendo le entita' (la prima primary o la
+// prima con `metadata.theme`). Se nessuna lo specifica, ritorna fallback.
+export function pickThemeFromEntities(entityValues, fallback = null) {
+  if (!Array.isArray(entityValues)) return fallback;
+  for (const v of entityValues) {
+    const t = v?.values?.metadata?.theme;
+    if (t && THEME_IDS.includes(t)) return t;
+  }
+  return fallback;
 }
