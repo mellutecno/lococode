@@ -21,6 +21,7 @@ Restano da chiudere:
 - `c665de7` Update handoff after files deploy
 - `04decef` Add managed email send endpoint
 - `8269c29` Correct SMTP backup path in handoff
+- `00d571a` Add managed AI chat with quota tracking
 
 ## Cosa e' online adesso
 Dominio API: `https://mellucode.mellutecno.it`
@@ -30,9 +31,10 @@ Server:
 - legacy intoccabile: `/opt/lococode-legacy`
 - PM2: `mellucode-api`
 - porta interna: `127.0.0.1:5200`
-- commit deployato: `04decef`
+- commit deployato: `00d571a`
 - health: OK
 - SMTP reale configurato e smoke test invio OK
+- OpenRouter reale configurato in `.env` copiando server-side la vecchia `LOCOCODE_OPENROUTER_KEY` come `OPENROUTER_API_KEY` senza stampare segreti
 
 Database:
 - `mellucode_dev` produzione
@@ -45,6 +47,7 @@ Storage file:
 - `UPLOAD_MAX_BYTES=10485760`
 - directory creata con permessi `700 root:root`
 - `.env` server in `/opt/mellucode/platform/api/.env`, permessi `600`
+- backup `.env` prima della configurazione OpenRouter: `/opt/mellucode-backups/env/.env.backup.openrouter.<timestamp>`
 
 Nota server:
 - Prima del deploy files Codex aveva trovato una modifica locale server-only a `platform/api/package-lock.json`.
@@ -160,11 +163,11 @@ Locale Windows:
 - `git diff --check`: OK
 
 Server produzione/test:
-- deploy commit `04decef`
+- deploy commit `00d571a`
 - health HTTPS: OK
 - `mellucode-api` PM2 online
-- tabella `mc_email_log` presente su `mellucode_dev`
-- suite server con `TEST_DATABASE_URL` su `mellucode_test` e `SMTP_TRANSPORT=json`: **100/100 PASS**
+- tabelle `mc_email_log`, `mc_ai_quotas`, `mc_ai_usage` presenti su `mellucode_dev` tramite migration applicate al boot
+- suite server con `TEST_DATABASE_URL` su `mellucode_test`, `SMTP_TRANSPORT=json` e `OPENROUTER_TRANSPORT=mock`: **109/109 PASS**
 - smoke test produzione `/v1/email/send` reale:
   - creator temporaneo `smtp-smoke-*` creato
   - tenant temporaneo creato
@@ -176,6 +179,20 @@ Server produzione/test:
   - app user non-admin riceve `403`
   - creator JWT rifiutato con `401`
   - destinatario non valido e contenuto vuoto rifiutati con `400`
+- i test AI coprono:
+  - app user chiama `/v1/ai/chat` e scrive usage + quota
+  - `/v1/ai/quota` ritorna quota corrente
+  - hard limit blocca prima della chiamata provider con `402`
+  - creator JWT rifiutato e modello non consentito bloccato
+- smoke test reale produzione `/v1/ai/chat`:
+  - `OPENROUTER_API_KEY` presente in produzione
+  - creator temporaneo `ai-smoke-*` creato
+  - tenant temporaneo creato
+  - quota minima inserita in `mc_ai_quotas`
+  - chiamata reale OpenRouter OK con modello `openai/gpt-4o-mini`
+  - costo registrato: `0.000007` crediti
+  - quota scalata e 1 row scritta in `mc_ai_usage`
+  - creator temporaneo rimosso dal DB produzione con cascade
 
 Attenzione test:
 - la suite integration fa `TRUNCATE` di molte tabelle.
@@ -183,10 +200,9 @@ Attenzione test:
 - Per generare `TEST_DATABASE_URL` sul server senza stampare segreti e' stato usato Node + dotenv leggendo `.env`.
 
 ## Prossimo passo consigliato
-1. Deployare e testare `/v1/ai/chat` su server con `OPENROUTER_TRANSPORT=mock`.
-2. Verificare se `OPENROUTER_API_KEY` e modelli consentiti sono gia' in `.env`; se mancano, configurarli.
-3. Fare smoke test reale OpenRouter su tenant temporaneo con quota minima.
-4. Poi build/distribuzione SDK e integrazione orchestrator che genera frontend usando solo `mellucode-sdk`.
+1. Decidere come il billing abilita/ricarica `mc_ai_quotas` per tenant.
+2. Configurare eventuale lista esplicita `OPENROUTER_ALLOWED_MODELS` se vogliamo limitare i modelli disponibili alle app generate.
+3. Build/distribuzione SDK e integrazione orchestrator che genera frontend usando solo `mellucode-sdk`.
 
 ## Note importanti
 - Non toccare `/opt/lococode-legacy`.
