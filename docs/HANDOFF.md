@@ -1,5 +1,71 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Claude Code — 2026-05-18 sera (Step 1 + Step 2 orchestrator)
+
+Stato attuale verificato:
+- branch: `mellucode-v2`
+- ultimo commit locale/remoto/server: `818a343` Step 2 orchestrator
+- commit precedente: `01a1b9d` Step 1 sector catalog + themes
+- **Deploy server completato** (pm2 restart OK, health OK)
+- **Smoke OpenRouter reale** OK su 4 settori diversi (vedi sotto)
+
+### Cosa e' stato fatto
+
+**Step 1 — Catalogo settori + temi visivi** (`01a1b9d`)
+
+Nuovo modulo `platform/api/src/orchestrator/`:
+- `themes.js` — 7 temi chiusi: `dark-electric, warm-amber, light-modern, navy-trust, editorial-rose, dark-cyan, sage-wellness`. Ogni tema ha id + vibe + esempi. Lista FROZEN: l'AI non puo' inventarne altri.
+- `sectors/_index.js` — registry + `getSector`, `listSectors`, `sectorsPromptList`, `inferSector(prompt)` deterministica (keyword soft con score pesato per significativita').
+- `sectors/{palestra,ristorante,negozio,studio-professionale,eventi,portfolio}.js` — 6 settori con 3-4 entita' core ognuno. Ogni entita' passa `validateEntityDef`. Theme hint per settore. Label italiani naturali, campi snake_case sensati (es. `subscription_until`, `photo_file_id`, `total_cents`).
+- `sectors.test.js` — 18 test: registry valido, ogni entita' di ogni settore passa la validation, inferenza keyword robusta, temi tutti validi.
+
+**Step 2 — Orchestrator smart** (`818a343`)
+
+`platform/api/src/utils/orchestrator.js`:
+- `buildSystemPrompt(context)` sostituisce la versione rigida. Ora include opzionalmente:
+  - `DESIGN_BRIEF_SHORT` distillato dal `docs/orchestrator-design-quality.md` (label naturali italiane, campi `*_file_id`/cover, enum status, niente `created_at/updated_at`, qualita' visiva = parte del valore).
+  - `THEMES_BLOCK` (lista 7 temi con vibe + esempi).
+  - `SECTORS_BLOCK` (catalogo settori come few-shot light: id + label + theme + sample keywords).
+  - `sectorHintBlock(sector)` quando il settore e' inferito: blocco "SETTORE INFERITO" con le prime 3 entita' del settore come ispirazione, non da copiare letteralmente.
+  - Default `buildSystemPrompt()` resta backwards-compatible (test storici passano).
+- `validateEntityDef` ora valida `metadata.theme` contro `THEME_IDS`. Theme vuoto/null tollerato. Invalid -> errore esplicito.
+- Nuova `pickThemeFromEntities(entities, fallback)`: pesca il primo theme valido dalle entita'.
+
+`platform/api/src/routes/tenants.js` route `POST /:id/generate-schema`:
+- **Pre-call**: `inferSector(prompt)` deterministica (keyword soft, no AI). Risultato passato come contesto a `buildSystemPrompt({sector})`.
+- **Post-call**: theme finale = `pickThemeFromEntities` ?? `sector.theme` ?? `"dark-electric"`.
+- **Update tenant.metadata**: `{...initialPrompt, sector, theme, schemaGeneratedAt}` (preserva i campi pre-esistenti).
+- **Response include** `{entities, created, sector, theme, errors}` cosi' la Console mostra anche settore/tema scelto.
+
+Tests:
+- `src/test/orchestrator.test.js` esteso: buildSystemPrompt(context) coverage (designBrief opt-out, themes opt-out, includeCatalog opt-out, sector hint inietta entita' di riferimento), pickThemeFromEntities 4 casi, metadata.theme accept/reject/null.
+- Locale: **107/107 PASS** (1 integration skip).
+
+### Smoke OpenRouter reale (deploy `818a343` su server)
+
+Eseguiti 4 case su gpt-4o-mini con prompt utente diversi:
+| Prompt | sector inferito | theme | created | entita' |
+|---|---|---|---|---|
+| "Pizzeria napoletana, voglio gestire menu, prenotazioni e tavoli" | `ristorante` | `warm-amber` | 3 | menu_items, tables, reservations |
+| "Studio legale: gestione clienti, pratiche e appuntamenti con fatture" | `studio-professionale` | `navy-trust` | 4 | clients, cases, appointments, invoices |
+| "E-commerce di abbigliamento: prodotti, categorie, ordini, clienti" | `negozio` | `light-modern` | 4 | products, categories, customers, orders |
+| "Portfolio di designer freelance con case study, testimonianze e contatti" | `portfolio` | `dark-cyan` | 3 | projects, testimonials, contacts |
+
+L'AI usa davvero gli schemi di riferimento — i nomi entita' sono identici o quasi a quelli del catalogo. Inoltre piazza i theme corretti nel `tenant.metadata`. Smoke creators sono stati cancellati a fine corsa.
+
+### Prossimo passo (Step 3a — pipeline template-based per il frontend)
+
+Approccio "Lovable-like": template fisso + token substitution + AI personalizza solo le sostituzioni (nome, palette, label, copy). Niente codegen puro di file React da zero — la qualita' UI viene dal template, l'AI fa solo personalizzazione vincolata. Vedi conversazione precedente per il razionale.
+
+Cosa serve in Step 3a:
+- Template generico parametrico (forkare `platform/templates/palestra` come base + tokenizzare i punti che variano).
+- Mapping `theme id → tailwind tokens` (ink + accent + glow + bg gradients).
+- Job server che: legge tenant + entita' + theme, forka template, sostituisce tokens, `npm install + npm run build`, copia in `/opt/mellucode/apps/{slug}/`, aggiorna nginx (location `/apps/{slug}/`).
+- Endpoint `POST /v1/tenants/:id/generate-frontend` (con coda async se serve, ma per MVP sincrono inline).
+- Console: bottone "Genera frontend" dopo aver generato lo schema.
+
+---
+
 ## Aggiornamento Claude Code - 2026-05-18 pomeriggio
 
 Stato attuale verificato:
