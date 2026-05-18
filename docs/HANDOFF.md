@@ -1,5 +1,77 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Claude Code - 2026-05-18 notte (piano CHAT MODIFICHE Lovable-style)
+
+Prossimo step: l'utente apre una chat sulla pagina app, scrive in linguaggio
+naturale "aggiungi campo email ai clienti" o "cambia tema in caldo", il sistema
+interpreta -> applica -> ri-builda async (riusa pipeline esistente).
+
+### Architettura prevista
+
+**DB nuova tabella `mc_app_revisions`** (migration 0007):
+- id, tenantId fk cascade, requestText (cosa ha chiesto l'utente)
+- interpretation jsonb (summary + actions decise dall'AI)
+- patchApplied jsonb (cosa e' stato realmente applicato; puo' essere subset)
+- buildId nullable (FK a mc_app_builds, opzionale: revisione potrebbe non scatenare build)
+- status (pending|interpreting|applied|failed|cancelled)
+- errorMessage, createdByUserId, createdAt
+- index su (tenant_id, created_at desc)
+
+**Orchestrator `revisionEngine.js`**:
+- `runRevision({tenant, requestText, ownerUserId, entities})`:
+  - Costruisce system prompt con: entita' attuali + tema attuale + lista azioni
+    possibili + design brief
+  - Chiama OpenRouter, ottiene JSON `{summary, actions[]}`
+  - Valida ogni action (entita' esiste, field esiste, theme valido)
+  - Applica in transazione DB:
+    - add_field / change_field / remove_field -> patch mc_app_entities.json_schema
+    - add_entity (via validateEntityDef esistente) / remove_entity
+    - change_theme -> patch tenant.metadata.theme
+    - update_prompt -> append a tenant.metadata.initialPrompt
+  - Crea revision row con status=applied
+  - Chiama enqueueBuild con skipSchema=true (riusa schema appena patchato)
+  - Ritorna {revision, build}
+- Throw con err.code (NO_TEXT, AI_UNAVAILABLE, AI_INVALID_RESPONSE, NO_VALID_ACTIONS, DB_FAILED)
+
+**3 endpoint REST** (in routes/tenants.js):
+- POST /v1/tenants/:id/revisions body: {requestText} -> 201 {revision, build}
+- GET  /v1/tenants/:id/revisions -> storia paginata
+- GET  /v1/tenants/:id/revisions/:rid -> dettaglio singolo
+
+**Console - card "Chat modifiche"** in AppDetailPage:
+- Lista messaggi storica (richiesta utente + summary AI)
+- Input "Cosa vuoi modificare?" + bottone Invia
+- On send: POST revisions -> mostra summary + lascia che il polling build
+  esistente (gia' implementato) faccia il resto
+- Quando il build ritorna succeeded: iframe preview si ricarica automaticamente
+
+### Actions supportate (MVP)
+1. `add_field` (entity, field def) - se esiste -> equivale a change_field
+2. `change_field` (entity, name, partial def)
+3. `remove_field` (entity, name)
+4. `add_entity` (entity def, validato da validateEntityDef)
+5. `remove_entity` (entity name) - cascade su records via FK
+6. `change_theme` (theme id, deve essere in THEMES)
+7. `update_prompt` (testo da aggiungere a initialPrompt per future)
+
+NON in MVP: rename_field/entity (richiede migrazione dati), reorder fields,
+permissions changes.
+
+### Sotto-step
+1. **DB**: schema + migration 0007 mc_app_revisions
+2. **revisionEngine**: AI call + validation + transaction apply
+3. **3 endpoint REST**
+4. **Console chat panel**
+5. **Test + smoke + deploy + commit**
+
+### Vincoli
+- L'utente non vede mai "errore JSON parse" o nomi tecnici: tutto microcopy
+  italiano umano.
+- Disciplina HANDOFF: aggiornare a ogni sotto-step.
+- Niente cancellazione field se contiene records (warn + chiede conferma).
+
+---
+
 ## Aggiornamento Claude Code - 2026-05-18 sera (build async DEPLOYATA + smoke OK)
 
 Pipeline asincrona schema→frontend con polling DEPLOYATA e VERIFICATA in produzione.
