@@ -49,6 +49,24 @@ function labelPlural(entity) {
   );
 }
 
+export function pickLayoutVariant({ tenant, entities = [] } = {}) {
+  const sector = String(tenant?.metadata?.sector || "").toLowerCase();
+  const names = entities.map((e) => String(e?.name || "").toLowerCase()).join(" ");
+  const labels = entities.map((e) => String(e?.label || "").toLowerCase()).join(" ");
+  const fields = entities
+    .flatMap((e) => Object.keys(e?.jsonSchema?.properties || e?.schema?.properties || {}))
+    .map((f) => String(f).toLowerCase())
+    .join(" ");
+  const haystack = `${sector} ${names} ${labels} ${fields}`;
+
+  if (/(negozio|catalogo|prodotti|ordini|carrello|ecommerce|shop|store|product)/.test(haystack)) return "commerce";
+  if (/(ristorante|menu|prenotazioni|tavoli|cucina|food|restaurant)/.test(haystack)) return "hospitality";
+  if (/(evento|eventi|ticket|biglietti|agenda|calendario|booking|prenotazioni|appointment|sessioni|corsi)/.test(haystack)) return "agenda";
+  if (/(portfolio|progetti|gallery|galleria|immagini|foto|articoli|blog|media|image|photo|file_id)/.test(haystack)) return "showcase";
+  if (/(studio|clienti|pazienti|fatture|preventivi|crm|ticket|gestionale|admin|dashboard|members|iscritti)/.test(haystack)) return "operations";
+  return "operations";
+}
+
 export function buildTemplateReplacements({ tenant, entities }) {
   const primary = pickPrimaryEntity(entities);
   const theme = isValidThemeId(tenant?.metadata?.theme)
@@ -71,6 +89,7 @@ export function buildTemplateReplacements({ tenant, entities }) {
     PRIMARY_ENTITY_NAME: safeTokenText(primary.name),
     PRIMARY_ENTITY_LABEL: safeTokenText(primary.label || primary.name),
     PRIMARY_ENTITY_LABEL_PLURAL: labelPlural(primary),
+    APP_LAYOUT: pickLayoutVariant({ tenant, entities }),
     ...themeReplaceMap(theme),
   };
 }
@@ -199,6 +218,7 @@ export async function buildGeneratedFrontend({ tenant, entities }) {
       url: `/apps/${slug}/`,
       slug,
       theme,
+      layout: replacements.APP_LAYOUT,
       primaryEntity: replacements.PRIMARY_ENTITY_NAME,
       buildMs: Date.now() - started,
     };

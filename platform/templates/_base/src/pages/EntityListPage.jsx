@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { AlertCircle, ArrowRight, Database, Loader2, Plus, Search, Sparkles } from "lucide-react";
-import { APP_NAME, APP_SUBTITLE, PRIMARY_ENTITY, PRIMARY_ENTITY_LABEL, PRIMARY_ENTITY_LABEL_PLURAL, mc, statusTone } from "../lib/api.js";
+import { APP_LAYOUT, APP_NAME, APP_SUBTITLE, PRIMARY_ENTITY, entityNewRoute, recordRoute, mc, statusTone } from "../lib/api.js";
 import Avatar from "../components/Avatar.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import StatusPill from "../components/StatusPill.jsx";
@@ -9,8 +9,9 @@ import { MemberCardSkeleton } from "../components/Skeleton.jsx";
 import { DisplayValue } from "../components/FieldRenderer.jsx";
 import { getFields, photoField, previewFields, primaryField, statusField } from "../lib/entityIntrospect.js";
 
-function pickPrimaryEntity(entities) {
-  return entities.find((e) => e.name === PRIMARY_ENTITY) ||
+function pickEntity(entities, entityName) {
+  return entities.find((e) => e.name === entityName) ||
+    entities.find((e) => e.name === PRIMARY_ENTITY) ||
     entities.find((e) => e.metadata?.primary) ||
     entities[0] ||
     null;
@@ -25,7 +26,7 @@ function RecordCard({ entity, fields, record }) {
   const title = titleField ? data[titleField.name] : record.id;
 
   return (
-    <Link to={`/r/${record.id}`} className="card surface-hover p-5 flex gap-4 group h-full">
+    <Link to={recordRoute(entity.name, record.id)} className="record-card card surface-hover p-5 flex gap-4 group h-full">
       <Avatar
         fileId={imageField ? data[imageField.name] : null}
         name={String(title || entity.label || APP_NAME)}
@@ -63,12 +64,13 @@ function RecordCard({ entity, fields, record }) {
 }
 
 export default function EntityListPage() {
+  const { entityName } = useParams();
   const [entities, setEntities] = useState(null);
   const [records, setRecords] = useState(null);
   const [error, setError] = useState(null);
   const [q, setQ] = useState("");
 
-  const entity = useMemo(() => entities ? pickPrimaryEntity(entities) : null, [entities]);
+  const entity = useMemo(() => entities ? pickEntity(entities, entityName) : null, [entities, entityName]);
   const fields = useMemo(() => getFields(entity), [entity]);
 
   async function load() {
@@ -78,7 +80,7 @@ export default function EntityListPage() {
       const nextEntities = entityRes.entities || [];
       setEntities(nextEntities);
 
-      const nextEntity = pickPrimaryEntity(nextEntities);
+      const nextEntity = pickEntity(nextEntities, entityName);
       if (!nextEntity) {
         setRecords([]);
         return;
@@ -91,7 +93,7 @@ export default function EntityListPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [entityName]);
 
   const filtered = useMemo(() => {
     if (!records) return null;
@@ -119,25 +121,25 @@ export default function EntityListPage() {
 
   return (
     <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-[2rem] border border-white/[0.06] bg-ink-900/65 p-6 sm:p-9 shadow-card">
+      <section className="app-hero relative overflow-hidden rounded-[2rem] border border-white/[0.06] bg-ink-900/65 p-6 sm:p-9 shadow-card">
         <div className="absolute inset-0 bg-grid opacity-25" />
         <div className="absolute -top-24 -right-16 w-80 h-80 bg-aurora-1 blur-[90px] opacity-80" />
         <div className="relative flex flex-col md:flex-row md:items-end md:justify-between gap-6">
           <div className="max-w-2xl">
             <p className="text-xs uppercase tracking-[0.18em] text-accent-300 font-medium mb-3">
-              {APP_NAME}
+              {APP_LAYOUT === "agenda" ? "Agenda operativa" : APP_LAYOUT === "commerce" ? "Catalogo e ordini" : APP_NAME}
             </p>
             <h1 className="text-gradient text-4xl sm:text-5xl leading-tight">
-              {PRIMARY_ENTITY_LABEL_PLURAL}
+              {entity?.metadata?.labelPlural || entity?.label || "Dati"}
             </h1>
             <p className="text-ink-300 mt-3 leading-relaxed">
-              {APP_SUBTITLE || `Gestisci ${PRIMARY_ENTITY_LABEL_PLURAL.toLowerCase()} in modo semplice, veloce e ordinato.`}
+              {APP_SUBTITLE || `Gestisci ${(entity?.label || "i dati").toLowerCase()} in modo semplice, veloce e ordinato.`}
             </p>
           </div>
           {entity && (
-            <Link to="/new" className="btn-primary btn-lg self-start md:self-end">
+            <Link to={entityNewRoute(entity.name)} className="btn-primary btn-lg self-start md:self-end">
               <Plus className="w-4 h-4" />
-              Nuovo {PRIMARY_ENTITY_LABEL.toLowerCase()}
+              Nuovo {(entity.label || "elemento").toLowerCase()}
             </Link>
           )}
         </div>
@@ -179,15 +181,15 @@ export default function EntityListPage() {
 
           {!loading && filtered?.length === 0 && (
             <EmptyState
-              title={q ? "Nessun risultato" : `Nessun ${PRIMARY_ENTITY_LABEL.toLowerCase()} ancora`}
+              title={q ? "Nessun risultato" : `Nessun ${(entity.label || "elemento").toLowerCase()} ancora`}
               description={q ? "Prova con un'altra ricerca." : "Aggiungi il primo elemento e inizia a usare l'app."}
-              cta={!q ? `Aggiungi ${PRIMARY_ENTITY_LABEL.toLowerCase()}` : null}
-              to={!q ? "/new" : null}
+              cta={!q ? `Aggiungi ${(entity.label || "elemento").toLowerCase()}` : null}
+              to={!q ? entityNewRoute(entity.name) : null}
             />
           )}
 
           {!loading && filtered?.length > 0 && (
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="records-grid grid md:grid-cols-2 gap-4">
               {filtered.map((record) => (
                 <RecordCard key={record.id} entity={entity} fields={fields} record={record} />
               ))}

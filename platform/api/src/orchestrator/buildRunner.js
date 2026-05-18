@@ -225,6 +225,7 @@ export async function runBuild(buildId, { ownerUserId, logger = console } = {}) 
         generatedAt: new Date().toISOString(),
         buildMs: buildResult.buildMs,
         theme: buildResult.theme,
+        layout: buildResult.layout,
         primaryEntity: buildResult.primaryEntity,
       },
     };

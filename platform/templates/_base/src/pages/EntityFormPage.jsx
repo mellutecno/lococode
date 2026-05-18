@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AlertCircle, ArrowLeft, Loader2, Save } from "lucide-react";
-import { PRIMARY_ENTITY, PRIMARY_ENTITY_LABEL, mc } from "../lib/api.js";
+import { PRIMARY_ENTITY, entityRoute, recordRoute, mc } from "../lib/api.js";
 import { FieldInput } from "../components/FieldRenderer.jsx";
 import { cleanPayload, getFields, inputValue } from "../lib/entityIntrospect.js";
 
-function pickPrimaryEntity(entities) {
-  return entities.find((e) => e.name === PRIMARY_ENTITY) ||
+function pickEntity(entities, entityName) {
+  return entities.find((e) => e.name === entityName) ||
+    entities.find((e) => e.name === PRIMARY_ENTITY) ||
     entities.find((e) => e.metadata?.primary) ||
     entities[0] ||
     null;
@@ -20,7 +21,7 @@ function buildInitialValues(fields, record) {
 }
 
 export default function EntityFormPage() {
-  const { id } = useParams();
+  const { entityName, id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
 
@@ -38,7 +39,7 @@ export default function EntityFormPage() {
     setError(null);
     try {
       const entityRes = await mc.entities.list();
-      const nextEntity = pickPrimaryEntity(entityRes.entities || []);
+      const nextEntity = pickEntity(entityRes.entities || [], entityName);
       if (!nextEntity) throw new Error("Schema dati non disponibile.");
       setEntity(nextEntity);
 
@@ -57,7 +58,7 @@ export default function EntityFormPage() {
     }
   }
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => { load(); }, [entityName, id]);
 
   function updateField(name, value) {
     setValues((prev) => ({ ...prev, [name]: value }));
@@ -73,7 +74,7 @@ export default function EntityFormPage() {
       const res = isEdit
         ? await mc.data(entity.name).update(id, payload)
         : await mc.data(entity.name).create(payload);
-      navigate(`/r/${res.record.id}`, { replace: true });
+      navigate(recordRoute(entity.name, res.record.id), { replace: true });
     } catch (err) {
       setError(err.message || "Salvataggio non riuscito.");
     } finally {
@@ -107,7 +108,7 @@ export default function EntityFormPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      <Link to={isEdit ? `/r/${id}` : "/"} className="inline-flex items-center gap-1.5 text-sm text-ink-400 hover:text-ink-100 transition">
+      <Link to={isEdit ? recordRoute(entity?.name || entityName || PRIMARY_ENTITY, id) : entityRoute(entity?.name || entityName || PRIMARY_ENTITY)} className="inline-flex items-center gap-1.5 text-sm text-ink-400 hover:text-ink-100 transition">
         <ArrowLeft className="w-3.5 h-3.5" />
         Indietro
       </Link>
@@ -117,7 +118,7 @@ export default function EntityFormPage() {
           <p className="text-xs uppercase tracking-[0.18em] text-accent-300 font-medium mb-2">
             {isEdit ? "Modifica" : "Nuovo"}
           </p>
-          <h1>{isEdit ? `Modifica ${PRIMARY_ENTITY_LABEL.toLowerCase()}` : `Aggiungi ${PRIMARY_ENTITY_LABEL.toLowerCase()}`}</h1>
+          <h1>{isEdit ? `Modifica ${(entity?.label || "elemento").toLowerCase()}` : `Aggiungi ${(entity?.label || "elemento").toLowerCase()}`}</h1>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -141,7 +142,7 @@ export default function EntityFormPage() {
           )}
 
           <div className="pt-3 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
-            <Link to={isEdit ? `/r/${record?.id || id}` : "/"} className="btn-ghost">
+            <Link to={isEdit ? recordRoute(entity.name, record?.id || id) : entityRoute(entity.name)} className="btn-ghost">
               Annulla
             </Link>
             <button type="submit" className="btn-primary" disabled={saving}>

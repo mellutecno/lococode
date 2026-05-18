@@ -3,8 +3,8 @@
 Template React generico usato dal frontendBuilder di MelluCode.
 
 Non e' una demo palestra e non contiene logica di settore hardcoded: legge lo
-schema dinamico dal backend MelluCode e costruisce lista, dettaglio e form della
-primary entity scelta dall'orchestrator.
+schema dinamico dal backend MelluCode e costruisce lista, dettaglio e form per
+tutte le entita' generate dall'orchestrator.
 
 ## Token sostituiti dal builder
 
@@ -15,16 +15,19 @@ primary entity scelta dall'orchestrator.
 - `__PRIMARY_ENTITY_NAME__`
 - `__PRIMARY_ENTITY_LABEL__`
 - `__PRIMARY_ENTITY_LABEL_PLURAL__`
+- `__APP_LAYOUT__` (operations, agenda, commerce, hospitality, showcase)
 - `__THEME_*__` per palette, font, glow e background
 
 ## Funzionalita'
 
 - login utente dell'app via `mc.auth.login`
 - lettura schema con `mc.entities.list`
-- lista record della primary entity
+- navigazione fra tutte le entita' generate
+- lista record per ogni entita'
 - creazione, modifica, dettaglio ed eliminazione record
 - upload e anteprima immagini/file con `mc.files`
 - rendering automatico campi string, textarea, enum, boolean, number, date e JSON
+- varianti layout per ridurre l'effetto "tutte uguali"
 
 ## Sviluppo locale
 

@@ -7,6 +7,7 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-must-be-at-least
 const {
   applyTemplateTokens,
   buildTemplateReplacements,
+  pickLayoutVariant,
   pickPrimaryEntity,
 } = await import("./frontendBuilder.js");
 
@@ -38,8 +39,26 @@ test("buildTemplateReplacements prepara path, tema e label principali", () => {
   assert.equal(replacements.BASE_PATH, "/apps/studio-mellucci/");
   assert.equal(replacements.PRIMARY_ENTITY_NAME, "patients");
   assert.equal(replacements.PRIMARY_ENTITY_LABEL_PLURAL, "Pazienti");
+  assert.equal(replacements.APP_LAYOUT, "operations");
   assert.equal(replacements.THEME_BASE, "light");
   assert.ok(replacements.THEME_ACCENT_500);
+});
+
+test("pickLayoutVariant sceglie varianti diverse in base al dominio", () => {
+  assert.equal(pickLayoutVariant({
+    tenant: { metadata: { sector: "ristorante" } },
+    entities: [{ name: "bookings", label: "Prenotazioni" }],
+  }), "hospitality");
+
+  assert.equal(pickLayoutVariant({
+    tenant: { metadata: {} },
+    entities: [{ name: "products", label: "Prodotti" }, { name: "orders", label: "Ordini" }],
+  }), "commerce");
+
+  assert.equal(pickLayoutVariant({
+    tenant: { metadata: {} },
+    entities: [{ name: "course_sessions", label: "Sessioni corsi" }],
+  }), "agenda");
 });
 
 test("applyTemplateTokens sostituisce i token del template", () => {

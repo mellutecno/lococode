@@ -9,6 +9,33 @@ export const TENANT_SLUG = "__TENANT_SLUG__";
 export const PRIMARY_ENTITY = "__PRIMARY_ENTITY_NAME__";
 export const PRIMARY_ENTITY_LABEL = "__PRIMARY_ENTITY_LABEL__";
 export const PRIMARY_ENTITY_LABEL_PLURAL = "__PRIMARY_ENTITY_LABEL_PLURAL__";
+export const APP_LAYOUT = "__APP_LAYOUT__";
+
+export function entityRoute(entityName = PRIMARY_ENTITY) {
+  const encoded = encodeURIComponent(entityName || PRIMARY_ENTITY);
+  return entityName === PRIMARY_ENTITY ? "/" : `/e/${encoded}`;
+}
+
+export function entityNewRoute(entityName = PRIMARY_ENTITY) {
+  const encoded = encodeURIComponent(entityName || PRIMARY_ENTITY);
+  return entityName === PRIMARY_ENTITY ? "/new" : `/e/${encoded}/new`;
+}
+
+export function recordRoute(entityName = PRIMARY_ENTITY, recordId) {
+  const encodedEntity = encodeURIComponent(entityName || PRIMARY_ENTITY);
+  const encodedRecord = encodeURIComponent(recordId);
+  return entityName === PRIMARY_ENTITY
+    ? `/r/${encodedRecord}`
+    : `/e/${encodedEntity}/r/${encodedRecord}`;
+}
+
+export function recordEditRoute(entityName = PRIMARY_ENTITY, recordId) {
+  const encodedEntity = encodeURIComponent(entityName || PRIMARY_ENTITY);
+  const encodedRecord = encodeURIComponent(recordId);
+  return entityName === PRIMARY_ENTITY
+    ? `/r/${encodedRecord}/edit`
+    : `/e/${encodedEntity}/r/${encodedRecord}/edit`;
+}
 
 export const mc = new MelluCode({
   apiUrl: "",

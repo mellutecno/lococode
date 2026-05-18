@@ -1,5 +1,59 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Codex - 2026-05-18 notte (template generato meno povero: multi-entita' + layout)
+
+Antonio e' molto frustrato perche' le app generate sembrano tutte uguali e
+troppo povere. Ho scelto un intervento pragmatico prima del codegen React
+totale: far usare davvero tutte le entita' generate da Opus e introdurre
+varianti layout controllate nel template `_base`.
+
+### Cosa e' cambiato
+- Il builder ora calcola `APP_LAYOUT` con `pickLayoutVariant()` in base a
+  settore, nomi entita', label e campi:
+  - `operations`
+  - `agenda`
+  - `commerce`
+  - `hospitality`
+  - `showcase`
+- `frontendBuilder` passa `__APP_LAYOUT__` al template e salva `layout` in
+  `tenant.metadata.frontend`.
+- Il template `_base` non mostra piu' solo la primary entity:
+  - TopBar con navigazione fra tutte le entita' generate;
+  - route nuove:
+    - `/e/:entityName`
+    - `/e/:entityName/new`
+    - `/e/:entityName/r/:id`
+    - `/e/:entityName/r/:id/edit`
+  - route storiche `/`, `/new`, `/r/:id` restano per la primary entity.
+- `EntityListPage`, `EntityFormPage`, `EntityDetailPage` ora scelgono
+  l'entita' dal parametro URL, con fallback alla primary.
+- Form/input del template resi piu' leggibili:
+  - input/select/textarea ora sono chiari con testo scuro ad alto contrasto;
+  - evita il problema segnalato "scuro su scuro / verde su verde".
+- CSS layout variants:
+  - `agenda`: lista piu' verticale, card con accento laterale;
+  - `commerce`/`showcase`: griglia piu' visuale a 3 colonne desktop;
+  - `hospitality`: hero piu' caldo/ambientato;
+  - `operations`: default gestionale.
+
+### Verifiche
+- `npm test` in `platform/api`: 131 pass, 1 skip, 0 fail.
+- Build reale del template generato con app smoke palestra multi-entita':
+  `buildGeneratedFrontend()` OK, layout scelto `agenda`, output
+  `/apps/smoke-palestra/`.
+
+### Limite ancora presente
+Questo NON e' ancora codegen Lovable vero: e' un template piu' intelligente e
+multi-entita'. Il salto successivo resta:
+
+`brief -> schema -> codegen frontend specifico -> npm build -> retry AI su errore -> deploy`
+
+ma questo step riduce subito il problema piu' grave: Opus puo' generare 5-8
+entita' e l'app ora le rende navigabili, invece di nasconderle dietro una sola
+tabella primaria.
+
+---
+
 ## Aggiornamento Codex - 2026-05-18 sera (riallineamento dopo sessione Claude Code)
 
 Ho verificato il lavoro lasciato da Claude Code e il tentativo di aggiornare

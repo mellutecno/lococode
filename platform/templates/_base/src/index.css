@@ -77,6 +77,13 @@ body {
     box-shadow: theme('boxShadow.card-hover');
   }
 
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* ---------- Bottoni ---------- */
   .btn {
     @apply inline-flex items-center justify-center gap-2 px-4 h-10 rounded-xl
@@ -118,10 +125,11 @@ body {
   .input,
   .select,
   .textarea {
-    @apply w-full h-10 rounded-xl bg-ink-900/60 border border-white/[0.08]
-           px-3.5 text-sm text-zinc-100 placeholder:text-zinc-500
+    @apply w-full h-11 rounded-xl bg-white border border-white/20
+           px-3.5 text-sm text-zinc-950 placeholder:text-zinc-500
            focus:outline-none focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20
            transition-all duration-200;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.65) inset, 0 18px 45px -34px rgba(0,0,0,0.75);
   }
   .textarea { @apply h-auto min-h-[96px] py-2.5 leading-relaxed; }
   .select   { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238a8aa3' d='M6 8 0 0h12z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 2.5rem; }
@@ -199,5 +207,37 @@ body {
   }
   .ring-soft {
     box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+  }
+
+  .app-layout-agenda .app-hero {
+    @apply bg-ink-900/80;
+  }
+  .app-layout-agenda .records-grid {
+    @apply md:grid-cols-1;
+  }
+  .app-layout-agenda .record-card {
+    @apply border-l-4 border-l-accent-400;
+  }
+
+  .app-layout-commerce .app-hero {
+    @apply bg-white/[0.08];
+  }
+  .app-layout-commerce .records-grid,
+  .app-layout-showcase .records-grid {
+    @apply md:grid-cols-3;
+  }
+  .app-layout-commerce .record-card,
+  .app-layout-showcase .record-card {
+    @apply flex-col;
+  }
+
+  .app-layout-hospitality .app-hero {
+    background:
+      radial-gradient(60% 90% at 10% 20%, color-mix(in srgb, theme('colors.accent.500') 28%, transparent), transparent 60%),
+      linear-gradient(135deg, color-mix(in srgb, theme('colors.ink.900') 88%, #2b1608), theme('colors.ink.950'));
+  }
+
+  .app-layout-showcase .app-hero {
+    @apply min-h-[18rem] flex items-end;
   }
 }
