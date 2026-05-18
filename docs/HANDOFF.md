@@ -1,5 +1,75 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Claude Code — 2026-05-18 notte (Inizio Step 3a — pipeline template-based)
+
+Sto per partire con **Step 3a**: pipeline template-based per la generazione frontend delle app. Approccio Lovable-like: template parametrico fisso + token substitution + AI personalizza solo le sostituzioni (palette, nome app, label primarie). Niente codegen puro di file React da zero.
+
+### Piano Step 3a (sotto-step da committare separatamente)
+
+Per ogni sotto-step: codice + test locali + commit + push. Deploy server e nginx solo nei sotto-step che lo richiedono.
+
+1. **Theme palette mapping** — `platform/api/src/orchestrator/themePalettes.js`
+   - Per ognuno dei 7 temi (`dark-electric`, `warm-amber`, `light-modern`, `navy-trust`, `editorial-rose`, `dark-cyan`, `sage-wellness`): definire i valori Tailwind reali — `ink` scale 100/200/.../950, `accent` scale 50/100/.../900, shadow `glow-sm/glow/glow-lg`, gradients di sfondo, eventuali font hint (es. serif per editorial-rose).
+   - Helper `themePalette(id)` ritorna l'oggetto completo, `themeTailwindConfig(id)` ritorna una stringa di config Tailwind sostituibile nel template.
+   - Test unit: ogni tema esporta tutte le scale richieste, helpers ritornano valori.
+
+2. **Template parametrico** — `platform/templates/_base/`
+   - Fork di `platform/templates/palestra/` con i punti che variano TOKENIZZATI:
+     - `__APP_NAME__` (es. "Palestra Demo", "Gelateria Mario")
+     - `__APP_SUBTITLE__` (es. "Membri e abbonamenti", "Gusti e fornitori")
+     - `__TENANT_SLUG__` (es. "palestra-demo")
+     - `__BASE_PATH__` (es. "/apps/palestra-demo/")
+     - `__PRIMARY_ENTITY_NAME__` + `__PRIMARY_ENTITY_LABEL__` (snake_case + label)
+     - palette tokens: tutto in `tailwind.config.js` rimpiazzabile via stringa
+   - Test del template "as-is" con valori dummy: build deve passare.
+   - Niente entita' hardcoded come "members" — tutto generico, pagine "list/detail/form" della primary entity.
+
+3. **Builder server-side** — `platform/api/src/orchestrator/frontendBuilder.js`
+   - Input: `{ tenant, entities, theme, paths }`.
+   - Pipeline: copia `_base/` in `/tmp/build-{tenantId}-{ts}/` → sostituisci tutti i token nei file (con whitelist estensioni) → `npm install --production --silent` → `vite build` → copia `dist/*` in `/opt/mellucode/apps/{slug}/` → cleanup tmpdir.
+   - Gestione errori: se `npm install` o `vite build` falliscono, propagare errore strutturato + log su `mc_app_files` come "build_log" o tabella nuova.
+   - Test: con un template `_base/` valido e tenant fake, builder genera dist in target dir.
+
+4. **Endpoint** `POST /v1/tenants/:id/generate-frontend`
+   - Auth: creator-owner del tenant (come generate-schema).
+   - Verifica che ci siano entita' (`mc_app_entities` count > 0). Se no, 400 "Genera prima lo schema".
+   - Chiama frontendBuilder. Sincrono inline per MVP (per build veloci <60s). Async + job queue se diventa lento.
+   - Response: `{ url: "/apps/<slug>/", buildMs, theme, primaryEntity }`.
+   - Update `tenant.metadata.frontendDeployedAt`.
+
+5. **Nginx** — aggiungi location dinamica
+   - `location ~ ^/apps/([a-z0-9-]+)/ { alias /opt/mellucode/apps/$1/; try_files $uri $uri/ /apps/$1/index.html; }`
+   - `location ~ ^/apps/([a-z0-9-]+)/assets/` con cache 1y.
+   - Backup vhost pre-modifica come al solito.
+
+6. **Console** — bottone "Genera frontend" + link
+   - In `AppDetailPage.jsx` aggiungere card "Frontend" dopo "Schema AI" che mostra:
+     - Se non generato: bottone "Genera frontend" che chiama l'endpoint, mostra loading durante il build (~30-60s).
+     - Se generato: link "Apri l'app" verso `/apps/{slug}/` + bottone "Rigenera".
+   - `lib/api.js`: aggiungere `tenants.generateFrontend(id)`.
+
+### Cosa NON entra in Step 3a (rimandato a Step 3b)
+- Codegen AI di componenti React custom oltre al template
+- Edit "in-place" delle app generate (Fase 3 architecture)
+- Multi-template selection (per ora UN template `_base/` per tutti)
+- Deploy con SSL custom domain per app
+
+### Vincoli da rispettare
+- Qualita' premium UI (regola memoria): il template `_base/` parte dal palestra refactor premium, NON regredire.
+- Backend MelluCode invariato — l'app generata usa solo `mc.*` SDK come il palestra demo.
+- Storage isolato per tenant (gia' funzionante via `mc_app_files`).
+
+### Stato corrente
+- Backend Fase 1: completo (auth/tenants/data/files/email/ai).
+- Orchestrator Step 1+2: completo (catalogo settori + smart prompt + theme).
+- Bias palestra: fixato (commit `7a115be`).
+- Manca: Step 3a (questo), Step 3b (codegen avanzato), billing tenants.
+
+### Prossimo sotto-step
+Sotto-step 1 (theme palette mapping). Niente cambiamenti server in questo commit, solo file nuovi sotto `platform/api/src/orchestrator/themePalettes.js` + test.
+
+---
+
 ## Aggiornamento Claude Code — 2026-05-18 notte (Fix bias palestra)
 
 Commit: `7a115be` Fix orchestrator bias verso palestra: keyword cleanup + threshold + stem IT.
