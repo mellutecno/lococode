@@ -33,6 +33,13 @@ export const config = {
     origins: opt("CORS_ORIGINS", "*").split(",").map(s => s.trim()).filter(Boolean),
   },
 
+  admin: {
+    emails: opt("ADMIN_EMAILS", "mellucciantonio@gmail.com")
+      .split(",")
+      .map(s => s.trim().toLowerCase())
+      .filter(Boolean),
+  },
+
   storage: {
     // STORAGE_DIR e' relativo o assoluto; resolveStoragePath() lo normalizza.
     // In dev: ./storage (gitignored). In prod: /opt/mellucode/storage.

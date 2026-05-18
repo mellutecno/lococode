@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Routes, Route, Link, Navigate, useNavigate, useLocation } from "react-router-dom";
-import { LogOut, LayoutGrid, Loader2 } from "lucide-react";
+import { LogOut, LayoutGrid, Loader2, Shield } from "lucide-react";
 import { auth, getAccessToken, clearTokens } from "./lib/api.js";
 import Logo from "./components/Logo.jsx";
 import PageBackground from "./components/PageBackground.jsx";
@@ -9,6 +9,7 @@ import { ToastProvider } from "./components/Toast.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import AppsDashboardPage from "./pages/AppsDashboardPage.jsx";
 import AppDetailPage from "./pages/AppDetailPage.jsx";
+import AdminPage from "./pages/AdminPage.jsx";
 
 function useAuth() {
   const [user, setUser] = useState(null);
@@ -45,6 +46,11 @@ function TopBar({ user, onLogout }) {
           <Link to="/" className="btn-ghost btn-sm">
             <LayoutGrid className="w-3.5 h-3.5" /> Le tue app
           </Link>
+          {user?.role === "admin" && (
+            <Link to="/admin" className="btn-ghost btn-sm">
+              <Shield className="w-3.5 h-3.5" /> Admin
+            </Link>
+          )}
         </nav>
         <div className="flex-1" />
         {user && (
@@ -111,6 +117,11 @@ export default function App() {
             <Route path="/app/:slug" element={
               <RequireAuth user={user} loading={loading}>
                 <AppDetailPage />
+              </RequireAuth>
+            } />
+            <Route path="/admin" element={
+              <RequireAuth user={user} loading={loading}>
+                <AdminPage user={user} />
               </RequireAuth>
             } />
             <Route path="*" element={<Navigate to="/" replace />} />

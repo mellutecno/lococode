@@ -1,5 +1,52 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Codex - 2026-05-18 (Area Admin piattaforma)
+
+Stato dopo questo giro:
+- Branch: `mellucode-v2`
+- Obiettivo: aggiungere una vera **area amministratore MelluCode** separata dagli utenti creator normali.
+- Admin previsto da Antonio: `mellucciantonio@gmail.com`.
+- File sensibile non tracciato: `deploy.py` resta fuori dal commit perche' contiene credenziali in chiaro.
+
+### Fatto
+- Backend:
+  - aggiunta config `ADMIN_EMAILS` con fallback `mellucciantonio@gmail.com`;
+  - aggiunto helper `platform/api/src/utils/platformAdmin.js`;
+  - registrazione/login/refresh/me promuovono automaticamente a `role="admin"` le email presenti in `ADMIN_EMAILS`;
+  - aggiunta route `platform/api/src/routes/admin.js` sotto `/v1/admin/*`;
+  - registrata route admin in `platform/api/src/app.js`.
+- Endpoint admin implementati:
+  - `GET /v1/admin/users` — lista utenti creator MelluCode con conteggio app;
+  - `DELETE /v1/admin/users/:id` — elimina utente e tutte le sue app/tenant, bloccando l'eliminazione del proprio account admin;
+  - `POST /v1/admin/users/:id/email` — invia email all'indirizzo con cui l'utente si e' registrato, usando SMTP server;
+  - `GET /v1/admin/tenants` — lista globale di tutte le app con owner;
+  - `DELETE /v1/admin/tenants/:id` — elimina una qualsiasi app e prova a rimuovere anche i file su disco.
+- Console:
+  - aggiunta pagina `platform/console/src/pages/AdminPage.jsx`;
+  - aggiunta voce `Admin` in topbar visibile solo se `user.role === "admin"`;
+  - aggiunto client `admin` in `platform/console/src/lib/api.js`;
+  - la pagina admin mostra utenti, app, ricerca, invio email, eliminazione utenti/app.
+- Test:
+  - aggiunti test integration per `/v1/admin` (girano solo con `TEST_DATABASE_URL`);
+  - `npm test` API senza DB: PASS (integration skip come previsto);
+  - `npm run build` Console: PASS.
+
+### Note operative
+- In produzione va garantito in `.env`:
+  - `ADMIN_EMAILS=mellucciantonio@gmail.com`
+- Se l'utente admin esiste gia', dopo deploy si puo' promuovere con:
+  - `UPDATE mc_users SET role='admin', updated_at=now() WHERE email='mellucciantonio@gmail.com';`
+- L'admin Console e' un MVP tecnico: non ha ancora filtri avanzati, paginazione UI, template email o storico comunicazioni dedicato. Le azioni vengono comunque protette e audit-loggate lato API.
+
+### Prossimo passo consigliato
+Riprendere la pipeline Lovable-style:
+1. `platform/api/src/orchestrator/frontendBuilder.js`
+2. `POST /v1/tenants/:id/generate-frontend`
+3. pubblicazione in `/opt/mellucode/apps/{slug}/`
+4. bottone Console "Genera frontend" / "Apri app".
+
+---
+
 ## Aggiornamento Codex - 2026-05-18 (Sotto-step 2 completato + Console modal hardening)
 
 Stato dopo questo giro:

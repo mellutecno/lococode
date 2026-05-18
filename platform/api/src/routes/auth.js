@@ -8,6 +8,7 @@ import { db, schema } from "../db/index.js";
 import { hashPassword, verifyPassword, generateToken, hashToken } from "../utils/hash.js";
 import { config } from "../config.js";
 import { normalizeEmail } from "../utils/normalize.js";
+import { creatorRoleForEmail, ensurePlatformAdminRole } from "../utils/platformAdmin.js";
 
 // Helper: salva audit log senza far crashare la request se fallisce.
 async function audit(req, event, userId, details = {}) {
@@ -94,7 +95,7 @@ export default async function authRoutes(fastify) {
       try {
         const rows = await db
           .insert(schema.mcUsers)
-          .values({ email, passwordHash, name: name?.trim() || null })
+          .values({ email, passwordHash, name: name?.trim() || null, role: creatorRoleForEmail(email) })
           .returning();
         inserted = rows[0];
       } catch (err) {
@@ -159,12 +160,13 @@ export default async function authRoutes(fastify) {
         return reply.code(401).send({ error: "Credenziali non valide." });
       }
 
-      const access = issueAccessToken(fastify, user);
-      const refresh = await issueRefreshToken(user.id, req);
-      await audit(req, "login.success", user.id);
+      const activeUser = await ensurePlatformAdminRole(user);
+      const access = issueAccessToken(fastify, activeUser);
+      const refresh = await issueRefreshToken(activeUser.id, req);
+      await audit(req, "login.success", activeUser.id);
 
       return reply.send({
-        user: publicUser(user),
+        user: publicUser(activeUser),
         accessToken: access,
         refreshToken: refresh.token,
         refreshTokenExpiresAt: refresh.expiresAt,
@@ -213,9 +215,10 @@ export default async function authRoutes(fastify) {
       const user = userRows[0];
       if (!user) return reply.code(401).send({ error: "Utente non trovato." });
 
-      const access = issueAccessToken(fastify, user);
-      const refresh = await issueRefreshToken(user.id, req);
-      await audit(req, "refresh.success", user.id);
+      const activeUser = await ensurePlatformAdminRole(user);
+      const access = issueAccessToken(fastify, activeUser);
+      const refresh = await issueRefreshToken(activeUser.id, req);
+      await audit(req, "refresh.success", activeUser.id);
 
       return reply.send({
         accessToken: access,
@@ -263,7 +266,7 @@ export default async function authRoutes(fastify) {
         .limit(1);
       const user = rows[0];
       if (!user) return reply.code(404).send({ error: "Utente non trovato." });
-      return reply.send({ user: publicUser(user) });
+      return reply.send({ user: publicUser(await ensurePlatformAdminRole(user)) });
     }
   );
 }

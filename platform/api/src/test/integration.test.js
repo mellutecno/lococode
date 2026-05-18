@@ -32,6 +32,7 @@ if (!TEST_DB) {
   // Email test-safe: Nodemailer produce JSON, non apre connessioni SMTP reali.
   process.env.SMTP_TRANSPORT = "json";
   process.env.SMTP_FROM = "noreply@test.mellucode.local";
+  process.env.ADMIN_EMAILS = "admin@test.local,mellucciantonio@gmail.com";
   // AI test-safe: niente chiamate reali a OpenRouter, ma quota/log reali su DB.
   process.env.OPENROUTER_TRANSPORT = "mock";
   process.env.OPENROUTER_DEFAULT_MODEL = "test/model";
@@ -1357,6 +1358,117 @@ if (!TEST_DB) {
       });
       assert.equal(model.statusCode, 400);
       assert.match(model.json().error, /Modello AI non abilitato/);
+    });
+  });
+
+  // ================================================================
+  // /v1/admin
+  // ================================================================
+  describe("/v1/admin", () => {
+    async function registerPlatformAdmin() {
+      const res = await app.inject({
+        method: "POST",
+        url: "/v1/auth/register",
+        payload: { email: "admin@test.local", password: "AdminPass1!", name: "Platform Admin" },
+      });
+      assert.equal(res.statusCode, 201);
+      assert.equal(res.json().user.role, "admin");
+      return res.json();
+    }
+
+    test("admin email gets admin role and can list users", async () => {
+      const admin = await registerPlatformAdmin();
+      const normal = await registerCreator();
+      assert.equal(normal.res.json().user.role, "user");
+
+      const res = await app.inject({
+        method: "GET",
+        url: "/v1/admin/users",
+        headers: bearer(admin.accessToken),
+      });
+
+      assert.equal(res.statusCode, 200);
+      const emails = res.json().users.map((u) => u.email);
+      assert.ok(emails.includes("admin@test.local"));
+      assert.ok(emails.includes(normal.body.email));
+    });
+
+    test("non-admin creator cannot use admin routes", async () => {
+      const normal = await registerCreator();
+      const res = await app.inject({
+        method: "GET",
+        url: "/v1/admin/users",
+        headers: bearer(normal.res.json().accessToken),
+      });
+      assert.equal(res.statusCode, 403);
+    });
+
+    test("admin can list and delete any tenant", async () => {
+      const admin = await registerPlatformAdmin();
+      const owner = await registerCreator();
+      const tenant = (await createTenant(owner.res.json().accessToken)).res.json().tenant;
+
+      const list = await app.inject({
+        method: "GET",
+        url: "/v1/admin/tenants",
+        headers: bearer(admin.accessToken),
+      });
+      assert.equal(list.statusCode, 200);
+      assert.ok(list.json().tenants.some((t) => t.id === tenant.id && t.owner.email === owner.body.email));
+
+      const del = await app.inject({
+        method: "DELETE",
+        url: `/v1/admin/tenants/${tenant.id}`,
+        headers: bearer(admin.accessToken),
+      });
+      assert.equal(del.statusCode, 204);
+
+      const after = await db
+        .select()
+        .from(schema.mcTenants)
+        .where(eq(schema.mcTenants.id, tenant.id));
+      assert.equal(after.length, 0);
+    });
+
+    test("admin can email and delete a user, but cannot delete self", async () => {
+      const admin = await registerPlatformAdmin();
+      const user = await registerCreator();
+      await createTenant(user.res.json().accessToken);
+
+      const mail = await app.inject({
+        method: "POST",
+        url: `/v1/admin/users/${user.res.json().user.id}/email`,
+        headers: bearer(admin.accessToken),
+        payload: { subject: "Aggiornamento MelluCode", text: "Ciao, ti scrivo dalla console admin." },
+      });
+      assert.equal(mail.statusCode, 200);
+      assert.equal(mail.json().ok, true);
+
+      const selfDelete = await app.inject({
+        method: "DELETE",
+        url: `/v1/admin/users/${admin.user.id}`,
+        headers: bearer(admin.accessToken),
+      });
+      assert.equal(selfDelete.statusCode, 400);
+
+      const del = await app.inject({
+        method: "DELETE",
+        url: `/v1/admin/users/${user.res.json().user.id}`,
+        headers: bearer(admin.accessToken),
+      });
+      assert.equal(del.statusCode, 204);
+
+      const users = await db
+        .select()
+        .from(schema.mcUsers)
+        .where(eq(schema.mcUsers.id, user.res.json().user.id));
+      assert.equal(users.length, 0);
+
+      const tenants = await db
+        .select()
+        .from(schema.mcTenants)
+        .where(eq(schema.mcTenants.ownerUserId, user.res.json().user.id));
+      assert.equal(tenants.length, 0);
     });
   });
 }

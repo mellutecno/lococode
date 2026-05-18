@@ -149,6 +149,25 @@ export const tenants = {
   },
 };
 
+// ---- Platform Admin API ----
+export const admin = {
+  users() {
+    return request("/v1/admin/users");
+  },
+  deleteUser(id) {
+    return request(`/v1/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+  sendUserEmail(id, payload) {
+    return request(`/v1/admin/users/${encodeURIComponent(id)}/email`, { method: "POST", body: payload });
+  },
+  tenants() {
+    return request("/v1/admin/tenants");
+  },
+  deleteTenant(id) {
+    return request(`/v1/admin/tenants/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
+};
+
 // ---- Utility ----
 export function tenantUrl(slug) {
   // Le app generate vivranno su /apps/{slug}/ (Fase 2). Per ora la palestra
