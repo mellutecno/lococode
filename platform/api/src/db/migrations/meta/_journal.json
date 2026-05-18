@@ -36,6 +36,13 @@
       "when": 1779065545811,
       "tag": "0004_previous_fat_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779069897945,
+      "tag": "0005_quiet_hannibal_king",
+      "breakpoints": true
     }
   ]
 }

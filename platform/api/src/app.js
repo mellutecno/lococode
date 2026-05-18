@@ -14,6 +14,7 @@ import appAuthRoutes from "./routes/appAuth.js";
 import dataRoutes from "./routes/data.js";
 import filesRoutes from "./routes/files.js";
 import emailRoutes from "./routes/email.js";
+import aiRoutes from "./routes/ai.js";
 
 export async function buildApp(opts = {}) {
   const loggerOpt = opts.logger !== undefined
@@ -54,6 +55,7 @@ export async function buildApp(opts = {}) {
   await app.register(dataRoutes, { prefix: "/v1/data" });
   await app.register(filesRoutes, { prefix: "/v1/files" });
   await app.register(emailRoutes, { prefix: "/v1/email" });
+  await app.register(aiRoutes, { prefix: "/v1/ai" });
 
   return app;
 }

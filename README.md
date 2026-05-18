@@ -6,7 +6,7 @@ AI app builder. L'utente descrive un'app, MelluCode la genera completa di fronte
 
 🚧 In costruzione (Fase 1 — backend gestito interno).
 
-Stato attuale: `mellucode-api` e' online su `https://mellucode.mellutecno.it/v1/health` con auth creator, tenant/app-auth, Data API multi-tenant, file storage, invio email gestito e SDK frontend auth/data/files/email funzionanti.
+Stato attuale: `mellucode-api` e' online su `https://mellucode.mellutecno.it/v1/health` con auth creator, tenant/app-auth, Data API multi-tenant, file storage, invio email, AI proxy con quota/costi e SDK frontend auth/data/files/email/ai funzionanti.
 
 Il codice precedente ("orchestrator monolite + FastAPI generato per ogni app", brand "LocoCode") e' archiviato sul tag git `legacy-v1`. Non viene piu' sviluppato.
 

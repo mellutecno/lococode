@@ -1,6 +1,6 @@
 // Schema Fase 1: creator MelluCode, tenant/app generate e auth utenti app.
 import {
-  pgTable, uuid, text, timestamp, varchar, jsonb, index, uniqueIndex, boolean, bigint,
+  pgTable, uuid, text, timestamp, varchar, jsonb, index, uniqueIndex, boolean, bigint, integer,
 } from "drizzle-orm/pg-core";
 
 // Utenti di MelluCode: chi accede al pannello, crea app, paga abbonamento.
@@ -153,6 +153,49 @@ export const mcEmailLog = pgTable("mc_email_log", {
 }, (t) => ({
   tenantCreatedIdx: index("mc_email_log_tenant_created_idx").on(t.tenantId, t.createdAt),
   appUserIdx: index("mc_email_log_app_user_idx").on(t.appUserId),
+}));
+
+// Quota AI per tenant. I costi sono salvati in micro-crediti OpenRouter:
+// 1 credito = 1_000_000 micro-crediti. Default a 0: l'AI va abilitata
+// esplicitamente o via config/billing.
+export const mcAiQuotas = pgTable("mc_ai_quotas", {
+  tenantId: uuid("tenant_id").primaryKey().references(() => mcTenants.id, { onDelete: "cascade" }),
+  monthlyLimitMicros: bigint("monthly_limit_micros", { mode: "number" }).notNull().default(0),
+  usedThisPeriodMicros: bigint("used_this_period_micros", { mode: "number" }).notNull().default(0),
+  periodStartedAt: timestamp("period_started_at", { withTimezone: true }).notNull().defaultNow(),
+  periodEndsAt: timestamp("period_ends_at", { withTimezone: true }),
+  hardLimit: boolean("hard_limit").notNull().default(true),
+  metadata: jsonb("metadata").default({}).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  periodEndsIdx: index("mc_ai_quotas_period_ends_idx").on(t.periodEndsAt),
+}));
+
+// Log chiamate AI delle app generate. Non salva prompt completo: conserva
+// metadata, modello, usage/costo e stato. Prompt/risposta restano nel frontend.
+export const mcAiUsage = pgTable("mc_ai_usage", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => mcTenants.id, { onDelete: "cascade" }),
+  appUserId: uuid("app_user_id").references(() => mcAppUsers.id, { onDelete: "set null" }),
+  provider: varchar("provider", { length: 40 }).notNull().default("openrouter"),
+  model: varchar("model", { length: 160 }).notNull(),
+  generationId: text("generation_id"),
+  status: varchar("status", { length: 32 }).notNull().default("succeeded"), // succeeded | failed
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  totalTokens: integer("total_tokens").notNull().default(0),
+  reasoningTokens: integer("reasoning_tokens").notNull().default(0),
+  cachedTokens: integer("cached_tokens").notNull().default(0),
+  costMicros: bigint("cost_micros", { mode: "number" }).notNull().default(0),
+  costEstimated: boolean("cost_estimated").notNull().default(false),
+  error: text("error"),
+  requestMetadata: jsonb("request_metadata").default({}).notNull(),
+  responseMetadata: jsonb("response_metadata").default({}).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tenantCreatedIdx: index("mc_ai_usage_tenant_created_idx").on(t.tenantId, t.createdAt),
+  appUserIdx: index("mc_ai_usage_app_user_idx").on(t.appUserId),
+  generationIdx: index("mc_ai_usage_generation_idx").on(t.generationId),
 }));
 
 // Record generici delle app generate. Ogni record e' JSONB, sempre scoped a tenant.

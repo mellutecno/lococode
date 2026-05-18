@@ -65,6 +65,7 @@ export class MelluCode {
     this.entities = new EntitiesClient(this);
     this.files = new FilesClient(this);
     this.email = new EmailClient(this);
+    this.ai = new AiClient(this);
   }
 
   data(entity) {
@@ -339,6 +340,33 @@ class EmailClient {
         metadata,
       },
     });
+  }
+}
+
+class AiClient {
+  constructor(client) {
+    this.client = client;
+  }
+
+  chat({ messages, model, maxTokens, temperature, metadata } = {}) {
+    return this.client.request("/v1/ai/chat", {
+      method: "POST",
+      body: {
+        messages,
+        model,
+        maxTokens,
+        temperature,
+        metadata,
+      },
+    });
+  }
+
+  quota() {
+    return this.client.request("/v1/ai/quota");
+  }
+
+  usage({ limit } = {}) {
+    return this.client.request(`/v1/ai/usage${encodeQuery({ limit })}`);
   }
 }
 

@@ -244,6 +244,42 @@ test("email.send posts to /v1/email/send", async () => {
   assert.equal(calls.length, 1);
 });
 
+test("ai.chat, ai.quota and ai.usage hit the right paths", async () => {
+  const { fetchImpl, calls } = createFetchMock([
+    (call) => {
+      assert.equal(call.path, "/v1/ai/chat");
+      assert.equal(call.method, "POST");
+      assert.equal(call.body.messages[0].content, "Ciao");
+      return jsonResponse({ reply: "Ciao!", usage: { costCredits: 0.001 } });
+    },
+    (call) => {
+      assert.equal(call.path, "/v1/ai/quota");
+      return jsonResponse({ quota: { remainingCredits: 1 } });
+    },
+    (call) => {
+      assert.equal(call.path, "/v1/ai/usage");
+      assert.equal(new URL(call.url).searchParams.get("limit"), "5");
+      return jsonResponse({ usage: [] });
+    },
+  ]);
+
+  const mc = new MelluCode({
+    apiUrl: "https://api.example.test",
+    tenantSlug: "gym",
+    storage: createMemoryStorage({ "mellucode:gym:accessToken": "access-1" }),
+    fetchImpl,
+  });
+
+  const chat = await mc.ai.chat({ messages: [{ role: "user", content: "Ciao" }] });
+  const quota = await mc.ai.quota();
+  const usage = await mc.ai.usage({ limit: 5 });
+
+  assert.equal(chat.reply, "Ciao!");
+  assert.equal(quota.quota.remainingCredits, 1);
+  assert.deepEqual(usage.usage, []);
+  assert.equal(calls.length, 3);
+});
+
 test("API errors throw MelluCodeError", async () => {
   const { fetchImpl } = createFetchMock([
     () => jsonResponse({ error: "Accesso non consentito." }, 403),

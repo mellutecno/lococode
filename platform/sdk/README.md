@@ -44,6 +44,11 @@ await mc.email.send({
   subject: "Benvenuto",
   text: "La tua app e' pronta.",
 });
+
+const ai = await mc.ai.chat({
+  messages: [{ role: "user", content: "Scrivi un riepilogo breve." }],
+});
+console.log(ai.reply, ai.usage.costCredits);
 ```
 
 ## API incluse
@@ -66,6 +71,9 @@ await mc.email.send({
 - `mc.files.downloadBlob(id)`
 - `mc.files.delete(id)`
 - `mc.email.send({ to, subject, text, html, replyTo, metadata })`
+- `mc.ai.chat({ messages, model, maxTokens, temperature, metadata })`
+- `mc.ai.quota()`
+- `mc.ai.usage({ limit })`
 
 ## Note
 

@@ -5,10 +5,9 @@
 - Tool usati nelle ultime sessioni: Claude Code + Codex
 
 ## Stato globale Fase 1
-Fase 1 del backend gestito e' avanzata: auth, tenant, app-auth, Data API, file storage, invio email gestito e SDK base sono implementati e verificati.
+Fase 1 del backend gestito e' avanzata: auth, tenant, app-auth, Data API, file storage, invio email gestito, AI proxy con quota/costi e SDK base sono implementati e verificati.
 
 Restano da chiudere:
-- `/v1/ai/chat` con quota/costi
 - eventuale build/distribuzione SDK come bundle/npm package
 
 ## Commit principali recenti
@@ -21,6 +20,7 @@ Restano da chiudere:
 - `6664242` Add /v1/files: managed file storage
 - `c665de7` Update handoff after files deploy
 - `04decef` Add managed email send endpoint
+- `8269c29` Correct SMTP backup path in handoff
 
 ## Cosa e' online adesso
 Dominio API: `https://mellucode.mellutecno.it`
@@ -38,6 +38,7 @@ Database:
 - `mellucode_dev` produzione
 - `mellucode_test` integration test, separato
 - nuova tabella email: `mc_email_log`
+- nuove tabelle AI: `mc_ai_quotas`, `mc_ai_usage`
 
 Storage file:
 - `STORAGE_DIR=/opt/mellucode/storage`
@@ -118,6 +119,24 @@ Dettagli email:
 - sorgente iniziale credenziali: variabili mail gia' presenti su `/opt/approfittOffro/execution/.env`, copiate server-side senza stamparle
 - e' stato creato backup fuori dal repo in `/opt/mellucode-backups/env/.env.backup.smtp.<timestamp>`
 
+### AI
+- `POST /v1/ai/chat`
+- `GET /v1/ai/quota`
+- `GET /v1/ai/usage`
+
+Dettagli AI:
+- endpoint protetti da JWT app-auth
+- provider: OpenRouter
+- la chiave OpenRouter resta solo server-side
+- i modelli accettati sono limitati da `OPENROUTER_ALLOWED_MODELS`; se non configurata, e' ammesso solo `OPENROUTER_DEFAULT_MODEL`
+- quota per tenant in `mc_ai_quotas`
+- ogni chiamata riuscita/errore viene loggata in `mc_ai_usage`
+- i costi sono salvati in micro-crediti (`1 credito = 1_000_000 micro-crediti`)
+- il costo usa `usage.cost` quando OpenRouter lo restituisce; altrimenti usa stima token conservativa
+- default quota mensile: `AI_DEFAULT_MONTHLY_CREDITS` (default codice: `0`, quindi AI bloccata finche' non abilitata da config/billing)
+- riserva pre-call: `AI_RESERVE_PER_REQUEST_CREDITS`, per impedire chiamate quando il credito residuo e' troppo basso
+- in test usa `OPENROUTER_TRANSPORT=mock`, quindi non consuma token reali
+
 ## SDK
 Cartella: `platform/sdk`
 
@@ -129,14 +148,15 @@ Incluso:
 - `mc.data(entity).list/get/create/update/delete`
 - `mc.files.upload/list/get/delete/downloadBlob/url`
 - `mc.email.send`
+- `mc.ai.chat/quota/usage`
 - `MelluCodeError`
 - storage token su `localStorage` in browser, memoria fuori browser
 
 ## Test fatti
 
 Locale Windows:
-- `platform/api npm test`: 53 pass + 1 integration skip se `TEST_DATABASE_URL` non e' settata
-- `platform/sdk npm test`: 8/8 pass
+- `platform/api npm test`: 58 pass + 1 integration skip se `TEST_DATABASE_URL` non e' settata
+- `platform/sdk npm test`: 9/9 pass
 - `git diff --check`: OK
 
 Server produzione/test:
@@ -163,8 +183,10 @@ Attenzione test:
 - Per generare `TEST_DATABASE_URL` sul server senza stampare segreti e' stato usato Node + dotenv leggendo `.env`.
 
 ## Prossimo passo consigliato
-1. Implementare `/v1/ai/chat` con quota/costi.
-2. Poi build/distribuzione SDK e integrazione orchestrator che genera frontend usando solo `mellucode-sdk`.
+1. Deployare e testare `/v1/ai/chat` su server con `OPENROUTER_TRANSPORT=mock`.
+2. Verificare se `OPENROUTER_API_KEY` e modelli consentiti sono gia' in `.env`; se mancano, configurarli.
+3. Fare smoke test reale OpenRouter su tenant temporaneo con quota minima.
+4. Poi build/distribuzione SDK e integrazione orchestrator che genera frontend usando solo `mellucode-sdk`.
 
 ## Note importanti
 - Non toccare `/opt/lococode-legacy`.

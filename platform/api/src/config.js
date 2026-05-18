@@ -41,6 +41,18 @@ export const config = {
 
   openrouter: {
     apiKey: opt("OPENROUTER_API_KEY"),
+    baseUrl: opt("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+    transport: opt("OPENROUTER_TRANSPORT"),
+    appUrl: opt("OPENROUTER_APP_URL", "https://mellucode.mellutecno.it"),
+    appTitle: opt("OPENROUTER_APP_TITLE", "MelluCode"),
+    defaultModel: opt("OPENROUTER_DEFAULT_MODEL", "openai/gpt-4o-mini"),
+    allowedModels: opt("OPENROUTER_ALLOWED_MODELS", "").split(",").map(s => s.trim()).filter(Boolean),
+    timeoutMs: Number(opt("OPENROUTER_TIMEOUT_MS", "120000")),
+    maxTokensDefault: Number(opt("AI_DEFAULT_MAX_TOKENS", "512")),
+    maxTokensLimit: Number(opt("AI_MAX_TOKENS", "2048")),
+    defaultMonthlyCredits: Number(opt("AI_DEFAULT_MONTHLY_CREDITS", "0")),
+    reservePerRequestCredits: Number(opt("AI_RESERVE_PER_REQUEST_CREDITS", "0.05")),
+    fallbackCostPer1kTokensCredits: Number(opt("AI_FALLBACK_COST_PER_1K_TOKENS_CREDITS", "0.01")),
   },
 
   smtp: {

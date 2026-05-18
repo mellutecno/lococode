@@ -32,11 +32,18 @@ if (!TEST_DB) {
   // Email test-safe: Nodemailer produce JSON, non apre connessioni SMTP reali.
   process.env.SMTP_TRANSPORT = "json";
   process.env.SMTP_FROM = "noreply@test.mellucode.local";
+  // AI test-safe: niente chiamate reali a OpenRouter, ma quota/log reali su DB.
+  process.env.OPENROUTER_TRANSPORT = "mock";
+  process.env.OPENROUTER_DEFAULT_MODEL = "test/model";
+  process.env.OPENROUTER_ALLOWED_MODELS = "test/model";
+  process.env.AI_DEFAULT_MONTHLY_CREDITS = "1";
+  process.env.AI_RESERVE_PER_REQUEST_CREDITS = "0.00001";
+  process.env.OPENROUTER_MOCK_COST = "0.00002";
 
   const { buildApp } = await import("../app.js");
   const { db, schema } = await import("../db/index.js");
   const { runMigrations } = await import("../db/migrate.js");
-  const { sql } = await import("drizzle-orm");
+  const { eq, sql } = await import("drizzle-orm");
 
   let app;
 
@@ -56,6 +63,8 @@ if (!TEST_DB) {
     await db.execute(sql`
       TRUNCATE TABLE
         mc_audit_log,
+        mc_ai_usage,
+        mc_ai_quotas,
         mc_email_log,
         mc_app_files,
         mc_app_records,
@@ -973,6 +982,116 @@ if (!TEST_DB) {
         },
       });
       assert.equal(emptyContent.statusCode, 400);
+    });
+  });
+
+  // ================================================================
+  // /v1/ai
+  // ================================================================
+  describe("/v1/ai", () => {
+    async function setupTenantAndUsers() {
+      const reg = await registerCreator();
+      const t = await createTenant(reg.res.json().accessToken);
+      const tenant = t.res.json().tenant;
+      const adminLogin = await appLogin(tenant.slug, t.body.adminEmail, t.body.adminPassword);
+      const adminToken = adminLogin.json().accessToken;
+
+      const userEmail = `ai-user-${rand()}@test.local`;
+      await app.inject({
+        method: "POST", url: "/v1/app-auth/register",
+        payload: { tenantSlug: tenant.slug, email: userEmail, password: "User1Pass!" },
+      });
+      const userLogin = await appLogin(tenant.slug, userEmail, "User1Pass!");
+      return { tenant, adminToken, userToken: userLogin.json().accessToken };
+    }
+
+    test("app user can call chat; usage and quota are recorded", async () => {
+      const { tenant, userToken } = await setupTenantAndUsers();
+      const res = await app.inject({
+        method: "POST", url: "/v1/ai/chat",
+        headers: bearer(userToken),
+        payload: {
+          messages: [{ role: "user", content: "Rispondi con un saluto." }],
+          maxTokens: 64,
+          metadata: { feature: "assistant" },
+        },
+      });
+      assert.equal(res.statusCode, 200);
+      const body = res.json();
+      assert.equal(body.reply, "Risposta AI di test MelluCode.");
+      assert.equal(body.usage.totalTokens, 20);
+      assert.equal(body.usage.costCredits, 0.00002);
+      assert.equal(body.usage.quota.remainingCredits, 0.99998);
+
+      const usageRows = await db.select().from(schema.mcAiUsage);
+      assert.equal(usageRows.length, 1);
+      assert.equal(usageRows[0].tenantId, tenant.id);
+      assert.equal(usageRows[0].model, "test/model");
+      assert.equal(usageRows[0].status, "succeeded");
+      assert.equal(usageRows[0].costMicros, 20);
+      assert.equal(usageRows[0].requestMetadata.feature, "assistant");
+
+      const quotaRows = await db.select().from(schema.mcAiQuotas).where(eq(schema.mcAiQuotas.tenantId, tenant.id));
+      assert.equal(quotaRows[0].usedThisPeriodMicros, 20);
+    });
+
+    test("GET /quota returns current quota", async () => {
+      const { userToken } = await setupTenantAndUsers();
+      const res = await app.inject({
+        method: "GET", url: "/v1/ai/quota",
+        headers: bearer(userToken),
+      });
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.json().quota.monthlyLimitCredits, 1);
+    });
+
+    test("quota hard limit blocks chat before calling provider", async () => {
+      const { tenant, userToken } = await setupTenantAndUsers();
+      await db
+        .insert(schema.mcAiQuotas)
+        .values({
+          tenantId: tenant.id,
+          monthlyLimitMicros: 10,
+          usedThisPeriodMicros: 10,
+        })
+        .onConflictDoUpdate({
+          target: schema.mcAiQuotas.tenantId,
+          set: { monthlyLimitMicros: 10, usedThisPeriodMicros: 10 },
+        });
+
+      const res = await app.inject({
+        method: "POST", url: "/v1/ai/chat",
+        headers: bearer(userToken),
+        payload: {
+          messages: [{ role: "user", content: "Ciao" }],
+        },
+      });
+      assert.equal(res.statusCode, 402);
+      assert.match(res.json().error, /Credito AI insufficiente/);
+      const usageRows = await db.select().from(schema.mcAiUsage);
+      assert.equal(usageRows.length, 0);
+    });
+
+    test("creator token is rejected and unknown model is blocked", async () => {
+      const reg = await registerCreator();
+      const creator = await app.inject({
+        method: "POST", url: "/v1/ai/chat",
+        headers: bearer(reg.res.json().accessToken),
+        payload: { messages: [{ role: "user", content: "Ciao" }] },
+      });
+      assert.equal(creator.statusCode, 401);
+
+      const { userToken } = await setupTenantAndUsers();
+      const model = await app.inject({
+        method: "POST", url: "/v1/ai/chat",
+        headers: bearer(userToken),
+        payload: {
+          model: "very-expensive/model",
+          messages: [{ role: "user", content: "Ciao" }],
+        },
+      });
+      assert.equal(model.statusCode, 400);
+      assert.match(model.json().error, /Modello AI non abilitato/);
     });
   });
 }
