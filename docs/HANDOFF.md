@@ -116,7 +116,7 @@ Dettagli email:
 - in test usa `SMTP_TRANSPORT=json`, quindi non invia email reali
 - in produzione SMTP reale e' configurato in `.env` senza `SMTP_TRANSPORT`
 - sorgente iniziale credenziali: variabili mail gia' presenti su `/opt/approfittOffro/execution/.env`, copiate server-side senza stamparle
-- e' stato creato backup `/opt/mellucode/platform/api/.env.backup.smtp.<timestamp>`
+- e' stato creato backup fuori dal repo in `/opt/mellucode-backups/env/.env.backup.smtp.<timestamp>`
 
 ## SDK
 Cartella: `platform/sdk`
