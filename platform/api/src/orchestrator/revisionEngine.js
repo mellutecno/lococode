@@ -13,6 +13,7 @@ import { config } from "../config.js";
 import { callOpenRouterChat } from "../utils/openRouterClient.js";
 import { isValidThemeId, themesPromptList } from "./themes.js";
 import { validateEntityDef } from "../utils/orchestrator.js";
+import { logOrchestratorSuccess, logOrchestratorFailure } from "../utils/aiUsageLogger.js";
 import { enqueueBuild } from "./buildRunner.js";
 
 function err(code, userMessage, extra = {}) {
@@ -302,24 +303,43 @@ export async function runRevision({ tenant, requestText, ownerUserId, logger = c
 
   // 3) AI call
   const systemPrompt = buildRevisionSystemPrompt({ tenant, entities });
+  const aiMessages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: text.slice(0, 5000) },
+  ];
+  const aiModel = config.orchestrator.model;
   let ai;
   try {
     ai = await callOpenRouterChat({
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: text.slice(0, 5000) },
-      ],
-      model: config.orchestrator.model,
+      messages: aiMessages,
+      model: aiModel,
       maxTokens: config.orchestrator.maxTokens,
       temperature: 0.2,
       metadata: { feature: "revision-interpret", tenantId: tenant.id },
       user: ownerUserId,
     });
   } catch (e) {
+    await logOrchestratorFailure({
+      tenantId: tenant.id,
+      feature: "revision-interpret",
+      model: aiModel,
+      err: e,
+      requestMetadata: { revisionId, ownerUserId },
+    });
     await markRevisionFailed(revisionId, e?.code === "OPENROUTER_NOT_CONFIGURED" ? "AI non configurata." : "Servizio AI non disponibile.");
     throw err(e?.code === "OPENROUTER_NOT_CONFIGURED" ? "AI_NOT_CONFIGURED" : "AI_UNAVAILABLE",
       e?.code === "OPENROUTER_NOT_CONFIGURED" ? "AI non configurata." : "Servizio AI temporaneamente non disponibile.");
   }
+
+  // Log usage success (best-effort, non blocca)
+  logOrchestratorSuccess({
+    tenantId: tenant.id,
+    feature: "revision-interpret",
+    model: aiModel,
+    messages: aiMessages,
+    ai,
+    requestMetadata: { revisionId, ownerUserId },
+  });
 
   // 4) Parse + validate JSON
   const parsed = parseJsonRobust(ai.reply);

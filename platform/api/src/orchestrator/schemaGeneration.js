@@ -19,6 +19,7 @@ import { config } from "../config.js";
 import { callOpenRouterChat } from "../utils/openRouterClient.js";
 import { buildSystemPrompt, extractJsonArray, validateEntityDef, pickThemeFromEntities } from "../utils/orchestrator.js";
 import { publicEntity } from "../utils/entities.js";
+import { logOrchestratorSuccess, logOrchestratorFailure } from "../utils/aiUsageLogger.js";
 import { inferSector } from "./sectors/_index.js";
 
 function err(code, userMessage, extra = {}) {
@@ -48,25 +49,45 @@ export async function runSchemaGeneration({ tenant, promptOverride, ownerUserId,
     includeCatalog: true,
   });
 
+  const aiMessages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: prompt.slice(0, 5000) },
+  ];
+  const aiModel = config.orchestrator.model;
   let ai;
   try {
     ai = await callOpenRouterChat({
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: prompt.slice(0, 5000) },
-      ],
-      model: config.orchestrator.model,
+      messages: aiMessages,
+      model: aiModel,
       maxTokens: config.orchestrator.maxTokens,
       temperature: 0.2,
       metadata: { feature: "schema-generation", tenantId: tenant.id, sectorHint: inferredSector?.id ?? null },
       user: ownerUserId,
     });
   } catch (e) {
+    await logOrchestratorFailure({
+      tenantId: tenant.id,
+      feature: "schema-generation",
+      model: aiModel,
+      err: e,
+      requestMetadata: { sectorHint: inferredSector?.id ?? null, ownerUserId },
+    });
     if (e?.code === "OPENROUTER_NOT_CONFIGURED") {
       throw err("AI_NOT_CONFIGURED", "AI non configurata.", { cause: e });
     }
     throw err("AI_UNAVAILABLE", "Servizio AI temporaneamente non disponibile.", { cause: e });
   }
+
+  // Log usage (best-effort, non blocca la pipeline). Cosi' il costo della
+  // schema generation appare in mc_ai_usage e si puo' calibrare il pricing.
+  logOrchestratorSuccess({
+    tenantId: tenant.id,
+    feature: "schema-generation",
+    model: aiModel,
+    messages: aiMessages,
+    ai,
+    requestMetadata: { sectorHint: inferredSector?.id ?? null, ownerUserId },
+  });
 
   const array = extractJsonArray(ai.reply);
   if (!Array.isArray(array)) {
