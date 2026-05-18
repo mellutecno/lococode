@@ -8,6 +8,7 @@ import { tenants, formatDateIt, slugifyClient, tenantUrl } from "../lib/api.js";
 import { AppCardSkeleton, StatCardSkeleton } from "../components/Skeleton.jsx";
 import EmptyState from "../components/EmptyState.jsx";
 import Modal from "../components/Modal.jsx";
+import AppIcon from "../components/AppIcon.jsx";
 import { useToast } from "../components/Toast.jsx";
 
 function StatCard({ icon: Icon, label, value, tone = "accent" }) {
@@ -88,7 +89,7 @@ function CreateAppForm({ onCreated, onClose }) {
       </div>
 
       <div className="field">
-        <label className="label">Slug (URL)</label>
+        <label className="label">Indirizzo app</label>
         <div className="relative">
           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-mono">
             /apps/
@@ -102,7 +103,7 @@ function CreateAppForm({ onCreated, onClose }) {
             pattern="[a-z0-9-]+"
           />
         </div>
-        <div className="help">Solo lettere minuscole, numeri e trattini. Generato automaticamente dal nome.</div>
+        <div className="help">L'indirizzo viene creato automaticamente dal nome. Puoi modificarlo se vuoi.</div>
       </div>
 
       <details className="rounded-xl border border-white/[0.06] bg-white/[0.02] open:bg-white/[0.04] transition">
@@ -198,8 +199,8 @@ export default function AppsDashboardPage({ user }) {
             Le tue app
           </h1>
           <p className="text-sm text-zinc-400 mt-2 max-w-xl">
-            Ogni app e' un tenant isolato sul backend MelluCode: utenti, dati, file e
-            quota AI sono separati. Crea quante app vuoi.
+            Crea, apri e gestisci le tue app web. Ogni progetto resta separato dagli altri,
+            con i suoi utenti, i suoi dati e il suo credito AI.
           </p>
         </div>
         <button onClick={() => setCreateOpen(true)} className="btn-primary self-start sm:self-end">
@@ -261,7 +262,7 @@ export default function AppsDashboardPage({ user }) {
       {list?.length === 0 && (
         <EmptyState
           title="Ancora nessuna app"
-          description="Crea la tua prima app MelluCode. Ti consegniamo un backend isolato con auth, dati e file pronti. Tu metti il frontend (o lo facciamo noi con AI in arrivo)."
+          description="Crea la tua prima app MelluCode. Avrai uno spazio dedicato, pronto per utenti, dati, file e anteprima."
           action={
             <button onClick={() => setCreateOpen(true)} className="btn-primary">
               <Plus className="w-4 h-4" /> Crea la prima
@@ -286,10 +287,13 @@ export default function AppsDashboardPage({ user }) {
                 to={`/app/${t.slug}`}
                 className="card surface-hover p-5 flex flex-col gap-3 h-full group"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-semibold text-white truncate group-hover:text-accent-200 transition-colors">
-                    {t.name}
-                  </h3>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <AppIcon size="sm" className="flex-shrink-0" />
+                    <h3 className="font-semibold text-white truncate group-hover:text-accent-200 transition-colors">
+                      {t.name}
+                    </h3>
+                  </div>
                   <span className={planTone(t.plan)}>
                     {t.plan}
                   </span>
@@ -334,7 +338,7 @@ export default function AppsDashboardPage({ user }) {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Crea una nuova app"
-        subtitle="Un tenant isolato sul backend MelluCode, pronto in pochi secondi."
+        subtitle="Dai un nome alla tua app: prepariamo il suo spazio di lavoro in pochi secondi."
         maxWidth="xl"
       >
         <CreateAppForm

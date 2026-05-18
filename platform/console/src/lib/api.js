@@ -135,6 +135,12 @@ export const tenants = {
   create(payload) {
     return request("/v1/tenants", { method: "POST", body: payload });
   },
+  update(id, payload) {
+    return request(`/v1/tenants/${encodeURIComponent(id)}`, { method: "PATCH", body: payload });
+  },
+  delete(id) {
+    return request(`/v1/tenants/${encodeURIComponent(id)}`, { method: "DELETE" });
+  },
   stats(id) {
     return request(`/v1/tenants/${encodeURIComponent(id)}/stats`);
   },

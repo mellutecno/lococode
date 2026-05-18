@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   Activity,
   ArrowLeft,
+  AlertTriangle,
   Boxes,
   Calendar,
   Check,
@@ -13,11 +14,16 @@ import {
   Gauge,
   Hash,
   Loader2,
+  Pencil,
+  Save,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Users,
 } from "lucide-react";
-import { tenants, tenantUrl, formatDateIt } from "../lib/api.js";
+import { tenants, tenantUrl, formatDateIt, slugifyClient } from "../lib/api.js";
+import Modal from "../components/Modal.jsx";
+import AppIcon from "../components/AppIcon.jsx";
 import { useToast } from "../components/Toast.jsx";
 
 function planTone(plan) {
@@ -69,6 +75,7 @@ function StatTile({ icon: Icon, label, value }) {
 
 export default function AppDetailPage() {
   const { slug } = useParams();
+  const navigate = useNavigate();
   const toast = useToast();
 
   const [tenant, setTenant] = useState(null);
@@ -76,6 +83,14 @@ export default function AppDetailPage() {
   const [error, setError] = useState(null);
   const [statsError, setStatsError] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editSlug, setEditSlug] = useState("");
+  const [editPublicReg, setEditPublicReg] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [formError, setFormError] = useState(null);
 
   async function load() {
     try {
@@ -108,7 +123,54 @@ export default function AppDetailPage() {
     await navigator.clipboard.writeText(tenant.slug);
     setCopied(true);
     setTimeout(() => setCopied(false), 1800);
-    toast.info("Slug copiato.");
+    toast.info("Indirizzo copiato.");
+  }
+
+  function openEdit() {
+    setEditName(tenant.name || "");
+    setEditSlug(tenant.slug || "");
+    setEditPublicReg(Boolean(tenant.publicRegistrationEnabled));
+    setFormError(null);
+    setEditOpen(true);
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    if (!tenant) return;
+    setSaving(true);
+    setFormError(null);
+    try {
+      const res = await tenants.update(tenant.id, {
+        name: editName.trim(),
+        slug: slugifyClient(editSlug),
+        publicRegistrationEnabled: editPublicReg,
+      });
+      setTenant(res.tenant);
+      setEditOpen(false);
+      toast.success("App aggiornata.");
+      if (res.tenant.slug !== slug) navigate(`/app/${res.tenant.slug}`, { replace: true });
+    } catch (err) {
+      setFormError(err.message);
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteApp() {
+    if (!tenant) return;
+    setDeleting(true);
+    setFormError(null);
+    try {
+      await tenants.delete(tenant.id);
+      toast.success(`App "${tenant.name}" eliminata.`);
+      navigate("/", { replace: true });
+    } catch (err) {
+      setFormError(err.message);
+      toast.error(err.message);
+    } finally {
+      setDeleting(false);
+    }
   }
 
   if (error) {
@@ -148,9 +210,7 @@ export default function AppDetailPage() {
         <div className="absolute inset-0 bg-grid opacity-25" />
         <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-ink-900/80 to-transparent" />
         <div className="relative flex flex-col sm:flex-row sm:items-center gap-5">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-accent-400 to-violet-500 shadow-glow grid place-items-center text-white text-2xl font-bold ring-2 ring-accent-500/40 ring-offset-2 ring-offset-ink-900 flex-shrink-0">
-            {tenant.name?.[0]?.toUpperCase() || "M"}
-          </div>
+          <AppIcon size="lg" className="flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tighter2 text-white truncate drop-shadow">
               {tenant.name}
@@ -174,6 +234,9 @@ export default function AppDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button type="button" onClick={openEdit} className="btn-secondary">
+              <Pencil className="w-4 h-4" /> Modifica
+            </button>
             <a href={url} target="_blank" rel="noreferrer" className="btn-primary">
               Apri l'app <ExternalLink className="w-4 h-4" />
             </a>
@@ -187,7 +250,7 @@ export default function AppDetailPage() {
           <div className="mt-2">
             <InfoRow
               icon={Hash}
-              label="Slug"
+              label="Indirizzo breve"
               value={(
                 <span className="inline-flex items-center gap-2">
                   <code className="text-zinc-100">{tenant.slug}</code>
@@ -199,7 +262,7 @@ export default function AppDetailPage() {
             />
             <InfoRow
               icon={Boxes}
-              label="URL pubblico"
+              label="Link pubblico"
               value={(
                 <a href={url} target="_blank" rel="noreferrer" className="link">
                   https://mellucode.mellutecno.it{url}
@@ -208,7 +271,6 @@ export default function AppDetailPage() {
               mono
             />
             <InfoRow icon={Calendar} label="Creata il" value={formatDateIt(tenant.createdAt)} />
-            <InfoRow icon={Hash} label="ID tenant" value={tenant.id} mono />
           </div>
         </div>
 
@@ -222,13 +284,13 @@ export default function AppDetailPage() {
               <h2 className="text-sm font-semibold text-white">Quota AI</h2>
             </div>
             <p className="text-xs text-zinc-400 leading-relaxed mb-4">
-              Credito, consumo e chiamate AI di questa app. Il backend blocca automaticamente le chiamate quando il credito non basta.
+              Credito e utilizzo AI di questa app. Quando il credito finisce, le funzioni AI si fermano automaticamente.
             </p>
 
             {!stats && !statsError && (
               <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4 text-sm text-zinc-400 flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-accent-300" />
-                Carico quota...
+                Carico credito...
               </div>
             )}
             {statsError && (
@@ -278,7 +340,7 @@ export default function AppDetailPage() {
           <div className="flex items-center justify-between gap-4 mb-4">
             <div>
               <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Metriche app</h2>
-              <p className="text-xs text-zinc-500 mt-1">Dati reali salvati nel tenant MelluCode.</p>
+              <p className="text-xs text-zinc-500 mt-1">Panoramica dei dati e dei contenuti collegati a questa app.</p>
             </div>
           </div>
           <div className="grid sm:grid-cols-4 gap-3">
@@ -290,9 +352,110 @@ export default function AppDetailPage() {
         </div>
       )}
 
-      <div className="text-center pt-2">
-        <code className="text-[10px] font-mono text-zinc-600">tenant - {tenant.id}</code>
+      <div className="card p-6 border-rose-400/20 bg-rose-500/[0.03]">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-medium text-rose-100 uppercase tracking-wider">Zona pericolosa</h2>
+            <p className="text-sm text-zinc-400 mt-1">
+              Elimina questa app e tutto quello che contiene: utenti, dati, file e cronologia.
+            </p>
+          </div>
+          <button type="button" onClick={() => { setFormError(null); setDeleteOpen(true); }} className="btn-danger">
+            <Trash2 className="w-4 h-4" /> Elimina app
+          </button>
+        </div>
       </div>
+
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Modifica app"
+        subtitle="Aggiorna nome, indirizzo e accesso pubblico dell'app."
+        maxWidth="lg"
+      >
+        <form onSubmit={saveEdit} className="space-y-5">
+          <div className="field">
+            <label className="label">Nome app</label>
+            <input
+              className="input"
+              required
+              minLength={2}
+              maxLength={160}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label className="label">Indirizzo app</label>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-mono">
+                /apps/
+              </span>
+              <input
+                className="input pl-[4.4rem] font-mono"
+                required
+                minLength={2}
+                maxLength={80}
+                pattern="[a-z0-9-]+"
+                value={editSlug}
+                onChange={(e) => setEditSlug(slugifyClient(e.target.value))}
+              />
+            </div>
+            <div className="help">Cambiare slug cambia anche il link pubblico dell'app.</div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-zinc-300">
+            <input
+              type="checkbox"
+              checked={editPublicReg}
+              onChange={(e) => setEditPublicReg(e.target.checked)}
+              className="rounded accent-accent-500"
+            />
+            Permetti registrazione pubblica utenti
+          </label>
+          {formError && (
+            <div className="px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-400/20 text-sm text-rose-200">
+              {formError}
+            </div>
+          )}
+          <div className="sticky bottom-0 -mx-5 sm:-mx-6 -mb-5 px-5 sm:px-6 py-4 border-t border-white/[0.06] bg-ink-900/95 backdrop-blur-xl flex items-center justify-end gap-2">
+            <button type="button" onClick={() => setEditOpen(false)} className="btn-ghost">Annulla</button>
+            <button type="submit" disabled={saving} className="btn-primary">
+              {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvo...</> : <><Save className="w-4 h-4" /> Salva</>}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title="Elimina app"
+        subtitle="Questa operazione elimina definitivamente l'app e i dati collegati."
+        maxWidth="md"
+      >
+        <div className="space-y-5">
+          <div className="rounded-xl border border-rose-400/20 bg-rose-500/10 p-4 flex gap-3">
+            <AlertTriangle className="w-5 h-5 text-rose-300 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-rose-100 font-medium">Stai eliminando "{tenant.name}".</p>
+              <p className="text-sm text-rose-200/80 mt-1">
+                Verranno rimossi utenti, dati, file e configurazioni. Non farlo su app acquistate o attive senza prima esportarle.
+              </p>
+            </div>
+          </div>
+          {formError && (
+            <div className="px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-400/20 text-sm text-rose-200">
+              {formError}
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" onClick={() => setDeleteOpen(false)} className="btn-ghost">Annulla</button>
+            <button type="button" onClick={deleteApp} disabled={deleting} className="btn-danger">
+              {deleting ? <><Loader2 className="w-4 h-4 animate-spin" /> Elimino...</> : <><Trash2 className="w-4 h-4" /> Elimina definitivamente</>}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

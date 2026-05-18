@@ -119,7 +119,7 @@ export default function App() {
         {!isLogin && (
           <footer className="text-center text-xs text-zinc-500 py-6">
             <span className="text-gradient-accent font-medium">MelluCode</span>
-            {" · "}backend gestito + frontend generato. Tutto su un solo dominio.
+            {" - "}crea, prova e gestisci le tue app web da un unico posto.
           </footer>
         )}
       </div>

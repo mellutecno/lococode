@@ -1,5 +1,53 @@
 # HANDOFF MelluCode
 
+## Aggiornamento urgente Codex - 2026-05-18 mattina
+
+Ultimo commit online prima di questo blocco:
+- `3dfcd48` Fix Console modal scrolling and add design quality brief
+
+Stato server:
+- branch server: `mellucode-v2`
+- commit deployato server: `3dfcd48`
+- Console root online: `https://mellucode.mellutecno.it/`
+- API health online: `https://mellucode.mellutecno.it/v1/health`
+- `palestra-demo` e' assegnata a `mellutecno@gmail.com`
+
+Verifiche gia' fatte su server dopo `cb3e206`:
+- suite API server con `TEST_DATABASE_URL=mellucode_test`: **111/111 PASS**
+- smoke `GET /`, `GET /v1/health`, `GET /demo/palestra/`: OK
+- ownership `palestra-demo`: owner `mellutecno@gmail.com`, stato `active`, plan `trial`
+
+Documenti aggiunti:
+- `docs/orchestrator-design-quality.md`
+  Regola prodotto per iniettare nei prompt dell'orchestrator: le app generate devono avere UI premium, non generica, con palette coerente al settore, contrasto leggibile, responsive, stati loading/empty/error curati.
+- `docs/app-lifecycle.md`
+  Flusso prodotto per ciclo di vita app: modifica, eliminazione, future change request AI, preview, approvazione e deploy.
+
+Lavoro in corso locale NON ancora deployato al momento di questo aggiornamento:
+- API tenant:
+  - aggiunto `PATCH /v1/tenants/:id` per modificare nome, slug e registrazione pubblica;
+  - aggiunto `DELETE /v1/tenants/:id` per eliminare una app/tenant di proprieta' del creator;
+  - delete fa cascade DB e rimozione best-effort dei file fisici in storage;
+  - aggiunti test integration per update, duplicate slug, delete owned tenant, deny delete/update di tenant altrui.
+- Console:
+  - aggiunte azioni "Modifica" e "Elimina app" nella pagina dettaglio app;
+  - aggiunti modal di modifica e conferma eliminazione;
+  - aggiunto `platform/console/src/components/AppIcon.jsx`, icona generica app al posto della letterona iniziale;
+  - ripulite frasi troppo tecniche visibili all'utente: meno "tenant/backend/quota", piu' linguaggio umano;
+  - aggiornato client Console con `tenants.update()` e `tenants.delete()`.
+- Build Console locale dopo queste modifiche: OK (`npm run build`).
+- Test API locale dopo API update: OK sui test unitari; integration locale skippata per assenza `TEST_DATABASE_URL`.
+
+Prossimi passi per chi riprende:
+1. Lanciare test server completi con `TEST_DATABASE_URL` su `mellucode_test`.
+2. Se verdi, fare commit/push delle modifiche locali.
+3. Deploy API + Console su `/opt/mellucode`.
+4. Verificare da browser:
+   - modifica nome/indirizzo app;
+   - eliminazione app;
+   - app eliminata sparisce dalla dashboard;
+   - app altrui non modificabile/cancellabile.
+
 ## Data / autore
 - Data: 2026-05-18 (notte)
 - Tool usati nelle ultime sessioni: Claude Code + Codex

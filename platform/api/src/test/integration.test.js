@@ -421,6 +421,101 @@ if (!TEST_DB) {
       });
       assert.equal(res.statusCode, 404);
     });
+
+    test("PATCH /:id updates only a tenant owned by the creator", async () => {
+      const owner = await registerCreator();
+      const token = owner.res.json().accessToken;
+      const t = await createTenant(token, { publicRegistrationEnabled: true });
+      const tenant = t.res.json().tenant;
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/v1/tenants/${tenant.id}`,
+        headers: bearer(token),
+        payload: {
+          name: "Nuovo nome app",
+          slug: "nuovo-nome-app",
+          publicRegistrationEnabled: false,
+        },
+      });
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.json().tenant.name, "Nuovo nome app");
+      assert.equal(res.json().tenant.slug, "nuovo-nome-app");
+      assert.equal(res.json().tenant.publicRegistrationEnabled, false);
+
+      const other = await registerCreator();
+      const denied = await app.inject({
+        method: "PATCH",
+        url: `/v1/tenants/${tenant.id}`,
+        headers: bearer(other.res.json().accessToken),
+        payload: { name: "Non mio" },
+      });
+      assert.equal(denied.statusCode, 404);
+    });
+
+    test("PATCH /:id rejects duplicate slug", async () => {
+      const owner = await registerCreator();
+      const token = owner.res.json().accessToken;
+      const a = await createTenant(token, { slug: `first-${rand()}` });
+      const bSlug = `second-${rand()}`;
+      await createTenant(token, { slug: bSlug });
+
+      const res = await app.inject({
+        method: "PATCH",
+        url: `/v1/tenants/${a.res.json().tenant.id}`,
+        headers: bearer(token),
+        payload: { slug: bSlug },
+      });
+      assert.equal(res.statusCode, 409);
+    });
+
+    test("DELETE /:id deletes owned tenant and cascades app data", async () => {
+      const owner = await registerCreator();
+      const token = owner.res.json().accessToken;
+      const { res, body } = await createTenant(token);
+      const tenant = res.json().tenant;
+
+      const adminLogin = await appLogin(tenant.slug, body.adminEmail, body.adminPassword);
+      assert.equal(adminLogin.statusCode, 200);
+
+      const del = await app.inject({
+        method: "DELETE",
+        url: `/v1/tenants/${tenant.id}`,
+        headers: bearer(token),
+      });
+      assert.equal(del.statusCode, 204);
+
+      const afterLogin = await appLogin(tenant.slug, body.adminEmail, body.adminPassword);
+      assert.equal(afterLogin.statusCode, 404);
+
+      const list = await app.inject({
+        method: "GET",
+        url: "/v1/tenants",
+        headers: bearer(token),
+      });
+      assert.equal(list.json().tenants.length, 0);
+    });
+
+    test("DELETE /:id does not delete tenants owned by another creator", async () => {
+      const owner = await registerCreator();
+      const tenant = (await createTenant(owner.res.json().accessToken)).res.json().tenant;
+      const other = await registerCreator();
+
+      const denied = await app.inject({
+        method: "DELETE",
+        url: `/v1/tenants/${tenant.id}`,
+        headers: bearer(other.res.json().accessToken),
+      });
+      assert.equal(denied.statusCode, 404);
+
+      const list = await app.inject({
+        method: "GET",
+        url: "/v1/tenants",
+        headers: bearer(owner.res.json().accessToken),
+      });
+      assert.equal(list.json().tenants.length, 1);
+    });
   });
 
   // ================================================================

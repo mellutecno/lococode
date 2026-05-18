@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db, schema } from "../db/index.js";
 import { hashPassword } from "../utils/hash.js";
 import { microsToCredits } from "../utils/aiCost.js";
+import { deleteFile } from "../utils/fileStorage.js";
 import { normalizeEmail, slugify } from "../utils/normalize.js";
 
 function publicTenant(t) {
@@ -143,6 +144,113 @@ export default async function tenantRoutes(fastify) {
         tenant: publicTenant(tenant),
         stats: await tenantStats(tenant.id),
       };
+    }
+  );
+
+  fastify.patch(
+    "/:id",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+        body: {
+          type: "object",
+          properties: {
+            name: { type: "string", minLength: 2, maxLength: 160 },
+            slug: { type: "string", minLength: 2, maxLength: 80 },
+            publicRegistrationEnabled: { type: "boolean" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const updates = {};
+
+      if (req.body.name !== undefined) {
+        updates.name = String(req.body.name || "").trim();
+      }
+      if (req.body.slug !== undefined) {
+        const nextSlug = slugify(req.body.slug);
+        if (!nextSlug) return reply.code(400).send({ error: "Slug tenant non valido." });
+        updates.slug = nextSlug;
+      }
+      if (req.body.publicRegistrationEnabled !== undefined) {
+        updates.publicRegistrationEnabled = req.body.publicRegistrationEnabled;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return reply.code(400).send({ error: "Nessuna modifica valida." });
+      }
+
+      updates.updatedAt = new Date();
+
+      try {
+        const rows = await db
+          .update(schema.mcTenants)
+          .set(updates)
+          .where(and(
+            eq(schema.mcTenants.id, req.params.id),
+            eq(schema.mcTenants.ownerUserId, req.user.sub)
+          ))
+          .returning();
+
+        if (!rows[0]) return reply.code(404).send({ error: "App non trovata." });
+        return { tenant: publicTenant(rows[0]) };
+      } catch (err) {
+        if (duplicateError(err)) {
+          return reply.code(409).send({ error: "Esiste gia' un'app con questo slug." });
+        }
+        throw err;
+      }
+    }
+  );
+
+  fastify.delete(
+    "/:id",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const rows = await db
+        .select()
+        .from(schema.mcTenants)
+        .where(and(
+          eq(schema.mcTenants.id, req.params.id),
+          eq(schema.mcTenants.ownerUserId, req.user.sub)
+        ))
+        .limit(1);
+
+      const tenant = rows[0];
+      if (!tenant) return reply.code(404).send({ error: "App non trovata." });
+
+      const files = await db
+        .select({ storagePath: schema.mcAppFiles.storagePath })
+        .from(schema.mcAppFiles)
+        .where(eq(schema.mcAppFiles.tenantId, tenant.id));
+
+      await db
+        .delete(schema.mcTenants)
+        .where(and(
+          eq(schema.mcTenants.id, tenant.id),
+          eq(schema.mcTenants.ownerUserId, req.user.sub)
+        ));
+
+      await Promise.all(files.map((f) => deleteFile(f.storagePath)));
+      return reply.code(204).send();
     }
   );
 

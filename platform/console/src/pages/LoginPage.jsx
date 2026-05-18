@@ -5,9 +5,9 @@ import { auth } from "../lib/api.js";
 import Logo from "../components/Logo.jsx";
 
 const FEATURES = [
-  { Icon: Database, label: "Backend gestito" },
-  { Icon: Shield,   label: "Auth e multi-tenant" },
-  { Icon: Zap,      label: "AI proxy con quota" },
+  { Icon: Database, label: "Dati pronti" },
+  { Icon: Shield,   label: "Utenti e accessi" },
+  { Icon: Zap,      label: "AI con credito controllato" },
 ];
 
 export default function LoginPage({ onLoggedIn }) {
@@ -55,16 +55,16 @@ export default function LoginPage({ onLoggedIn }) {
         <div className="space-y-7 max-w-md animate-rise-slow">
           <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.06] border border-white/[0.08] text-xs text-zinc-300">
             <Sparkles className="w-3 h-3 text-accent-400" />
-            Beta privata · Fase 1 backend completa
+            Beta privata - prime app in prova
           </span>
           <h1 className="font-display font-semibold text-5xl xl:text-6xl tracking-tighter2 leading-[1.04] text-gradient">
             La tua app web,<br />
             <span className="text-gradient-accent">deployata in minuti.</span>
           </h1>
           <p className="text-lg text-zinc-400 leading-relaxed">
-            MelluCode ti da' auth, database multi-tenant, file storage e AI
-            <span className="text-white font-medium"> gia' pronti</span>. Tu descrivi l'app,
-            ti consegniamo frontend + backend integrati. Niente server da gestire.
+            Descrivi cosa vuoi creare: MelluCode prepara una web app
+            <span className="text-white font-medium"> pronta da provare</span>, con utenti,
+            dati, file e AI quando serve. Niente server da configurare.
           </p>
 
           <ul className="space-y-3 pt-2">
