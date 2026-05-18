@@ -198,6 +198,34 @@ export const mcAiUsage = pgTable("mc_ai_usage", {
   generationIdx: index("mc_ai_usage_generation_idx").on(t.generationId),
 }));
 
+// Storico delle richieste di modifica dell'utente in linguaggio naturale
+// (chat Lovable-style). Ogni revision rappresenta una conversazione
+// "ho chiesto X -> AI ha capito Y -> ha applicato Z" e linka al build
+// che ha materializzato la modifica.
+export const mcAppRevisions = pgTable("mc_app_revisions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => mcTenants.id, { onDelete: "cascade" }),
+  // Chi ha chiesto la modifica (creator del tenant).
+  createdByUserId: uuid("created_by_user_id").references(() => mcUsers.id, { onDelete: "set null" }),
+  // Testo grezzo dell'utente.
+  requestText: text("request_text").notNull(),
+  // Cosa l'AI ha interpretato: { summary: string, actions: [...] }.
+  interpretation: jsonb("interpretation").default({}).notNull(),
+  // Cosa e' stato realmente applicato (puo' essere subset di interpretation
+  // se alcune action sono state scartate per validazione).
+  patchApplied: jsonb("patch_applied").default({}).notNull(),
+  // Link al build async scatenato (opzionale: se l'utente cambia solo prompt
+  // testo senza modificare schema/theme, niente build).
+  buildId: uuid("build_id").references(() => mcAppBuilds.id, { onDelete: "set null" }),
+  // pending -> interpreting -> applied | failed | cancelled
+  status: varchar("status", { length: 16 }).notNull().default("pending"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tenantCreatedIdx: index("mc_app_revisions_tenant_created_idx").on(t.tenantId, t.createdAt),
+  buildIdx: index("mc_app_revisions_build_idx").on(t.buildId),
+}));
+
 // Build job delle app generate. Traccia ogni esecuzione asincrona della
 // pipeline schema-generation + frontend-build. Polled dalla Console per
 // avanzamento live "Lovable-style" senza bloccare la pagina.

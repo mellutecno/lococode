@@ -9,6 +9,7 @@ import { normalizeEmail, slugify } from "../utils/normalize.js";
 import { buildGeneratedFrontend, deleteGeneratedFrontend } from "../orchestrator/frontendBuilder.js";
 import { runSchemaGeneration } from "../orchestrator/schemaGeneration.js";
 import { enqueueBuild, getBuild, listBuilds } from "../orchestrator/buildRunner.js";
+import { runRevision, listRevisions, getRevision } from "../orchestrator/revisionEngine.js";
 
 function publicTenant(t) {
   if (!t) return null;
@@ -633,6 +634,117 @@ export default async function tenantRoutes(fastify) {
 
       const builds = await listBuilds(tenant.id, { limit: req.query.limit });
       return { builds };
+    }
+  );
+
+  // ============================================================
+  // Revisioni AI (chat modifiche Lovable-style)
+  // ============================================================
+
+  // POST /v1/tenants/:id/revisions  body: {requestText} -> 201 {revision, buildId, summary, applied, skipped}
+  fastify.post(
+    "/:id/revisions",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+        body: {
+          type: "object",
+          required: ["requestText"],
+          properties: {
+            requestText: { type: "string", minLength: 2, maxLength: 5000 },
+            autoBuild: { type: "boolean" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const tenant = await loadOwnedTenant(req, reply);
+      if (!tenant) return reply;
+
+      try {
+        const result = await runRevision({
+          tenant,
+          requestText: req.body.requestText,
+          ownerUserId: req.user.sub,
+          autoBuild: req.body.autoBuild !== false,
+          logger: req.log,
+        });
+        return reply.code(201).send(result);
+      } catch (err) {
+        const map = {
+          NO_TEXT: 400,
+          AI_NOT_CONFIGURED: 503,
+          AI_UNAVAILABLE: 502,
+          AI_INVALID_RESPONSE: 422,
+          NO_VALID_ACTIONS: 422,
+          DB_FAILED: 502,
+        };
+        const status = map[err?.code] || 500;
+        return reply.code(status).send({
+          error: err?.userMessage || "Errore modifica.",
+          ...(err?.skipped ? { skipped: err.skipped } : {}),
+        });
+      }
+    }
+  );
+
+  // GET /v1/tenants/:id/revisions -> storia (ordine cronologico, vecchio -> nuovo)
+  fastify.get(
+    "/:id/revisions",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+        querystring: {
+          type: "object",
+          properties: { limit: { type: "string" } },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const tenant = await loadOwnedTenant(req, reply);
+      if (!tenant) return reply;
+      const revisions = await listRevisions(tenant.id, { limit: req.query.limit });
+      return { revisions };
+    }
+  );
+
+  // GET /v1/tenants/:id/revisions/:rid -> dettaglio singolo
+  fastify.get(
+    "/:id/revisions/:rid",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id", "rid"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            rid: { type: "string", format: "uuid" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const tenant = await loadOwnedTenant(req, reply);
+      if (!tenant) return reply;
+      const revision = await getRevision(tenant.id, req.params.rid);
+      if (!revision) return reply.code(404).send({ error: "Revisione non trovata." });
+      return { revision };
     }
   );
 }
