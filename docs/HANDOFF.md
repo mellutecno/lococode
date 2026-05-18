@@ -1,5 +1,76 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Codex - 2026-05-18 sera (riallineamento dopo sessione Claude Code)
+
+Ho verificato il lavoro lasciato da Claude Code e il tentativo di aggiornare
+questo file: il replace era fallito perche' l'intestazione cercata non esisteva
+piu'. Quindi i commit tecnici erano presenti, ma questo HANDOFF non conteneva
+ancora il riassunto finale.
+
+### Stato verificato del repo locale/GitHub
+- Branch: `mellucode-v2`.
+- Ultimo commit su GitHub/local: `235b22e` (`Orchestrator default model:
+  gpt-4o-mini -> claude-sonnet-4 (premium)`).
+- Working tree locale: pulito salvo `deploy.py` non tracciato, da NON toccare
+  senza richiesta esplicita.
+
+### Stato verificato del server
+- Percorso: `/opt/mellucode`.
+- PM2 process: `mellucode-api`, online, health OK.
+- Il server risultava fermo al commit `51f1161`, quindi indietro rispetto a
+  GitHub/local. Questo significa che gli ultimi commit di default model non
+  erano allineati nel checkout server.
+- L'env reale e' in `/opt/mellucode/platform/api/.env` e contiene:
+  `ORCHESTRATOR_MODEL=anthropic/claude-opus-4`.
+- Anche se il checkout server era indietro, l'orchestrator in produzione usa
+  il modello da env, quindi Opus 4 e' il modello effettivo per schema/revision.
+
+### Cosa risulta gia' implementato dai commit precedenti
+- Build async con polling (`mc_app_builds`, `buildRunner`, endpoint builds).
+- Chat modifiche Lovable-style (`mc_app_revisions`, `RevisionChat`, endpoint
+  revisions) che interpreta richieste in italiano e rigenera il frontend.
+- Logging AI in `mc_ai_usage` anche per orchestrator e revision-engine.
+- Fix bug `ID`/UUID nei form generati:
+  - prompt orchestrator vieta system fields;
+  - template `_base` filtra system fields;
+  - backend `recordValidation` strippa system fields da schema e dati.
+- Fix campi data/orario: prompt + euristiche `entityIntrospect.js`.
+- UX Console:
+  - bottone "Rigenera da zero" al posto di "Aggiorna app";
+  - chat modifiche con input piu' chiaro;
+  - card admin app per credenziali dell'app generata.
+
+### Problema principale ancora aperto
+Antonio non accetta piu' app "tutte uguali" e CRUD generico. Il template
+parametrico `_base` e' stabile, ma produce app simili tra loro. Per arrivare
+davvero a una sensazione tipo Lovable serve passare da:
+
+`schema -> template parametrico`
+
+a:
+
+`brief utente -> SDD/schema -> codegen frontend specifico -> build -> retry se
+fallisce -> preview reale`.
+
+Il template `_base` puo' restare come shell tecnica sicura (auth, SDK, routing,
+API client), ma UI, layout e pagine principali devono essere generate o
+specializzate per dominio. Obiettivo: app vendibili, non demo.
+
+### Priorita' prossima
+1. Allineare server a GitHub se non ci sono job in corso.
+2. Introdurre Step 3b: codegen React/Tailwind controllato, con guardrail:
+   build obbligatoria, retry automatico sugli errori, niente deploy se non
+   compila.
+3. Migliorare i prompt per app finali:
+   - niente demo come prodotto finale;
+   - admin reale dell'app;
+   - logiche business specifiche del dominio;
+   - UI leggibile sempre, contrasto forte, niente testo scuro su sfondo scuro
+     o verde su verde.
+4. Solo dopo: pricing/pagamento/abbonamento e conversione trial -> app attiva.
+
+---
+
 ## Aggiornamento Claude Code - 2026-05-19 notte (FIX bug "ID UUID" + admin app UX)
 
 Antonio ha provato a creare un'app palestra e ha segnalato:
