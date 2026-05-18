@@ -1,5 +1,68 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Claude Code - 2026-05-18 sera (piano build async + polling)
+
+Riprendo dopo Codex (`8c5c5dd`). Stato verificato:
+- Server: deployato `8c5c5dd`, `/v1/health` OK
+- Locale: pulito, solo `deploy.py` untracked (credenziali — non committare)
+- 129/130 test pass (1 integration skip)
+
+**Prossimo step**: trasformare la pipeline guidata (oggi sincrona) in **job
+asincrono con polling**, cosi' la Console non blocca per 60+ secondi durante
+`npm install + vite build` e mostra avanzamento live tipo Lovable.
+
+### Piano sotto-step (committo dopo ognuno)
+
+1. **DB + schema**: nuova tabella `mc_app_builds`:
+   - id uuid pk, tenantId fk cascade, status (queued|running|succeeded|failed)
+   - stage (queued|schema|frontend|done)
+   - progress int 0-100
+   - messages jsonb array (testi human readable in sequenza)
+   - errorMessage text null, startedAt, finishedAt, createdAt
+   - index su (tenant_id, created_at desc)
+   - migration drizzle 0006_*
+
+2. **buildRunner.js** in `platform/api/src/orchestrator/`:
+   - `enqueueBuild(tenant, { skipSchema })` → insert row queued, lancia `runBuild(buildId)` con `setImmediate` (no await dal caller), ritorna buildId
+   - `runBuild(buildId)` worker:
+     - load tenant + entities
+     - update status=running, stage=schema, push message
+     - se !skipSchema o no entities: chiama logica esistente di `generate-schema` (estraggo helper riusabile da routes/tenants.js)
+     - update stage=frontend, push message
+     - chiama `frontendBuilder.buildFrontend()` esistente
+     - update status=succeeded, stage=done, push message finale
+     - su errore: update status=failed, errorMessage, finishedAt
+   - Lock leggero: se gia' un build running per tenant → enqueueBuild ritorna 409
+
+3. **3 endpoint** in `routes/tenants.js`:
+   - `POST /v1/tenants/:id/builds` body `{ skipSchema? }` → 201 `{ buildId, status }` (creator-owner)
+   - `GET /v1/tenants/:id/builds/:buildId` → ritorna stato corrente per polling (creator-owner)
+   - `GET /v1/tenants/:id/builds?limit=20` → lista storia builds (creator-owner)
+
+4. **Console polling + UI live**:
+   - `lib/api.js`: `tenants.startBuild`, `tenants.getBuild`, `tenants.listBuilds`
+   - `AppDetailPage.jsx`: rimpiazza `handleBuildApp` esistente (chiamate seriali blocking) con startBuild → polling 2s su getBuild → mostra stages live + messages stream → iframe preview quando done
+   - Mantiene il flusso `?build=1` da AppsDashboardPage post-create (auto-start)
+   - Stop polling su unmount/cleanup
+
+5. **Test + deploy + smoke**:
+   - Unit per `enqueueBuild` (lock, status iniziale), `runBuild` mock
+   - Integration per i 3 endpoint
+   - Deploy server, restart pm2
+   - Smoke: tenant temporaneo, startBuild, poll fino succeeded, verifica `/apps/SLUG/` HTTP 200, cleanup
+
+### Cosa NON entra in questo giro
+- Cancellazione build in corso (manca PATCH/DELETE) — futuro
+- Notifiche email/webhook su build done/failed — futuro
+- Build queue distribuita (Redis/Bull) — overkill per ora, `setImmediate` in process basta
+- Streaming server-sent events — polling 2s e' sufficiente, SSE solo se UX richiede sub-secondo
+
+### Vincoli
+- Non rompere il flusso esistente: vecchie route `generate-schema` e `generate-frontend` restano per backward-compat
+- HANDOFF aggiornato a ogni sotto-step completato
+
+---
+
 ## Aggiornamento Codex - 2026-05-18 (Flusso Lovable-style + preview)
 
 Stato dopo questo giro:
