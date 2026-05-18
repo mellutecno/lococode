@@ -54,6 +54,19 @@ export function getFields(entity) {
     });
 }
 
+// Heuristiche per riconoscere il tipo di input dal nome del campo,
+// quando l'AI non ha specificato un format esplicito. Esempio: un campo
+// chiamato "schedule" o "orario" deve aprire un widget time/datetime,
+// non un text input vuoto.
+const NAME_HEURISTICS = [
+  // datetime-local: data + ora insieme (appuntamenti, prenotazioni, eventi)
+  { re: /(data_ora|datetime|appointment|prenotazione|booking|inizio_evento|fine_evento|start_at|end_at|starts_at|ends_at)/i, kind: "datetime" },
+  // time picker: ora del giorno (apertura, chiusura, orario lezione)
+  { re: /^(ora|orario|hour|time|schedule|opening|chiusura|apertura)$|_(ora|orario|hour|time|inizio|fine|start|end)$/i, kind: "time" },
+  // date picker: solo giorno (compleanno, scadenza, data evento)
+  { re: /(_at$|^data$|_data$|date|scadenza|expiry|deadline|nascita|birth|emissione|consegna|delivery)/i, kind: "date" },
+];
+
 function fieldKind(name, field) {
   const n = String(name).toLowerCase();
   if (n.endsWith("_file_id") || n.includes("photo") || n.includes("image") || n.includes("logo")) return "file";
@@ -63,8 +76,17 @@ function fieldKind(name, field) {
   if (field.type === "array" || field.type === "object") return "json";
   if (field.format === "email") return "email";
   if (field.format === "uri" || field.format === "url") return "url";
-  if (field.format === "date") return "date";
+  if (field.format === "time") return "time";
   if (field.format === "date-time") return "datetime";
+  if (field.format === "date") return "date";
+
+  // Format non specificato: usa euristica sul nome del campo cosi' l'AI
+  // puo' "sbagliare" e il template ricuce. Es. {name:"schedule",type:"string"}
+  // -> riconosciuto come time picker, non text input vuoto.
+  for (const h of NAME_HEURISTICS) {
+    if (h.re.test(n)) return h.kind;
+  }
+
   if ((field.maxLength || 0) > 220 || /note|notes|description|bio|message|content|descrizione/.test(n)) return "textarea";
   return "text";
 }

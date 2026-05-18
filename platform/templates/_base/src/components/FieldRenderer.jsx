@@ -48,6 +48,7 @@ export function FieldInput({ field, value, onChange }) {
     url: "url",
     date: "date",
     datetime: "datetime-local",
+    time: "time",
     number: "number",
     text: "text",
   }[field.kind] || "text";

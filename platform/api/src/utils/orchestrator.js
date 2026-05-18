@@ -86,7 +86,21 @@ Regole assolute output:
      diventera' il tema dell'app intera.
 3. Genera da 2 a 8 entita' massimo. Concentrati sugli oggetti core del dominio.
 4. Ogni entita' deve avere fra 2 e 15 proprieta'.
-5. NON INCLUDERE MAI questi campi (li gestisce il sistema, mai l'utente):
+5. USA SEMPRE IL FORMAT GIUSTO per campi temporali, altrimenti il form
+   mostra un text input vuoto e l'utente non sa cosa scrivere:
+   - campo "data X" / "X_at" / scadenza / nascita: type=string + format=date
+   - campo "orario" / "ora apertura" / "schedule giornaliero":
+     type=string + format=time
+   - campo "data e ora" / "appuntamento" / "inizio_evento" / "starts_at":
+     type=string + format=date-time
+   - campo email: type=string + format=email
+   - campo URL/sito web: type=string + format=uri
+   - giorno della settimana ricorrente: type=string + enum=["lunedi", ...]
+   Esempio sbagliato: {name:"schedule", type:"string", maxLength:100} ->
+   text input vuoto, l'utente non sa che inserire.
+   Esempio giusto: {name:"orario_inizio", type:"string", format:"time"}.
+
+6. NON INCLUDERE MAI questi campi (li gestisce il sistema, mai l'utente):
    - id (chiave primaria, generata server-side come UUID)
    - tenant_id, tenantId (isolamento multi-tenant, automatico)
    - created_at, createdAt, updated_at, updatedAt (timestamps)
@@ -94,6 +108,8 @@ Regole assolute output:
      (chi ha creato/modificato il record, tracciato automaticamente)
    Se metti uno di questi nelle properties o required, l'utente vedra' un
    campo "ID" da riempire a mano nel form -> bug grave, NON FARLO.
+
+7. Genera da 2 a 8 entita' massimo (re-iterato). Concentrati sugli oggetti core del dominio.
 6. Se la descrizione e' vaga, inferisci valori ragionevoli ma resta minimale.`,
   ];
 
