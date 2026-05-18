@@ -216,8 +216,8 @@ export default function AppsDashboardPage({ user }) {
             Le tue app
           </h1>
           <p className="text-sm text-zinc-400 mt-2 max-w-xl">
-            Crea, apri e gestisci le tue app web. Ogni progetto resta separato dagli altri,
-            con i suoi utenti, i suoi dati e il suo credito AI.
+            Crea, apri e gestisci le tue app web. Ogni progetto ha il suo spazio,
+            i suoi utenti, i suoi dati e il suo credito AI.
           </p>
         </div>
         <button onClick={() => setCreateOpen(true)} className="btn-primary self-start sm:self-end">
@@ -279,7 +279,7 @@ export default function AppsDashboardPage({ user }) {
       {list?.length === 0 && (
         <EmptyState
           title="Ancora nessuna app"
-          description="Crea la tua prima app MelluCode. Avrai uno spazio dedicato, pronto per utenti, dati, file e anteprima."
+          description="Crea la tua prima app: descrivi cosa vuoi ottenere e MelluCode prepara il progetto."
           action={
             <button onClick={() => setCreateOpen(true)} className="btn-primary">
               <Plus className="w-4 h-4" /> Crea la prima
@@ -355,7 +355,7 @@ export default function AppsDashboardPage({ user }) {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Crea una nuova app"
-        subtitle="Dai un nome alla tua app e descrivi cosa deve fare. MelluCode preparera' il progetto partendo da queste istruzioni."
+        subtitle="Dai un nome alla tua app e racconta cosa deve fare. Da qui parte la creazione del progetto."
         maxWidth="xl"
       >
         <CreateAppForm

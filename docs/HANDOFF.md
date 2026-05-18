@@ -1,5 +1,44 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Codex - 2026-05-18 (Sotto-step 2 completato + Console modal hardening)
+
+Stato dopo questo giro:
+- Branch: `mellucode-v2`
+- Obiettivo accettato: Step 3 = **template + personalizzazione AI**, niente codegen React puro.
+- File sensibile non tracciato: `deploy.py` resta fuori dal commit perche' contiene credenziali in chiaro.
+
+### Fatto
+- Completato `platform/templates/_base/` con pagine generiche vere:
+  - `src/pages/EntityListPage.jsx`
+  - `src/pages/EntityFormPage.jsx`
+  - `src/pages/EntityDetailPage.jsx`
+- Il template legge lo schema dinamicamente da `mc.entities.list()`, sceglie la primary entity e renderizza lista, dettaglio, creazione, modifica, eliminazione record, upload file e campi dinamici.
+- `platform/templates/_base/README.md` riscritto: non parla piu' di palestra demo, ma di template parametrico.
+- `platform/templates/_base/src/index.css` ora usa token tema anche per aurora, selection, focus e glow; meno bias viola/palestra.
+- Console:
+  - `Modal.jsx` reso piu' robusto: portal su body, dialog con `max-height: 100dvh`, body interno scrollabile, overlay sopra tutto. Serve per popup nuova app / modifica / elimina.
+  - Copy utente piu' umano in dashboard, modifica app e zona eliminazione.
+
+### Verifiche fatte
+- `npm run build` in `platform/console`: PASS.
+- Smoke template: copia temporanea di `_base`, sostituzione token dummy + palette `dark-electric`, `npm install`, `npm run build`: PASS.
+- Smoke produzione cancellazione app:
+  - registrato creator temporaneo;
+  - creato tenant temporaneo;
+  - chiamato `DELETE /v1/tenants/:id`;
+  - verificato con `GET /v1/tenants` che il tenant non comparisse piu'.
+  - Risultato: PASS.
+- Test reale richiesto da Antonio:
+  - eliminata l'app `Palestra` (`slug=palestra`, owner `mellutecno@gmail.com`) usando la route API `DELETE /v1/tenants/:id` tramite `app.inject` sul server;
+  - risposta delete: `204`;
+  - count tenant per quell'account: prima `1`, dopo `0`;
+  - quindi la cancellazione backend funziona davvero. Il bug visto in UI era nella modale/popup, non nella route delete.
+
+### Prossimo passo
+Sotto-step 3: implementare `platform/api/src/orchestrator/frontendBuilder.js`, cioe' il builder server-side che copia `_base`, sostituisce token, esegue build e pubblica l'app in `/opt/mellucode/apps/{slug}/`.
+
+---
+
 ## Aggiornamento Claude Code — 2026-05-18 notte (Inizio Step 3a — pipeline template-based)
 
 Sto per partire con **Step 3a**: pipeline template-based per la generazione frontend delle app. Approccio Lovable-like: template parametrico fisso + token substitution + AI personalizza solo le sostituzioni (palette, nome app, label primarie). Niente codegen puro di file React da zero.
@@ -67,11 +106,20 @@ Per ogni sotto-step: codice + test locali + commit + push. Deploy server e nginx
 
 ### Avanzamento sotto-step (aggiornato a ogni commit)
 
-- [x] **Sotto-step 1 — Theme palette mapping** (commit pendente)
+- [x] **Sotto-step 1 — Theme palette mapping** (commit `9ac191b`)
   - `platform/api/src/orchestrator/themePalettes.js` — 7 palette complete (ink 50..950, accent 50..900, glow sm/md/lg + card/card-hover, bg aurora, font, selection). Helper `themePalette()`, `themePaletteWithFallback()`, `themeReplaceMap()` per token replace.
   - 13 test PASS, hex valid check, fallback check, coverage check.
-  - Niente cambiamenti server, solo logica.
-- [ ] Sotto-step 2 — Template parametrico `_base/`
+- [ ] **Sotto-step 2 — Template parametrico `platform/templates/_base/`** (IN PROGRESS)
+  - 2a: fork da `palestra/` + rimozione file specifici (Avatar, StatusPill, Members*Page) + tokenizzazione (`tailwind.config.js`, `index.html`, `vite.config.js`, `src/main.jsx`, `src/lib/api.js`, `src/App.jsx`).
+  - 2b: `src/lib/entityIntrospect.js` (analyze schema -> primary/photo/status/date fields) + `src/components/FieldRenderer.jsx` (input + display dinamico per ogni tipo) + pagine generiche EntityListPage, EntityFormPage, EntityDetailPage che leggono lo schema dinamicamente via `mc.entities.list()`.
+  - 2c: smoke build con valori dummy fissi (sostituisco tokens via sed/script -> `npm run build` deve passare).
+  - **Convenzione tokens**: `__TOKEN_NAME__` (es. `__APP_NAME__`, `__TENANT_SLUG__`, `__PRIMARY_ENTITY_NAME__`, `__BASE_PATH__`, `__THEME_INK_950__`, `__THEME_ACCENT_500__`, ecc.). Sostituzione via regex `/__[A-Z_]+__/g` -> map.
+  - **Field auto-render heuristics**:
+    - `primary field` = primo `required` di tipo string, fallback `name|title|label`
+    - `photo field` = primo `*_file_id`
+    - `status field` = primo `enum`
+    - `date field` = primo `format=date|date-time`
+    - resto = field generici
 - [ ] Sotto-step 3 — frontendBuilder server module
 - [ ] Sotto-step 4 — endpoint `POST /v1/tenants/:id/generate-frontend`
 - [ ] Sotto-step 5 — nginx location dinamica `/apps/SLUG/`

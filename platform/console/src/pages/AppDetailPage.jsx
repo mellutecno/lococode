@@ -419,7 +419,7 @@ export default function AppDetailPage() {
           <div>
             <h2 className="text-sm font-medium text-rose-100 uppercase tracking-wider">Zona pericolosa</h2>
             <p className="text-sm text-zinc-400 mt-1">
-              Elimina questa app e tutto quello che contiene: utenti, dati, file e cronologia.
+              Elimina questa app solo se non ti serve piu. L'operazione rimuove anche dati e file collegati.
             </p>
           </div>
           <button type="button" onClick={() => { setFormError(null); setDeleteOpen(true); }} className="btn-danger">
@@ -432,7 +432,7 @@ export default function AppDetailPage() {
         open={editOpen}
         onClose={() => setEditOpen(false)}
         title="Modifica app"
-        subtitle="Aggiorna nome, indirizzo e accesso pubblico dell'app."
+        subtitle="Cambia nome, indirizzo pubblico e accesso degli utenti."
         maxWidth="lg"
       >
         <form onSubmit={saveEdit} className="space-y-5">
@@ -492,7 +492,7 @@ export default function AppDetailPage() {
         open={deleteOpen}
         onClose={() => setDeleteOpen(false)}
         title="Elimina app"
-        subtitle="Questa operazione elimina definitivamente l'app e i dati collegati."
+        subtitle="Conferma solo se vuoi rimuovere davvero questa app."
         maxWidth="md"
       >
         <div className="space-y-5">
