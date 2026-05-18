@@ -42,6 +42,12 @@ Fix post-deploy:
 - **Demo palestra 500**: directory `/opt/mellucode/demo/palestra/` mancante → nginx ciclo di redirect. Fix: copiati i file da `platform/templates/palestra/dist/` e reload nginx. Stato: HTTP 200 OK
 - **Console "Genera schema" 400**: il frontend mandava una POST senza body; Fastify con `schema: { body: { type: "object" } }` rifiutava con 400. Fix: `api.js` ora invia `body: {}`. Commit `74c210e` deployato
 
+Flusso utente attuale (cosa funziona oggi):
+- Un creator può registrarsi, fare login, cliccare "Nuova app" e creare un tenant compilando nome, slug e descrizione iniziale (`initialPrompt`).
+- Dalla dashboard può aprire il dettaglio dell'app e cliccare "Genera schema": l'AI legge `initialPrompt`, genera le entità (tabelle dati) e le salva in `mc_app_entities`.
+- L'app generata ha quindi un backend dati funzionante (auth, Data API, file storage, AI proxy), ma **non ha ancora un frontend visibile**: manca lo Step 1 della Fase 2 (scaffolding frontend da template).
+- L'unica app completa e navigabile resta `palestra-demo` su `/demo/palestra/` (hardcoded, costruita manualmente sullo stack MelluCode).
+
 Prossimo passo consigliato:
 1. Verificare da browser: aprire app detail, cliccare "Genera schema", controllare che le entità compaiano e che `GET /v1/data/entities` (con app-user admin) le mostri
 2. Iniziare Step 1 della Fase 2: scaffolding frontend da template palestra + build + deploy su `/apps/{slug}/`
