@@ -82,6 +82,14 @@ export const config = {
     maxTokens: Number(opt("ORCHESTRATOR_MAX_TOKENS", "2048")),
     maxEntities: Number(opt("ORCHESTRATOR_MAX_ENTITIES", "8")),
   },
+
+  generatedApps: {
+    templateDir: opt("GENERATED_APP_TEMPLATE_DIR"),
+    publishDir: opt("GENERATED_APPS_DIR"),
+    buildRoot: opt("GENERATED_APP_BUILD_ROOT"),
+    sdkDir: opt("MELLUCODE_SDK_DIR"),
+    buildTimeoutMs: Number(opt("GENERATED_APP_BUILD_TIMEOUT_MS", "600000")),
+  },
 };
 
 export const isDev = config.env !== "production";

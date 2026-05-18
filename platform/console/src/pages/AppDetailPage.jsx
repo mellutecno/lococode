@@ -14,7 +14,9 @@ import {
   Gauge,
   Hash,
   Loader2,
+  MonitorUp,
   Pencil,
+  Rocket,
   Save,
   ShieldCheck,
   Sparkles,
@@ -92,6 +94,7 @@ export default function AppDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [formError, setFormError] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [frontendGenerating, setFrontendGenerating] = useState(false);
   const [genResult, setGenResult] = useState(null);
 
   async function load() {
@@ -109,6 +112,7 @@ export default function AppDetailPage() {
 
       try {
         const statRes = await tenants.stats(t.id);
+        setTenant(statRes.tenant);
         setStats(statRes.stats);
       } catch (err) {
         setStatsError(err.message);
@@ -184,11 +188,26 @@ export default function AppDetailPage() {
       toast.success(`${res.created} tabelle dati generate.`);
       // Refresh stats so entity count updates
       const statRes = await tenants.stats(tenant.id);
+      setTenant(statRes.tenant);
       setStats(statRes.stats);
     } catch (err) {
       toast.error(err.message);
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleGenerateFrontend() {
+    if (!tenant) return;
+    setFrontendGenerating(true);
+    try {
+      const res = await tenants.generateFrontend(tenant.id);
+      setTenant(res.tenant);
+      toast.success("Frontend generato e pubblicato.");
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setFrontendGenerating(false);
     }
   }
 
@@ -213,6 +232,7 @@ export default function AppDetailPage() {
   }
 
   const url = tenantUrl(tenant.slug);
+  const frontend = tenant.metadata?.frontend || null;
   const aiCalls = stats ? stats.ai.callsSucceeded + stats.ai.callsFailed : 0;
   const aiPercent = stats?.ai.monthlyLimitCredits > 0
     ? Math.max(0, Math.min(100, (stats.ai.remainingCredits / stats.ai.monthlyLimitCredits) * 100))
@@ -412,6 +432,50 @@ export default function AppDetailPage() {
             )}
           </div>
         )}
+      </div>
+
+      <div className="card p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Frontend app</h2>
+            <p className="text-xs text-zinc-500 mt-1">
+              Crea l'interfaccia vera dell'app dal template premium e pubblicala sul link pubblico.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {frontend?.url && (
+              <a href={frontend.url} target="_blank" rel="noreferrer" className="btn-secondary">
+                <ExternalLink className="w-4 h-4" /> Apri frontend
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={handleGenerateFrontend}
+              disabled={frontendGenerating || !stats?.entities}
+              className="btn-primary"
+            >
+              {frontendGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+              {frontendGenerating ? " Pubblico..." : frontend?.url ? " Rigenera frontend" : " Genera frontend"}
+            </button>
+          </div>
+        </div>
+        <div className="mt-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+          {frontend?.url ? (
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-sm text-zinc-300">
+              <MonitorUp className="w-4 h-4 text-accent-300 flex-shrink-0" />
+              <span className="flex-1">
+                Pubblicato su <a href={frontend.url} target="_blank" rel="noreferrer" className="link">{frontend.url}</a>
+              </span>
+              {frontend.generatedAt && (
+                <span className="text-xs text-zinc-500">aggiornato {formatDateIt(frontend.generatedAt)}</span>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-400">
+              Genera prima lo schema dati, poi pubblica il frontend. Da quel momento il link dell'app smette di essere vuoto.
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="card p-6 border-rose-400/20 bg-rose-500/[0.03]">

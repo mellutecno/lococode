@@ -1,5 +1,45 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Codex - 2026-05-18 (Frontend builder Lovable-style)
+
+Stato dopo questo giro:
+- Branch: `mellucode-v2`
+- Obiettivo: trasformare lo Step 3a in una pipeline concreta **template + personalizzazione**, cioe' generare un frontend vero da `_base` e pubblicarlo sotto `/apps/{slug}/`.
+- File sensibile non tracciato: `deploy.py` resta fuori dal commit perche' contiene credenziali in chiaro.
+
+### Fatto
+- Backend:
+  - aggiunta config `generatedApps` (`GENERATED_APP_TEMPLATE_DIR`, `GENERATED_APPS_DIR`, `GENERATED_APP_BUILD_ROOT`, `MELLUCODE_SDK_DIR`, `GENERATED_APP_BUILD_TIMEOUT_MS`);
+  - aggiunto `platform/api/src/orchestrator/frontendBuilder.js`;
+  - il builder copia `platform/templates/_base`, sostituisce token app/tenant/theme/entity, installa dipendenze, esegue `npm run build`, pubblica `dist` in `apps/{slug}`;
+  - dipendenza `mellucode-sdk` del template riscritta verso il path reale del repo, cosi' funziona sia in locale sia sul server;
+  - aggiunto `POST /v1/tenants/:id/generate-frontend`, protetto dal creator owner del tenant;
+  - quando si elimina un tenant, viene eliminata anche la cartella frontend generata per quello slug.
+- Console:
+  - aggiunto client `tenants.generateFrontend(id)`;
+  - nella pagina dettaglio app aggiunta sezione **Frontend app** con bottone `Genera frontend` / `Rigenera frontend` e link `Apri frontend`;
+  - dopo `generate-schema` la Console ricarica il tenant aggiornato, cosi' metadata theme/schema resta allineato.
+- Test:
+  - aggiunti test unit per `pickPrimaryEntity`, `buildTemplateReplacements`, `applyTemplateTokens`;
+  - prova reale locale del builder: generata e compilata app temporanea `test-builder-local` con theme `dark-cyan`, build riuscita;
+  - `npm test` API: PASS (129 pass, 1 integration skip);
+  - `npm run build` Console: PASS.
+
+### Note operative server
+- In produzione il default del builder diventa:
+  - repo root: `/opt/mellucode`;
+  - template: `/opt/mellucode/platform/templates/_base`;
+  - SDK: `/opt/mellucode/platform/sdk`;
+  - output app: `/opt/mellucode/apps/{slug}/`.
+- Nginx deve avere una location `/apps/{slug}/` che serve staticamente `/opt/mellucode/apps/{slug}/` con fallback SPA su `index.html`.
+
+### Prossimo passo consigliato
+1. Deploy e test reale su un tenant con schema gia' generato.
+2. Migliorare UX della Console: dopo `Genera schema` proporre direttamente `Genera frontend`.
+3. Step successivo Lovable-style: job orchestrator che concatena automaticamente `schema -> frontend -> link finale`, senza far cliccare manualmente ogni pezzo.
+
+---
+
 ## Aggiornamento Codex - 2026-05-18 (Area Admin piattaforma)
 
 Stato dopo questo giro:

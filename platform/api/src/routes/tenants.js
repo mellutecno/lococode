@@ -10,7 +10,7 @@ import { callOpenRouterChat } from "../utils/openRouterClient.js";
 import { buildSystemPrompt, extractJsonArray, validateEntityDef, pickThemeFromEntities } from "../utils/orchestrator.js";
 import { publicEntity } from "../utils/entities.js";
 import { inferSector } from "../orchestrator/sectors/_index.js";
-import { isValidThemeId } from "../orchestrator/themes.js";
+import { buildGeneratedFrontend, deleteGeneratedFrontend } from "../orchestrator/frontendBuilder.js";
 
 function publicTenant(t) {
   if (!t) return null;
@@ -256,6 +256,7 @@ export default async function tenantRoutes(fastify) {
         ));
 
       await Promise.all(files.map((f) => deleteFile(f.storagePath)));
+      await deleteGeneratedFrontend(tenant.slug).catch(() => {});
       return reply.code(204).send();
     }
   );
@@ -505,6 +506,76 @@ export default async function tenantRoutes(fastify) {
         });
       } catch (err) {
         return reply.code(502).send({ error: "Errore durante il salvataggio delle entita'." });
+      }
+    }
+  );
+
+  fastify.post(
+    "/:id/generate-frontend",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const tenantRows = await db
+        .select()
+        .from(schema.mcTenants)
+        .where(and(
+          eq(schema.mcTenants.id, req.params.id),
+          eq(schema.mcTenants.ownerUserId, req.user.sub)
+        ))
+        .limit(1);
+
+      const tenant = tenantRows[0];
+      if (!tenant) return reply.code(404).send({ error: "App non trovata." });
+
+      const entityRows = await db
+        .select()
+        .from(schema.mcAppEntities)
+        .where(eq(schema.mcAppEntities.tenantId, tenant.id));
+
+      if (entityRows.length === 0) {
+        return reply.code(400).send({ error: "Genera prima lo schema dati dell'app." });
+      }
+
+      try {
+        const build = await buildGeneratedFrontend({ tenant, entities: entityRows });
+        const nextMetadata = {
+          ...(tenant.metadata || {}),
+          frontend: {
+            url: build.url,
+            generatedAt: new Date().toISOString(),
+            buildMs: build.buildMs,
+            theme: build.theme,
+            primaryEntity: build.primaryEntity,
+          },
+        };
+
+        const updated = await db
+          .update(schema.mcTenants)
+          .set({ metadata: nextMetadata, updatedAt: new Date() })
+          .where(and(
+            eq(schema.mcTenants.id, tenant.id),
+            eq(schema.mcTenants.ownerUserId, req.user.sub)
+          ))
+          .returning();
+
+        return reply.code(201).send({
+          frontend: nextMetadata.frontend,
+          tenant: publicTenant(updated[0]),
+        });
+      } catch (err) {
+        return reply.code(502).send({
+          error: "Frontend non generato.",
+          details: String(err?.message || err).slice(0, 1000),
+        });
       }
     }
   );

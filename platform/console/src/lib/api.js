@@ -147,6 +147,9 @@ export const tenants = {
   generateSchema(id) {
     return request(`/v1/tenants/${encodeURIComponent(id)}/generate-schema`, { method: "POST", body: {} });
   },
+  generateFrontend(id) {
+    return request(`/v1/tenants/${encodeURIComponent(id)}/generate-frontend`, { method: "POST", body: {} });
+  },
 };
 
 // ---- Platform Admin API ----
