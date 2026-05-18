@@ -2,28 +2,202 @@
 @tailwind components;
 @tailwind utilities;
 
+/* =========================================================================
+   Tokens base — color-scheme, scrollbar, selection
+   ========================================================================= */
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  /* Sfondo: aurora soffusa sotto al colore base. Niente immagini esterne. */
+  background-color: theme('colors.ink.950');
+  background-image:
+    radial-gradient(70% 50% at 15% -10%, rgba(124,58,255,0.16), transparent 60%),
+    radial-gradient(60% 50% at 85% 0%,   rgba(6,182,212,0.10), transparent 60%);
+  background-attachment: fixed;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  letter-spacing: -0.011em;
+}
+
+::selection {
+  background: rgba(124, 58, 255, 0.35);
+  color: white;
+}
+
+/* Scrollbar discreta, brand-aware */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(124,58,255,0.18);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(124,58,255,0.32); background-clip: content-box; border: 2px solid transparent; }
+
+/* =========================================================================
+   Layer base: tipografia gerarchica
+   ========================================================================= */
+@layer base {
+  h1, h2, h3 { @apply font-display tracking-tightish; }
+  h1 { @apply text-3xl sm:text-4xl font-semibold; }
+  h2 { @apply text-2xl font-semibold; }
+  h3 { @apply text-lg font-semibold; }
+  code, pre { @apply font-mono; }
+  /* Focus ring premium */
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px theme('colors.ink.950'),
+                0 0 0 4px rgba(124,58,255,0.5);
+    border-radius: 8px;
+  }
+}
+
+/* =========================================================================
+   Componenti riusabili
+   ========================================================================= */
 @layer components {
+
+  /* ---------- Layout containers ---------- */
+  .glass {
+    @apply bg-ink-900/70 backdrop-blur-xl border border-white/[0.06];
+  }
+  .surface {
+    @apply bg-ink-900/60 border border-white/[0.06] rounded-2xl;
+  }
+  .surface-hover {
+    @apply transition-all duration-300;
+  }
+  .surface-hover:hover {
+    @apply border-accent-500/30 bg-ink-900/80;
+    box-shadow: theme('boxShadow.card-hover');
+  }
+
+  /* ---------- Bottoni ---------- */
   .btn {
-    @apply inline-flex items-center gap-2 px-4 py-2 rounded-md font-medium transition shadow-sm
-           disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-4 h-10 rounded-xl
+           text-sm font-medium transition-all duration-200
+           disabled:opacity-40 disabled:cursor-not-allowed
+           focus-visible:outline-none select-none;
   }
   .btn-primary {
-    @apply btn bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700;
+    @apply btn text-white relative overflow-hidden;
+    background: linear-gradient(180deg, theme('colors.accent.400') 0%, theme('colors.accent.600') 100%);
+    box-shadow:
+      0 1px 0 0 rgba(255,255,255,0.20) inset,
+      0 -1px 0 0 rgba(0,0,0,0.2) inset,
+      0 6px 20px -6px rgba(124,58,255,0.55);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: linear-gradient(180deg, theme('colors.accent.300') 0%, theme('colors.accent.500') 100%);
+    box-shadow:
+      0 1px 0 0 rgba(255,255,255,0.25) inset,
+      0 -1px 0 0 rgba(0,0,0,0.2) inset,
+      0 10px 28px -6px rgba(124,58,255,0.75);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active:not(:disabled) { transform: translateY(0); }
+
+  .btn-secondary {
+    @apply btn text-zinc-100 border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/15;
   }
   .btn-ghost {
-    @apply btn bg-white text-slate-700 border border-slate-200 hover:bg-slate-50;
+    @apply btn text-zinc-300 hover:text-white hover:bg-white/[0.05];
   }
   .btn-danger {
-    @apply btn bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100;
+    @apply btn text-rose-200 border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/15 hover:border-rose-500/30;
   }
-  .input {
-    @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm
-           focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200;
+  .btn-sm { @apply h-8 px-3 text-xs gap-1.5; }
+  .btn-lg { @apply h-12 px-6 text-base gap-2.5; }
+
+  /* ---------- Form ---------- */
+  .input,
+  .select,
+  .textarea {
+    @apply w-full h-10 rounded-xl bg-ink-900/60 border border-white/[0.08]
+           px-3.5 text-sm text-zinc-100 placeholder:text-zinc-500
+           focus:outline-none focus:border-accent-500/60 focus:ring-2 focus:ring-accent-500/20
+           transition-all duration-200;
   }
-  .label {
-    @apply block text-sm font-medium text-slate-700 mb-1;
-  }
+  .textarea { @apply h-auto min-h-[96px] py-2.5 leading-relaxed; }
+  .select   { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%238a8aa3' d='M6 8 0 0h12z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 2.5rem; }
+  .label    { @apply block text-xs font-medium uppercase tracking-wider text-zinc-400 mb-2; }
+  .field    { @apply space-y-0; }
+  .help     { @apply text-xs text-zinc-500 mt-1.5; }
+  .error    { @apply text-xs text-rose-400 mt-1.5; }
+
+  /* ---------- Cards / Pills ---------- */
   .card {
-    @apply bg-white border border-slate-200 rounded-lg shadow-sm;
+    @apply surface rounded-2xl;
+    box-shadow: theme('boxShadow.card');
+  }
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border;
+  }
+  .pill-dot {
+    @apply w-1.5 h-1.5 rounded-full;
+    box-shadow: 0 0 6px currentColor;
+  }
+  .pill-success { @apply pill text-emerald-300 bg-emerald-500/10 border-emerald-400/20; }
+  .pill-warn    { @apply pill text-amber-300 bg-amber-500/10 border-amber-400/20; }
+  .pill-danger  { @apply pill text-rose-300 bg-rose-500/10 border-rose-400/20; }
+  .pill-neutral { @apply pill text-zinc-300 bg-white/5 border-white/10; }
+
+  /* ---------- Skeleton shimmer ---------- */
+  .skeleton {
+    @apply rounded-md;
+    background: linear-gradient(
+      90deg,
+      rgba(255,255,255,0.04) 0%,
+      rgba(255,255,255,0.10) 50%,
+      rgba(255,255,255,0.04) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2.2s linear infinite;
+  }
+
+  /* ---------- Section divider with accent ---------- */
+  .accent-divider {
+    @apply h-px w-full;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(124,58,255,0.45) 50%,
+      transparent 100%
+    );
+  }
+
+  /* ---------- Link inline ---------- */
+  .link {
+    @apply text-accent-300 hover:text-accent-200 transition-colors underline-offset-4 hover:underline;
+  }
+}
+
+/* =========================================================================
+   Utility extra
+   ========================================================================= */
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(180deg, #fff 0%, #bdb6d6 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-accent {
+    background: linear-gradient(120deg, theme('colors.accent.200') 0%, theme('colors.accent.400') 50%, #67e8f9 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .bg-grid {
+    background-image: theme('backgroundImage.grid-dim');
+    background-size: 24px 24px;
+  }
+  .ring-soft {
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
   }
 }

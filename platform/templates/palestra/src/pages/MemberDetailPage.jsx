@@ -1,22 +1,35 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { mc, MEMBERS_ENTITY, subscriptionStatus } from "../lib/api.js";
-import ImageFromFileId from "../components/ImageFromFileId.jsx";
+import { ArrowLeft, Pencil, Trash2, Sparkles, Loader2, Mail, Phone, CalendarDays, NotebookPen, Copy, Check } from "lucide-react";
+import { mc, MEMBERS_ENTITY, subscriptionStatus, subscriptionTypeLabel, formatDateIt } from "../lib/api.js";
+import Avatar from "../components/Avatar.jsx";
+import StatusPill from "../components/StatusPill.jsx";
+import { useToast } from "../components/Toast.jsx";
 
-const TONE_CLASS = {
-  emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  amber:   "bg-amber-50 text-amber-700 border-amber-200",
-  rose:    "bg-rose-50 text-rose-700 border-rose-200",
-};
+function InfoRow({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-start gap-3 py-3.5 border-b border-white/[0.06] last:border-0">
+      <Icon className="w-4 h-4 text-zinc-500 mt-0.5 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-xs uppercase tracking-wider text-zinc-500 mb-0.5">{label}</div>
+        <div className="text-sm text-zinc-100 break-words">{value || <span className="text-zinc-600">—</span>}</div>
+      </div>
+    </div>
+  );
+}
 
 export default function MemberDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
+
   const [record, setRecord] = useState(null);
   const [error, setError] = useState(null);
+
   const [aiBusy, setAiBusy] = useState(false);
   const [aiOutput, setAiOutput] = useState(null);
   const [aiError, setAiError] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   async function load() {
     try {
@@ -30,12 +43,13 @@ export default function MemberDetailPage() {
   useEffect(() => { load(); }, [id]);
 
   async function handleDelete() {
-    if (!confirm("Eliminare questo membro?")) return;
+    if (!confirm("Eliminare definitivamente questo membro?")) return;
     try {
       await mc.data(MEMBERS_ENTITY).delete(id);
+      toast.success("Membro eliminato.");
       navigate("/");
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     }
   }
 
@@ -47,14 +61,13 @@ export default function MemberDetailPage() {
     try {
       const res = await mc.ai.chat({
         messages: [
-          { role: "system", content: "Sei un assistente di una palestra. Scrivi messaggi brevi, motivazionali e in italiano." },
-          { role: "user", content: `Scrivi un messaggio personale (max 3 frasi) per ${m.name || "il membro"}, abbonamento ${m.subscription_type || "—"} in scadenza il ${m.subscription_until || "—"}. Includi un invito a rinnovare.` },
+          { role: "system", content: "Sei l'assistente di una palestra italiana. Tono caldo ma professionale, mai cringe. Niente emoji. Massimo 3 frasi." },
+          { role: "user", content: `Scrivi un messaggio personale per ${m.name || "un membro"}. Abbonamento ${subscriptionTypeLabel(m.subscription_type)} in scadenza il ${formatDateIt(m.subscription_until)}. Includi un invito naturale a passare in palestra o rinnovare.` },
         ],
       });
       const text = res?.message?.content || res?.choices?.[0]?.message?.content || JSON.stringify(res);
       setAiOutput(text);
     } catch (err) {
-      // Se la quota AI e' a zero, il backend ritorna 402: messaggio chiaro all'utente.
       if (err.status === 402) {
         setAiError("Credito AI esaurito per questa app. Contatta l'amministratore MelluCode per ricaricare.");
       } else {
@@ -65,54 +78,149 @@ export default function MemberDetailPage() {
     }
   }
 
-  if (error) return <p className="text-sm text-rose-600">{error}</p>;
-  if (!record) return <p className="text-slate-500">Caricamento…</p>;
+  async function copyToClipboard() {
+    if (!aiOutput) return;
+    await navigator.clipboard.writeText(aiOutput);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+
+  if (error) {
+    return (
+      <div className="card p-6 border-rose-400/30 bg-rose-500/5 max-w-lg mx-auto">
+        <p className="text-sm text-rose-200">{error}</p>
+        <Link to="/" className="btn-secondary btn-sm mt-4">← Torna ai membri</Link>
+      </div>
+    );
+  }
+  if (!record) {
+    return (
+      <div className="grid place-items-center py-32 text-zinc-500 text-sm">
+        <div className="flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-accent-400" />
+          Carico…
+        </div>
+      </div>
+    );
+  }
 
   const m = record.data || {};
   const s = subscriptionStatus(m.subscription_until);
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <Link to="/" className="text-sm text-brand-600 hover:underline">← Tutti i membri</Link>
+    <div className="max-w-3xl mx-auto space-y-6">
+      <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition">
+        <ArrowLeft className="w-3.5 h-3.5" /> Tutti i membri
+      </Link>
 
-      <div className="card p-6 mt-3">
-        <div className="flex gap-5">
-          <ImageFromFileId fileId={m.photo_file_id} alt={m.name}
-                           className="w-28 h-28 rounded-md object-cover bg-slate-100 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold">{m.name || "(senza nome)"}</h1>
-            <p className="text-sm text-slate-500">{m.email || "—"} · {m.phone || "—"}</p>
-            <p className="mt-2">
-              <span className={`text-xs px-2 py-0.5 rounded border ${TONE_CLASS[s.tone]}`}>{s.label}</span>
-              <span className="text-xs text-slate-500 ml-2">
-                {m.subscription_type || "—"} · scade {m.subscription_until || "—"}
-              </span>
+      {/* ---------- HERO ---------- */}
+      <div className="card overflow-hidden">
+        {/* banner */}
+        <div className="relative h-28 sm:h-32 bg-gradient-to-br from-accent-700/60 via-accent-500/40 to-cyan-500/30">
+          <div className="absolute inset-0 bg-grid opacity-30" />
+          <div className="absolute inset-0 bg-gradient-to-t from-ink-900 to-transparent" />
+        </div>
+        <div className="px-6 sm:px-8 pb-6 -mt-14 sm:-mt-16">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5">
+            <Avatar fileId={m.photo_file_id} name={m.name} size="xl" ring />
+            <div className="flex-1 min-w-0 sm:pb-2">
+              <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tighter2 text-white truncate">
+                {m.name || "(senza nome)"}
+              </h1>
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                <StatusPill tone={s.tone}>{s.label}</StatusPill>
+                <span className="pill-neutral">{subscriptionTypeLabel(m.subscription_type)}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 sm:pb-2">
+              <Link to={`/m/${id}/edit`} className="btn-secondary">
+                <Pencil className="w-4 h-4" /> Modifica
+              </Link>
+              <button onClick={handleDelete} className="btn-danger" title="Elimina">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-5 gap-6">
+        {/* ---------- Dati ---------- */}
+        <div className="card p-6 lg:col-span-3">
+          <h2 className="text-sm font-medium text-zinc-400 mb-1 uppercase tracking-wider">Dati membro</h2>
+          <div className="mt-2">
+            <InfoRow icon={Mail}        label="Email"       value={m.email} />
+            <InfoRow icon={Phone}       label="Telefono"    value={m.phone} />
+            <InfoRow icon={CalendarDays} label="Scadenza"   value={formatDateIt(m.subscription_until)} />
+            <InfoRow icon={NotebookPen} label="Note"        value={m.notes} />
+          </div>
+        </div>
+
+        {/* ---------- AI panel ---------- */}
+        <div className="lg:col-span-2 relative group">
+          <div className="absolute -inset-0.5 bg-gradient-to-br from-accent-500/40 via-accent-500/0 to-cyan-500/30 rounded-2xl blur-md opacity-60 group-hover:opacity-100 transition" />
+          <div className="relative card p-6 h-full flex flex-col">
+            <div className="flex items-center gap-2.5 mb-1">
+              <div className="grid place-items-center w-8 h-8 rounded-lg bg-gradient-to-br from-accent-500 to-cyan-500 shadow-glow-sm">
+                <Sparkles className="w-4 h-4 text-white" />
+              </div>
+              <h2 className="text-sm font-semibold text-white">Assistente AI</h2>
+            </div>
+            <p className="text-xs text-zinc-400 leading-relaxed mb-4">
+              Genera un messaggio personalizzato per <span className="text-zinc-200">{m.name || "questo membro"}</span>.
+              Backed by OpenRouter via MelluCode AI proxy.
             </p>
+
+            <button
+              onClick={handleAiMessage}
+              disabled={aiBusy}
+              className="btn-primary w-full"
+            >
+              {aiBusy ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Genero…</>
+              ) : (
+                <><Sparkles className="w-4 h-4" /> Genera messaggio</>
+              )}
+            </button>
+
+            {aiError && (
+              <div className="mt-4 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-400/20 text-xs text-rose-200">
+                {aiError}
+              </div>
+            )}
+
+            {aiOutput && (
+              <div className="mt-4 animate-rise">
+                <div className="relative">
+                  <div className="absolute -inset-0.5 bg-gradient-to-br from-accent-500/30 to-cyan-500/20 rounded-xl blur-sm" />
+                  <div className="relative p-4 rounded-xl bg-ink-950/80 border border-accent-500/20">
+                    <p className="text-sm text-zinc-100 leading-relaxed whitespace-pre-wrap">
+                      {aiOutput}
+                    </p>
+                    <button
+                      onClick={copyToClipboard}
+                      className="btn-ghost btn-sm mt-3 -ml-2"
+                    >
+                      {copied ? <><Check className="w-3.5 h-3.5 text-emerald-400" /> Copiato</>
+                              : <><Copy className="w-3.5 h-3.5" /> Copia</>}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex-1" />
+            <div className="mt-4 pt-3 border-t border-white/[0.06]">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium">
+                Powered by <span className="text-gradient-accent">OpenRouter</span> · gpt-4o-mini
+              </p>
+            </div>
           </div>
         </div>
+      </div>
 
-        {m.notes && (
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <p className="text-xs uppercase text-slate-400 mb-1">Note</p>
-            <p className="text-sm text-slate-700 whitespace-pre-wrap">{m.notes}</p>
-          </div>
-        )}
-
-        <div className="mt-5 flex gap-2 flex-wrap">
-          <Link to={`/m/${id}/edit`} className="btn-primary">Modifica</Link>
-          <button onClick={handleAiMessage} disabled={aiBusy} className="btn-ghost">
-            {aiBusy ? "Genero…" : "✨ Genera messaggio"}
-          </button>
-          <div className="flex-1" />
-          <button onClick={handleDelete} className="btn-danger">Elimina</button>
-        </div>
-
-        {aiError && <p className="mt-4 text-sm text-rose-600">{aiError}</p>}
-        {aiOutput && (
-          <div className="mt-4 p-3 bg-brand-50 border border-brand-200 rounded text-sm whitespace-pre-wrap">
-            {aiOutput}
-          </div>
-        )}
+      <div className="text-center pt-2">
+        <code className="text-[10px] font-mono text-zinc-600">id · {record.id}</code>
       </div>
     </div>
   );

@@ -203,9 +203,37 @@ Attenzione test:
 - usare solo `mellucode_test`, mai `mellucode_dev`.
 - Per generare `TEST_DATABASE_URL` sul server senza stampare segreti e' stato usato Node + dotenv leggendo `.env`.
 
-## Demo live `palestra-demo`
+## Bar di qualita' estetica (regola assoluta)
+
+Vedi `~/.claude/projects/.../memory/feedback_design_quality_bar.md`. **Tutte le UI MelluCode** — demo, template di partenza per Fase 2, app generate dall'orchestrator AI — devono essere a livello premium SaaS/AI (Awwwards/CSSDA/Land-book/Godly), mai grafica base/generica. Quando arrivera' la pipeline orchestrator Fase 2, questa direttiva va iniettata nei system prompt + linkati i template di riferimento come few-shot.
+
+## Demo live `palestra-demo` (UI premium dark, design system riferimento)
 
 🌐 https://mellucode.mellutecno.it/demo/palestra/
+
+Questa demo e' stata **rifatta a livello premium** (commit `___`) per essere il riferimento estetico che l'AI Fase 2 dovra' imparare. Stack visivo:
+
+- **Palette**: dark `ink-950/900/800` (zinc desaturato verso viola) + accento `accent-500` (#7c3aff violet elettrico) + cyan secondario per gradient. Aurora gradient soffuso animato come bg fisso globale.
+- **Tipografia**: Inter (display + body), Instrument Serif disponibile per accenti, JetBrains Mono per ID/code. Heading con `letter-spacing: tighter2`. `text-gradient` per i titoli principali, `text-gradient-accent` per highlights.
+- **Tokens Tailwind** (in `tailwind.config.js`): palette `ink.*` + `accent.*`, shadows `glow-sm/glow/glow-lg/card/card-hover`, animations `fade-in/rise/shimmer/aurora/pulse-glow`, backgroundImage `grid-dim/aurora-1/aurora-2`.
+- **Componenti** (`src/components/`): `Logo` (SVG inline con gradient), `Avatar` (foto MelluCode + iniziali gradient deterministico come fallback), `StatusPill` (dot luminoso), `Skeleton` (shimmer animato), `EmptyState` (illustrazione SVG inline + microcopy + CTA), `PageBackground` (aurora animata fissa), `Toast` (provider + variants success/error/info).
+- **Effetti**: `.glass` (backdrop-blur + bg/70%), `.surface-hover` (border accent + lift on hover), `:focus-visible` con doppio ring (ink-950 + accent-500/50), scrollbar custom brand-aware, selection color brand.
+- **Animazioni**: page enter `animate-rise`, hero `animate-rise-slow`, skeleton `shimmer`, background `aurora` (14s ease-in-out), button hover translateY -1px.
+
+Pagine dimostrate (tutte da considerare riferimento Fase 2):
+- **LoginPage**: split layout lg, lato sx con hero + aurora + pill features, lato dx form con icon-prefix input + bottone CTA gradient + credenziali demo in fondo. Mobile: collassa a singola colonna.
+- **MembersListPage**: header + bottone primary, **stats row** 4 card con icon + value tabular-nums + accent-tinted top-border, search input con icona, **skeleton** durante il primo load, **empty state** illustrato quando 0 membri, "no results" friendly per search vuota, grid responsive con card hover (border accent + lift).
+- **MemberFormPage**: breadcrumb, hero title, 3 card sezioni (identita'+foto, abbonamento, note), avatar con overlay camera al hover per upload, sticky action bar in fondo con glass.
+- **MemberDetailPage**: hero card con banner gradient + avatar ring, dati membro a sinistra + **panel AI a destra con gradient border glow**, output AI in box con accent ring + bottone copia.
+
+Tutti gli stati edge curati: 401 mostra "Carico la sessione…" con icona pulse, errori in card rose con bordo colorato, AI 402 messaggio chiaro "Credito esaurito, contatta admin".
+
+Stack che la demo prova: `mc.auth.login/me/logout`, `mc.data().list/get/create/update/delete`, `mc.files.upload/downloadBlob`, `mc.ai.chat` con gestione 402. Quota AI tenant a 0.1 credito sul server (sufficiente per centinaia di test).
+
+Bundle finale: 218 KB / 68 KB gz, 1 file CSS 38 KB / 7 KB gz. Lucide-react tree-shaken (~10 KB di icone usate).
+
+### Demo URL precedente (commit `caf901b`)
+La versione precedente "minimal Tailwind funzionale" e' stata sovrascritta dal deploy premium. Non torna piu' indietro perche' i token Tailwind e i path components sono cambiati.
 
 - Credenziali demo:
   - email: `admin@palestra-demo.it`
