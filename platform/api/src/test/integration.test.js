@@ -336,6 +336,91 @@ if (!TEST_DB) {
       });
       assert.equal(other.json().tenants.length, 1);
     });
+
+    test("GET /:id/stats returns tenant aggregates and AI quota for owner", async () => {
+      const reg = await registerCreator();
+      const creatorToken = reg.res.json().accessToken;
+      const { res, body } = await createTenant(creatorToken);
+      const tenant = res.json().tenant;
+
+      const adminLogin = await appLogin(tenant.slug, body.adminEmail, body.adminPassword);
+      const adminToken = adminLogin.json().accessToken;
+      const adminUser = adminLogin.json().user;
+
+      const entityRes = await app.inject({
+        method: "POST", url: "/v1/data/entities",
+        headers: bearer(adminToken),
+        payload: {
+          name: "customers",
+          label: "Customers",
+          schema: {
+            properties: { name: { type: "string" } },
+            required: ["name"],
+          },
+        },
+      });
+      assert.equal(entityRes.statusCode, 201);
+
+      const recordRes = await app.inject({
+        method: "POST", url: "/v1/data/customers",
+        headers: bearer(adminToken),
+        payload: { name: "Ada" },
+      });
+      assert.equal(recordRes.statusCode, 201);
+
+      await db.insert(schema.mcAppFiles).values({
+        tenantId: tenant.id,
+        ownerAppUserId: adminUser.id,
+        originalFilename: "logo.png",
+        mimeType: "image/png",
+        sizeBytes: 1234,
+        storagePath: `${tenant.id}/fake-file-id`,
+      });
+      await db.insert(schema.mcAiQuotas).values({
+        tenantId: tenant.id,
+        monthlyLimitMicros: 100000,
+        usedThisPeriodMicros: 25000,
+      });
+      await db.insert(schema.mcAiUsage).values({
+        tenantId: tenant.id,
+        appUserId: adminUser.id,
+        model: "test/model",
+        status: "succeeded",
+        totalTokens: 42,
+        costMicros: 7000,
+      });
+
+      const stats = await app.inject({
+        method: "GET", url: `/v1/tenants/${tenant.id}/stats`,
+        headers: bearer(creatorToken),
+      });
+      assert.equal(stats.statusCode, 200);
+      const bodyStats = stats.json().stats;
+      assert.equal(bodyStats.appUsers, 1);
+      assert.equal(bodyStats.entities, 1);
+      assert.equal(bodyStats.records, 1);
+      assert.equal(bodyStats.files.count, 1);
+      assert.equal(bodyStats.files.sizeBytes, 1234);
+      assert.equal(bodyStats.ai.monthlyLimitCredits, 0.1);
+      assert.equal(bodyStats.ai.usedThisPeriodCredits, 0.025);
+      assert.equal(bodyStats.ai.remainingCredits, 0.075);
+      assert.equal(bodyStats.ai.callsSucceeded, 1);
+      assert.equal(bodyStats.ai.totalTokens, 42);
+      assert.equal(bodyStats.ai.costCredits, 0.007);
+    });
+
+    test("GET /:id/stats does not expose tenants owned by another creator", async () => {
+      const owner = await registerCreator();
+      const t = await createTenant(owner.res.json().accessToken);
+      const other = await registerCreator();
+
+      const res = await app.inject({
+        method: "GET",
+        url: `/v1/tenants/${t.res.json().tenant.id}/stats`,
+        headers: bearer(other.res.json().accessToken),
+      });
+      assert.equal(res.statusCode, 404);
+    });
   });
 
   // ================================================================

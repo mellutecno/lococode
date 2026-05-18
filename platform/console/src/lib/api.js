@@ -135,6 +135,9 @@ export const tenants = {
   create(payload) {
     return request("/v1/tenants", { method: "POST", body: payload });
   },
+  stats(id) {
+    return request(`/v1/tenants/${encodeURIComponent(id)}/stats`);
+  },
 };
 
 // ---- Utility ----

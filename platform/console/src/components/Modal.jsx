@@ -22,7 +22,7 @@ export default function Modal({ open, onClose, title, subtitle, children, maxWid
   }[maxWidth] || "max-w-lg";
 
   return (
-    <div className="fixed inset-0 z-40 grid place-items-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-40 overflow-y-auto p-4 sm:p-6 animate-fade-in">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-md"
@@ -32,7 +32,7 @@ export default function Modal({ open, onClose, title, subtitle, children, maxWid
       {/* Dialog */}
       <div
         role="dialog" aria-modal="true"
-        className={`relative w-full ${maxW} animate-scale-in glass rounded-2xl shadow-glow-lg overflow-hidden`}
+        className={`relative my-6 sm:my-10 mx-auto w-full ${maxW} max-h-[calc(100vh-3rem)] sm:max-h-[calc(100vh-5rem)] animate-scale-in glass rounded-2xl shadow-glow-lg overflow-hidden flex flex-col`}
       >
         {/* Top accent bar */}
         <div className="h-px bg-gradient-to-r from-transparent via-accent-400 to-transparent" />
@@ -49,7 +49,7 @@ export default function Modal({ open, onClose, title, subtitle, children, maxWid
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="px-6 py-5">{children}</div>
+        <div className="px-6 py-5 overflow-y-auto">{children}</div>
       </div>
     </div>
   );

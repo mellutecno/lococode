@@ -114,32 +114,28 @@ export default function MemberDetailPage() {
       </Link>
 
       {/* ---------- HERO ---------- */}
-      <div className="card overflow-hidden">
-        {/* banner */}
-        <div className="relative h-28 sm:h-32 bg-gradient-to-br from-accent-700/60 via-accent-500/40 to-cyan-500/30">
-          <div className="absolute inset-0 bg-grid opacity-30" />
-          <div className="absolute inset-0 bg-gradient-to-t from-ink-900 to-transparent" />
-        </div>
-        <div className="px-6 sm:px-8 pb-6 -mt-14 sm:-mt-16">
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5">
-            <Avatar fileId={m.photo_file_id} name={m.name} size="xl" ring />
-            <div className="flex-1 min-w-0 sm:pb-2">
-              <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tighter2 text-white truncate">
-                {m.name || "(senza nome)"}
-              </h1>
-              <div className="flex flex-wrap items-center gap-2 mt-2">
-                <StatusPill tone={s.tone}>{s.label}</StatusPill>
-                <span className="pill-neutral">{subscriptionTypeLabel(m.subscription_type)}</span>
-              </div>
+      <div className="card relative overflow-hidden p-6 sm:p-8">
+        <div className="absolute inset-0 bg-gradient-to-br from-accent-700/40 via-accent-500/20 to-cyan-500/20" />
+        <div className="absolute inset-0 bg-grid opacity-25" />
+        <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-ink-900/80 to-transparent" />
+        <div className="relative flex flex-col sm:flex-row sm:items-center gap-5">
+          <Avatar fileId={m.photo_file_id} name={m.name} size="xl" ring />
+          <div className="flex-1 min-w-0">
+            <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tighter2 text-white truncate drop-shadow">
+              {m.name || "(senza nome)"}
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <StatusPill tone={s.tone}>{s.label}</StatusPill>
+              <span className="pill-neutral">{subscriptionTypeLabel(m.subscription_type)}</span>
             </div>
-            <div className="flex items-center gap-2 sm:pb-2">
-              <Link to={`/m/${id}/edit`} className="btn-secondary">
-                <Pencil className="w-4 h-4" /> Modifica
-              </Link>
-              <button onClick={handleDelete} className="btn-danger" title="Elimina">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link to={`/m/${id}/edit`} className="btn-secondary">
+              <Pencil className="w-4 h-4" /> Modifica
+            </Link>
+            <button onClick={handleDelete} className="btn-danger" title="Elimina">
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </div>
