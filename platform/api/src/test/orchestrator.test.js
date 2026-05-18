@@ -32,12 +32,15 @@ describe("buildSystemPrompt", () => {
     assert.ok(!prompt.includes("CATALOGO SETTORI"));
   });
 
-  test("with sector hint, prompt includes sector id + reference schema", () => {
+  test("with sector hint, prompt includes sector orientation block", () => {
     const prompt = buildSystemPrompt({ sector: SECTORS.ristorante });
-    assert.ok(prompt.includes("SETTORE INFERITO"));
+    assert.ok(prompt.includes("ORIENTAMENTO SETTORE"), "blocco orientamento mancante");
     assert.ok(prompt.includes("ristorante"));
     assert.ok(prompt.includes("warm-amber"), "tema raccomandato mancante");
-    assert.ok(prompt.includes("menu_items"), "entita' di riferimento mancante");
+    assert.ok(prompt.includes("menu_items"), "nome entita' di riferimento mancante");
+    // Importante: il prompt deve insistere che il riferimento NON e' vincolante
+    assert.ok(/non.+vincolante/i.test(prompt) || /ignora.+riferimento/i.test(prompt),
+      "il prompt deve dire chiaramente che il riferimento non e' vincolante");
   });
 });
 

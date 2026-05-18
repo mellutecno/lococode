@@ -2,10 +2,13 @@ export default {
   id: "negozio",
   label: "Negozio / E-commerce",
   description: "Catalogo prodotti, categorie, ordini e clienti per negozi fisici o online.",
+  // Rimossi "prodotti", "articoli", "clienti", "ordini", "vendita" da soli:
+  // sono parole usate in QUALSIASI gestionale e generavano falsi positivi.
   keywords: [
-    "negozio", "shop", "store", "ecommerce", "e-commerce", "catalogo",
-    "prodotti", "articoli", "ordine", "ordini", "clienti", "magazzino",
-    "vendita", "boutique", "abbigliamento",
+    "ecommerce", "e-commerce", "shop online", "negozio online",
+    "catalogo prodotti", "carrello", "checkout",
+    "magazzino", "scorte", "sku",
+    "boutique", "abbigliamento", "vendita online",
   ],
   theme: "light-modern",
   entities: [

@@ -40,33 +40,85 @@ export function listSectors() {
   }));
 }
 
-// Match veloce keyword -> settore. Conta hit pesati per lunghezza keyword
-// (parole piu' lunghe = piu' significative). Restituisce il sector con score
-// piu' alto, o null se nessun hit.
-export function inferSector(prompt) {
-  if (typeof prompt !== "string" || !prompt.trim()) return null;
-  const haystack = " " + prompt.toLowerCase() + " ";
+// Soglia minima di confidenza per ritornare un settore.
+// Sotto questa soglia consideriamo l'inferenza non affidabile e ritorniamo
+// null — l'orchestrator generera' senza sector hint, evitando bias verso
+// un settore sbagliato.
+const INFER_MIN_SCORE = 3;
+
+// Stem italiano molto basico: rimuove flessione fine parola comune
+// (sing/plur/masc/fem) per evitare miss su "paziente" vs "pazienti",
+// "avvocato" vs "avvocati", "matrimonio" vs "matrimoni" ecc.
+// Esempi: "pazienti" -> "pazient", "paziente" -> "pazient", "dentista"
+// -> "dentist", "dentisti" -> "dentist".
+// NB: non e' uno stemmer linguisticamente corretto, e' una euristica
+// abbastanza buona per il nostro matching settoriale. False positive
+// sono accettabili perche' il threshold scarta i match deboli.
+function italianStem(word) {
+  if (word.length <= 3) return word;
+  // Rimuovi al massimo 3 caratteri finali su digramma flesso
+  return word
+    .replace(/(?:zione|sione|mento|gione)$/, "")
+    .replace(/(?:tori|trici|tore|trice)$/, "")
+    .replace(/(?:ette|etti|otta|otti)$/, "")
+    .replace(/(?:che|chi|ghe|ghi|ie|ce|ci|gi|ge)$/, "")
+    .replace(/[aeiou]$/, "");
+}
+
+function tokenize(text) {
+  return text.toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+// Stem-set di un testo: insieme di stem unici delle parole.
+function stemSet(text) {
+  const out = new Set();
+  for (const tok of tokenize(text)) out.add(italianStem(tok));
+  return out;
+}
+
+// Stem-list per una keyword multi-parola: array degli stem di ogni parola.
+// Tutte devono comparire (in qualsiasi ordine) negli stem del prompt.
+function keywordStems(keyword) {
+  return tokenize(keyword).map(italianStem);
+}
+
+function scoreKeywordAgainstStems(kwStems, promptStems) {
+  for (const s of kwStems) if (!promptStems.has(s)) return 0;
+  // peso = somma lunghezze degli stem (parole piu' lunghe/composte pesano di piu')
+  return kwStems.reduce((acc, s) => acc + Math.max(2, s.length), 0);
+}
+
+function computeBest(prompt) {
+  if (typeof prompt !== "string" || !prompt.trim()) return { sector: null, score: 0 };
+  const ps = stemSet(prompt);
   let best = null;
   let bestScore = 0;
   for (const sector of Object.values(SECTORS)) {
     let score = 0;
     for (const kw of sector.keywords) {
-      const needle = kw.toLowerCase();
-      // match come parola intera (con spazi / punteggiatura attorno)
-      const re = new RegExp(`[^a-z0-9]${escapeRegex(needle)}[^a-z0-9]`, "g");
-      const matches = haystack.match(re);
-      if (matches) score += matches.length * Math.max(1, Math.floor(needle.length / 3));
+      const s = scoreKeywordAgainstStems(keywordStems(kw), ps);
+      if (s > 0) score += s;
     }
-    if (score > bestScore) {
-      bestScore = score;
-      best = sector;
-    }
+    if (score > bestScore) { bestScore = score; best = sector; }
   }
-  return best;
+  return { sector: best, score: bestScore };
 }
 
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Match keyword -> settore via stem italiano (sing/plur tolerant).
+// Ritorna sector con score piu' alto SE supera INFER_MIN_SCORE, altrimenti null.
+export function inferSector(prompt) {
+  const { sector, score } = computeBest(prompt);
+  if (score < INFER_MIN_SCORE) return null;
+  return sector;
+}
+
+// Esposto per debug: stesso risultato + score + threshold visibili.
+export function inferSectorWithScore(prompt) {
+  const r = computeBest(prompt);
+  return { ...r, threshold: INFER_MIN_SCORE };
 }
 
 // Lista compatta dei settori per il prompt orchestrator (few-shot light).

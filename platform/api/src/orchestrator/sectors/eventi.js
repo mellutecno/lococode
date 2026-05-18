@@ -2,10 +2,13 @@ export default {
   id: "eventi",
   label: "Eventi / Wedding planner / Location",
   description: "Organizzazione eventi, matrimoni, gestione fornitori, prenotazioni location.",
+  // Rimossi "evento", "festa", "musica", "sala" da soli (troppo generici).
+  // Tenuti i match forti settore-specifici.
   keywords: [
-    "eventi", "evento", "matrimonio", "matrimoni", "wedding", "cerimonia",
-    "ricevimento", "festa", "compleanno", "battesimo", "comunione",
-    "fornitori", "catering", "fotografo", "musica", "dj", "location", "sala",
+    "matrimonio", "matrimoni", "wedding", "wedding planner",
+    "cerimonia", "ricevimento", "battesimo", "comunione", "anniversario",
+    "sposi", "invitati matrimonio", "catering matrimonio", "fotografo matrimonio",
+    "organizzazione eventi", "event planning",
   ],
   theme: "editorial-rose",
   entities: [

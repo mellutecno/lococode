@@ -2,10 +2,12 @@ export default {
   id: "ristorante",
   label: "Ristorante / Pizzeria / Bar",
   description: "Gestione menu, prenotazioni tavoli, ordini, fornitori per attivita' di ristorazione.",
+  // Rimossi "bar", "prenotazione", "tavoli", "ordini" da soli (troppo
+  // ambigui — anche studi/palestre/negozi prenotano e gestiscono ordini).
   keywords: [
-    "ristorante", "pizzeria", "trattoria", "osteria", "bar", "caffe",
-    "menu", "piatti", "prenotazione", "tavoli", "ordini", "consegne",
-    "food", "cucina", "chef", "delivery",
+    "ristorante", "pizzeria", "trattoria", "osteria",
+    "menu", "piatti", "pizza", "antipasto", "primo piatto", "secondo piatto",
+    "food", "cucina", "chef", "delivery food",
   ],
   theme: "warm-amber",
   entities: [

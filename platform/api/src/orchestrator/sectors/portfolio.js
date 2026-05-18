@@ -2,10 +2,13 @@ export default {
   id: "portfolio",
   label: "Portfolio / Agenzia creativa / Freelance",
   description: "Showcase progetti, servizi, testimonianze, contatti per freelance e agenzie.",
+  // Rimossi "progetti", "clienti", "servizi", "lavori" da soli (troppo
+  // generici per qualsiasi business). Tenuti i match settore-specifici.
   keywords: [
-    "portfolio", "agenzia", "agency", "freelance", "designer", "fotografo",
-    "videomaker", "studio creativo", "progetti", "case study", "showcase",
-    "testimonianze", "clienti", "servizi", "lavori",
+    "portfolio", "agenzia creativa", "agency", "freelance",
+    "designer", "graphic designer", "web designer", "ux designer",
+    "fotografo professionale", "videomaker", "studio creativo",
+    "case study", "showcase lavori", "creative agency",
   ],
   theme: "dark-cyan",
   entities: [

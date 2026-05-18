@@ -2,9 +2,14 @@ export default {
   id: "palestra",
   label: "Palestra / Fitness / Sport",
   description: "Gestione palestre, studi personal training, corsi fitness, club sportivi.",
+  // Keyword strong: parole davvero settore-specifiche.
+  // Ho rimosso "corsi", "abbonamento", "sport" perche' matchavano in
+  // troppi contesti (scuole di musica, club di lettura, software SaaS, ecc.)
+  // e generavano falsi positivi -> output AI biasato su schema palestra.
   keywords: [
-    "palestra", "gym", "fitness", "personal trainer", "corsi", "abbonamento",
-    "allenamento", "yoga", "pilates", "crossfit", "boxe", "sport", "club sportivo",
+    "palestra", "gym", "fitness", "personal trainer",
+    "allenamento", "yoga", "pilates", "crossfit", "boxe",
+    "club sportivo", "sala pesi", "weightroom",
   ],
   theme: "dark-electric",
   entities: [

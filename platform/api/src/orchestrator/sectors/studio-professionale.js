@@ -2,10 +2,14 @@ export default {
   id: "studio-professionale",
   label: "Studio Professionale (avvocato, commercialista, medico, dentista)",
   description: "Gestione clienti, pratiche, appuntamenti, fatture per studi professionali e ambulatori.",
+  // Rimossi "studio", "consulente", "professionista", "appuntamenti",
+  // "fattura/fatture" da soli (troppo trasversali — molti business hanno
+  // appuntamenti e fatture).
   keywords: [
-    "studio", "avvocato", "commercialista", "consulente", "professionista",
+    "avvocato", "commercialista", "notaio",
     "medico", "dentista", "psicologo", "fisioterapista", "nutrizionista",
-    "pratica", "pratiche", "appuntamenti", "fattura", "fatture", "assistito",
+    "studio legale", "studio medico", "ambulatorio", "ordine professionale",
+    "pratica legale", "pratiche legali", "assistito", "paziente",
   ],
   theme: "navy-trust",
   entities: [

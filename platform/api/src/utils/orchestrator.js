@@ -31,17 +31,24 @@ ${sectorsPromptList()}`;
 
 function sectorHintBlock(sector) {
   if (!sector) return "";
-  const examples = sector.entities.slice(0, 3).map((e) => ({
-    name: e.name,
-    label: e.label,
-    fields: Object.keys(e.schema?.properties || {}).slice(0, 6),
-  }));
-  return `\n\nSETTORE INFERITO: "${sector.id}" (${sector.label}). Tema raccomandato: "${sector.theme}".
-Schema di riferimento per questo settore (NON copiarlo letteralmente — usalo come ispirazione, adattalo al prompt):
-${JSON.stringify(examples, null, 2)}
+  // Mostriamo solo nomi entita' di riferimento (senza fields completi):
+  // serve per orientare l'AI sul taglio del dominio, NON per farle copiare
+  // i nostri schemi. La struttura concreta delle entita' deve essere guidata
+  // dal prompt utente, non dal nostro template.
+  const referenceNames = sector.entities.map((e) => `${e.name} (${e.label})`).join(", ");
+  return `\n\nORIENTAMENTO SETTORE (inferito automaticamente, NON vincolante):
+Il prompt sembra del settore "${sector.id}" (${sector.label}). Tema raccomandato: "${sector.theme}".
+A titolo di esempio, app simili usano entita' come: ${referenceNames}.
 
-Se il prompt utente conferma questo settore, parti da queste entita' e adattale.
-Se il prompt va in altra direzione, ignora questo riferimento.`;
+ATTENZIONE — REGOLE DI PRIORITA':
+1. Il PROMPT UTENTE e' la fonte di verita'. Genera entita' che riflettono
+   quello che l'utente ha effettivamente descritto, NON il riferimento.
+2. Usa il riferimento SOLO per:
+   - confermare il tema visivo (puoi mettere theme="${sector.theme}" sulla
+     prima entita');
+   - capire il livello di granularita' atteso (es. 3-4 entita' core).
+3. Se l'utente ha descritto un dominio diverso da quello del riferimento,
+   IGNORA COMPLETAMENTE il riferimento e segui il prompt.`;
 }
 
 // `buildSystemPrompt(context)` produce il system prompt completo dell'orchestrator.
