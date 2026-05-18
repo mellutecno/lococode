@@ -198,6 +198,34 @@ export const mcAiUsage = pgTable("mc_ai_usage", {
   generationIdx: index("mc_ai_usage_generation_idx").on(t.generationId),
 }));
 
+// Build job delle app generate. Traccia ogni esecuzione asincrona della
+// pipeline schema-generation + frontend-build. Polled dalla Console per
+// avanzamento live "Lovable-style" senza bloccare la pagina.
+export const mcAppBuilds = pgTable("mc_app_builds", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: uuid("tenant_id").notNull().references(() => mcTenants.id, { onDelete: "cascade" }),
+  // queued -> running -> succeeded | failed
+  status: varchar("status", { length: 16 }).notNull().default("queued"),
+  // queued -> schema -> frontend -> done (o failed)
+  stage: varchar("stage", { length: 16 }).notNull().default("queued"),
+  // 0-100 indicativo per progress bar Console
+  progress: integer("progress").notNull().default(0),
+  // sequenza di messaggi human-readable, push-only: "Genero schema...", "Frontend OK", ecc.
+  messages: jsonb("messages").default([]).notNull(),
+  // opzioni passate al worker (es. { skipSchema: true })
+  options: jsonb("options").default({}).notNull(),
+  // se status=failed: testo errore mostrato all'utente
+  errorMessage: text("error_message"),
+  // dettaglio errore tecnico per debug (mai mostrato all'utente)
+  errorDetails: text("error_details"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  tenantCreatedIdx: index("mc_app_builds_tenant_created_idx").on(t.tenantId, t.createdAt),
+  tenantStatusIdx: index("mc_app_builds_tenant_status_idx").on(t.tenantId, t.status),
+}));
+
 // Record generici delle app generate. Ogni record e' JSONB, sempre scoped a tenant.
 export const mcAppRecords = pgTable("mc_app_records", {
   id: uuid("id").primaryKey().defaultRandom(),

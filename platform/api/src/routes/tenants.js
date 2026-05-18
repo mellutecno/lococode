@@ -6,11 +6,9 @@ import { hashPassword } from "../utils/hash.js";
 import { microsToCredits } from "../utils/aiCost.js";
 import { deleteFile } from "../utils/fileStorage.js";
 import { normalizeEmail, slugify } from "../utils/normalize.js";
-import { callOpenRouterChat } from "../utils/openRouterClient.js";
-import { buildSystemPrompt, extractJsonArray, validateEntityDef, pickThemeFromEntities } from "../utils/orchestrator.js";
-import { publicEntity } from "../utils/entities.js";
-import { inferSector } from "../orchestrator/sectors/_index.js";
 import { buildGeneratedFrontend, deleteGeneratedFrontend } from "../orchestrator/frontendBuilder.js";
+import { runSchemaGeneration } from "../orchestrator/schemaGeneration.js";
+import { enqueueBuild, getBuild, listBuilds } from "../orchestrator/buildRunner.js";
 
 function publicTenant(t) {
   if (!t) return null;
@@ -418,129 +416,30 @@ export default async function tenantRoutes(fastify) {
       const tenant = tenantRows[0];
       if (!tenant) return reply.code(404).send({ error: "App non trovata." });
 
-      const prompt = String(req.body.promptOverride || tenant.metadata?.initialPrompt || "").trim();
-      if (!prompt) {
-        return reply.code(400).send({ error: "Nessun prompt disponibile per questa app." });
-      }
-
-      // Inferenza settore (deterministica, keyword-based). Il risultato viene
-      // passato come contesto extra al system prompt: l'AI vede uno schema
-      // di riferimento mirato + sa che tema raccomandato usare.
-      const inferredSector = inferSector(prompt);
-      const systemPrompt = buildSystemPrompt({
-        sector: inferredSector,
-        designBrief: true,
-        themes: true,
-        includeCatalog: true,
-      });
-
-      let ai;
+      // Logica delegata a orchestrator/schemaGeneration.runSchemaGeneration
+      // (DRY: stessa funzione usata dal worker async di buildRunner).
       try {
-        ai = await callOpenRouterChat({
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: prompt.slice(0, 5000) },
-          ],
-          model: config.orchestrator.model,
-          maxTokens: config.orchestrator.maxTokens,
-          temperature: 0.2,
-          metadata: { feature: "schema-generation", tenantId: tenant.id, sectorHint: inferredSector?.id ?? null },
-          user: req.user.sub,
+        const result = await runSchemaGeneration({
+          tenant,
+          promptOverride: req.body.promptOverride,
+          ownerUserId: req.user.sub,
+          logger: req.log,
         });
+        return reply.code(201).send(result);
       } catch (err) {
-        const status = err?.code === "OPENROUTER_NOT_CONFIGURED" ? 503 : 502;
+        const map = {
+          NO_PROMPT: 400,
+          AI_NOT_CONFIGURED: 503,
+          AI_UNAVAILABLE: 502,
+          AI_INVALID_RESPONSE: 502,
+          NO_VALID_ENTITIES: 400,
+          DB_SAVE_FAILED: 502,
+        };
+        const status = map[err?.code] || 500;
         return reply.code(status).send({
-          error: err?.code === "OPENROUTER_NOT_CONFIGURED"
-            ? "AI non configurata."
-            : "Servizio AI temporaneamente non disponibile.",
+          error: err?.userMessage || "Errore generazione schema.",
+          ...(err?.details ? { details: err.details } : {}),
         });
-      }
-
-      const array = extractJsonArray(ai.reply);
-      if (!Array.isArray(array)) {
-        return reply.code(502).send({ error: "Risposta AI non valida." });
-      }
-
-      const capped = array.slice(0, config.orchestrator.maxEntities);
-      const validated = capped.map((raw, i) => validateEntityDef(raw, i));
-      const valid = validated.filter((v) => v.ok);
-      const invalid = validated.filter((v) => !v.ok);
-
-      if (valid.length === 0) {
-        return reply.code(400).send({
-          error: "Nessuna entita' valida generata.",
-          details: invalid.map((v) => v.error),
-        });
-      }
-
-      // Theme finale per il tenant: priorita' a quello scelto dall'AI nelle
-      // metadata, poi quello del settore inferito, infine fallback safe.
-      const finalTheme = pickThemeFromEntities(valid, inferredSector?.theme || "dark-electric");
-      const finalSector = inferredSector?.id ?? null;
-
-      try {
-        const created = await db.transaction(async (tx) => {
-          // Aggiorna metadata tenant con sector + theme (preserva initialPrompt
-          // e altri campi gia' presenti).
-          const nextTenantMeta = {
-            ...(tenant.metadata || {}),
-            sector: finalSector,
-            theme: finalTheme,
-            schemaGeneratedAt: new Date().toISOString(),
-          };
-          await tx
-            .update(schema.mcTenants)
-            .set({ metadata: nextTenantMeta, updatedAt: new Date() })
-            .where(eq(schema.mcTenants.id, tenant.id));
-
-          const out = [];
-          for (const v of valid) {
-            const values = {
-              tenantId: tenant.id,
-              name: v.values.name,
-              label: v.values.label,
-              jsonSchema: v.values.schema,
-              permissions: v.values.permissions,
-              metadata: v.values.metadata,
-              updatedAt: new Date(),
-            };
-
-            const existing = await tx
-              .select({ id: schema.mcAppEntities.id })
-              .from(schema.mcAppEntities)
-              .where(and(
-                eq(schema.mcAppEntities.tenantId, tenant.id),
-                eq(schema.mcAppEntities.name, v.values.name)
-              ))
-              .limit(1);
-
-            if (existing[0]) {
-              const rows = await tx
-                .update(schema.mcAppEntities)
-                .set(values)
-                .where(eq(schema.mcAppEntities.id, existing[0].id))
-                .returning();
-              out.push(publicEntity(rows[0]));
-            } else {
-              const rows = await tx
-                .insert(schema.mcAppEntities)
-                .values(values)
-                .returning();
-              out.push(publicEntity(rows[0]));
-            }
-          }
-          return out;
-        });
-
-        return reply.code(201).send({
-          entities: created,
-          created: created.length,
-          sector: finalSector,
-          theme: finalTheme,
-          errors: invalid.map((e) => e.error),
-        });
-      } catch (err) {
-        return reply.code(502).send({ error: "Errore durante il salvataggio delle entita'." });
       }
     }
   );
@@ -612,6 +511,128 @@ export default async function tenantRoutes(fastify) {
           details: String(err?.message || err).slice(0, 1000),
         });
       }
+    }
+  );
+
+  // ============================================================
+  // Build jobs asincroni (Lovable-style polling)
+  // ============================================================
+
+  // Helper interno: verifica ownership tenant. Ritorna tenant o reply 404.
+  async function loadOwnedTenant(req, reply) {
+    const rows = await db
+      .select()
+      .from(schema.mcTenants)
+      .where(and(
+        eq(schema.mcTenants.id, req.params.id),
+        eq(schema.mcTenants.ownerUserId, req.user.sub)
+      ))
+      .limit(1);
+    if (!rows[0]) {
+      reply.code(404).send({ error: "App non trovata." });
+      return null;
+    }
+    return rows[0];
+  }
+
+  // POST /v1/tenants/:id/builds  -> enqueue nuovo build, ritorna { build }
+  // Se c'e' gia' un build attivo (queued/running) per il tenant: 409 con build esistente.
+  fastify.post(
+    "/:id/builds",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+        body: {
+          type: "object",
+          properties: {
+            skipSchema: { type: "boolean" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const tenant = await loadOwnedTenant(req, reply);
+      if (!tenant) return reply;
+
+      try {
+        const { build, conflicted } = await enqueueBuild({
+          tenant,
+          ownerUserId: req.user.sub,
+          options: { skipSchema: Boolean(req.body?.skipSchema) },
+          logger: req.log,
+        });
+        return reply.code(conflicted ? 409 : 201).send({
+          build,
+          conflict: conflicted,
+        });
+      } catch (err) {
+        req.log.error({ err, tenantId: tenant.id }, "enqueueBuild failed");
+        return reply.code(500).send({ error: "Errore avvio build." });
+      }
+    }
+  );
+
+  // GET /v1/tenants/:id/builds/:buildId  -> stato corrente per polling
+  fastify.get(
+    "/:id/builds/:buildId",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id", "buildId"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            buildId: { type: "string", format: "uuid" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const tenant = await loadOwnedTenant(req, reply);
+      if (!tenant) return reply;
+
+      const build = await getBuild(tenant.id, req.params.buildId);
+      if (!build) return reply.code(404).send({ error: "Build non trovata." });
+      return { build };
+    }
+  );
+
+  // GET /v1/tenants/:id/builds  -> storia builds (default 20 piu' recenti)
+  fastify.get(
+    "/:id/builds",
+    {
+      onRequest: [fastify.authenticate],
+      schema: {
+        params: {
+          type: "object",
+          required: ["id"],
+          properties: { id: { type: "string", format: "uuid" } },
+          additionalProperties: false,
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            limit: { type: "string" },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const tenant = await loadOwnedTenant(req, reply);
+      if (!tenant) return reply;
+
+      const builds = await listBuilds(tenant.id, { limit: req.query.limit });
+      return { builds };
     }
   );
 }
