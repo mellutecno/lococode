@@ -205,7 +205,50 @@ Attenzione test:
 
 ## Bar di qualita' estetica (regola assoluta)
 
-Vedi `~/.claude/projects/.../memory/feedback_design_quality_bar.md`. **Tutte le UI MelluCode** — demo, template di partenza per Fase 2, app generate dall'orchestrator AI — devono essere a livello premium SaaS/AI (Awwwards/CSSDA/Land-book/Godly), mai grafica base/generica. Quando arrivera' la pipeline orchestrator Fase 2, questa direttiva va iniettata nei system prompt + linkati i template di riferimento come few-shot.
+Vedi `~/.claude/projects/.../memory/feedback_design_quality_bar.md`. **Tutte le UI MelluCode** — Console, demo, template di partenza per Fase 2, app generate dall'orchestrator AI — devono essere a livello premium SaaS/AI (Awwwards/CSSDA/Land-book/Godly), mai grafica base/generica. Quando arrivera' la pipeline orchestrator Fase 2, questa direttiva va iniettata nei system prompt + linkati Console e template come few-shot.
+
+**Qualita' FISSA, palette VARIABILE.** Il design system e' palette-agnostic: token Tailwind `ink.*` (sfondi) + `accent.*` (accento) + shadow `glow-*` coerente con l'accento. Cambiando solo quei tre blocchi nel `tailwind.config.js` la stessa app si veste diversa senza toccare i componenti.
+
+Preset palette per topic (libreria da espandere in Fase 2):
+- Sport/palestra: dark ink + violet electric (vedi `platform/templates/palestra/`)
+- Dev tool/platform: pure black + cyan electric (vedi `platform/console/`)
+- Ristorante: dark warm + amber/terracotta — da fare
+- Studio legale/finance: light cream o navy dark + accent oro — da fare
+- Wellness/yoga: off-white o sage dark + sage/eucalyptus — da fare
+- Beauty/fashion: cream o burgundy + fuchsia/rose — da fare
+
+## MelluCode Console (front-end del prodotto, root dominio)
+
+🌐 https://mellucode.mellutecno.it/
+
+E' il dashboard del **creator** — chi compra MelluCode entra qui, vede le sue app, ne crea di nuove. Prima di oggi la root dominio era proxata interamente all'API; ora la root serve la Console (statica) e l'API risponde solo su `/v1/*`.
+
+- **Pagine**:
+  - `/login` — login + registrazione creator (tabs), split layout con hero a sinistra (palette + pitch + features pills) e form a destra, password validation min 8.
+  - `/` — dashboard "Le tue app": stats row (totale/attive/in trial), search per nome+slug, grid card con plan/status pill + bottone "Apri" e link a `/app/:slug`, **empty state** illustrato con CTA, **skeleton** durante il load, gestione 401 con auto-refresh trasparente.
+  - **Modale "Crea app"** (premium con backdrop blur + scale-in, top-bar accento gradient, esc/backdrop-close): nome -> slug auto-derivato, advanced collapsible per admin app email/password + publicRegistration toggle.
+  - `/app/:slug` — detail card hero con avatar generato dalla prima lettera del nome, pill plan/status/registration, info rows (slug copiabile, URL pubblico cliccabile, data creazione, tenant id), panel laterale "Frontend AI" placeholder per Fase 2.
+- **Sorgente**: `platform/console/` (Vite + React + Tailwind + lucide). `src/lib/api.js` parla con `/v1/auth/*` e `/v1/tenants` direttamente (la Console NON usa l'SDK perche' l'SDK e' pensato per app-auth, qui serve auth creator).
+- **Palette**: pure black + cyan electric (vibe Vercel/Cursor) — **scelta voluta diversa dalla palestra** (dark + violet) per dimostrare in pratica che il design system e' palette-agnostic. Token `ink.*` + `accent.*` cambiano, tutto il resto (componenti, shadow `glow`, animation, glass) e' identico.
+- **Deploy**:
+  - static in `/opt/mellucode/console/` (root:root, perms default)
+  - nginx vhost riscritto: `location /v1/ -> proxy 5200`, `location /demo/palestra/ + /demo/palestra/assets/ -> alias`, `location /assets/ -> alias console assets con cache 1y`, `location / -> root console + try_files SPA fallback`
+  - **`/index.html` ha cache no-store** per pickup deploy nuovi; asset hashati restano cache 1y
+  - backup vhost pre-modifica: `/opt/mellucode-backups/nginx/mellucode.mellutecno.it.before-console.20260518-080640`
+- **Verifiche fatte this session**:
+  - `GET /` → 200 HTML Console
+  - `GET /v1/health` → 200 (API ancora online)
+  - `GET /demo/palestra/` → 200 (demo non rotta)
+  - `GET /app/anything-here` → 200 SPA fallback all'index Console
+  - `GET /assets/index-*.js` → 200 application/javascript
+  - End-to-end via curl: register creator → list tenants (0) → POST tenant → list (1, slug presente) → cleanup DB. Tutto OK.
+
+### Cosa **NON** fa ancora la Console
+- Non ha pagina "Profilo / Impostazioni" (logout c'e' nella topbar).
+- Non mostra stats per-tenant (record count, file count, AI credits). Servirebbe un endpoint aggregato `/v1/tenants/:id/stats` lato API. Annotato come prossimo step.
+- Non mostra l'admin app email creato col tenant (la response del POST contiene `initialAdmin` ma la lista no). Migliorabile aggiungendo `?include=admin` lato API o salvando lo stato lato Console post-create.
+- Niente billing/abbonamento UI. Niente recupero password.
+- Il "Crea app" crea solo il tenant — l'admin app deve essere configurato a parte (campo opzionale nel form). Per la Fase 2, il flusso "Crea app" dovra' anche aprire il prompt-to-app generator.
 
 ## Demo live `palestra-demo` (UI premium dark, design system riferimento)
 
