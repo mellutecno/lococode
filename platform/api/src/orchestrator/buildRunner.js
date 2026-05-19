@@ -18,6 +18,13 @@ import { buildGeneratedFrontend } from "./frontendBuilder.js";
 
 const ACTIVE_STATUSES = ["queued", "running"];
 
+function frontendBuildMessage(err) {
+  if (err?.code === "OPENROUTER_TIMEOUT") {
+    return "Il modello ha impiegato troppo a generare l'interfaccia. Riprova: il sistema ritenta automaticamente e usa un timeout piu' lungo.";
+  }
+  return err?.userMessage || "Frontend non generato.";
+}
+
 export function publicBuild(b) {
   if (!b) return null;
   return {
@@ -213,7 +220,7 @@ export async function runBuild(buildId, { ownerUserId, logger = console } = {}) 
       buildResult = await buildGeneratedFrontend({ tenant, entities: entityRows });
     } catch (e) {
       logger?.warn?.({ err: e, tenantId: tenant.id }, "frontend build failed");
-      await markFailed(buildId, "Frontend non generato.", e?.stack || String(e));
+      await markFailed(buildId, frontendBuildMessage(e), e?.stack || String(e));
       return;
     }
 

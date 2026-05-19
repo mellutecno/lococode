@@ -17,6 +17,7 @@ export async function callOpenRouterChat({
   temperature,
   metadata,
   user,
+  timeoutMs,
 }, openrouter = config.openrouter) {
   if (openrouter.transport === "mock") {
     const forcedContent = process.env.OPENROUTER_MOCK_SCHEMA_RESPONSE;
@@ -48,7 +49,8 @@ export async function callOpenRouterChat({
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), openrouter.timeoutMs);
+  const effectiveTimeoutMs = Number(timeoutMs || openrouter.timeoutMs || 120000);
+  const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
   const body = {
     model,
     messages,
@@ -98,8 +100,9 @@ export async function callOpenRouterChat({
     };
   } catch (err) {
     if (err?.name === "AbortError") {
-      const timeoutErr = new Error("Timeout OpenRouter.");
+      const timeoutErr = new Error(`Timeout OpenRouter dopo ${Math.round(effectiveTimeoutMs / 1000)} secondi.`);
       timeoutErr.code = "OPENROUTER_TIMEOUT";
+      timeoutErr.timeoutMs = effectiveTimeoutMs;
       throw timeoutErr;
     }
     throw err;

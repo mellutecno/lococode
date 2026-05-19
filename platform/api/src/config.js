@@ -103,7 +103,11 @@ export const config = {
     codegenEnabled: opt("FRONTEND_CODEGEN_ENABLED", "false") === "true",
     codegenModel: opt("FRONTEND_CODEGEN_MODEL", opt("ORCHESTRATOR_MODEL", DEFAULT_FRONTEND_CODEGEN_MODEL)),
     codegenMaxTokens: Number(opt("FRONTEND_CODEGEN_MAX_TOKENS", "0")),
-    codegenRetries: Number(opt("FRONTEND_CODEGEN_RETRIES", "2")),
+    codegenRetries: Number(opt("FRONTEND_CODEGEN_RETRIES", "3")),
+    // Codegen con modelli premium puo' richiedere piu' di 2 minuti.
+    // Teniamo un timeout di sicurezza per non lasciare socket appesi per ore,
+    // ma non un tappo basso che fa fallire build valide.
+    codegenTimeoutMs: Number(opt("FRONTEND_CODEGEN_TIMEOUT_MS", opt("OPENROUTER_TIMEOUT_MS", "600000"))),
   },
 };
 

@@ -316,6 +316,7 @@ export async function generateFrontendCodeWithRetry({
         temperature: attempt === 1 ? 0.35 : 0.15,
         metadata: { feature: "frontend-codegen", tenantId: tenant.id, attempt },
         user: tenant.ownerUserId,
+        timeoutMs: config.generatedApps.codegenTimeoutMs,
       });
       await logOrchestratorSuccess({
         tenantId: tenant.id,
@@ -333,6 +334,11 @@ export async function generateFrontendCodeWithRetry({
         err: e,
         requestMetadata: { attempt, layout: replacements.APP_LAYOUT },
       });
+      if (e?.code === "OPENROUTER_TIMEOUT" && attempt < attempts) {
+        previousError = `La chiamata AI precedente e' andata in timeout dopo ${Math.round((e.timeoutMs || 0) / 1000)} secondi. Riprova generando file piu' compatti e JSON valido.`;
+        logger?.warn?.({ tenantId: tenant.id, attempt, err: e }, "frontend codegen timed out; retrying");
+        continue;
+      }
       throw e;
     }
 

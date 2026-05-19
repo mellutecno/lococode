@@ -1,5 +1,45 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Codex - 2026-05-19 (fix frontend codegen timeout)
+
+Subito dopo il fix token/schema, Antonio ha rilanciato la build "Palestra":
+schema OK, 6 tabelle generate, poi errore "Frontend non generato".
+
+### Root cause reale
+- Ultima build fallita:
+  - tenant `00dcb830-4d4e-41a4-b7aa-11d37977ba3f`
+  - slug `paletra`
+  - schema pronto: 6 tabelle
+  - frontend fallito per `OPENROUTER_TIMEOUT`
+- Stack server:
+  - `callOpenRouterChat`
+  - `generateFrontendCodeWithRetry`
+  - `buildGeneratedFrontend`
+  - `runBuild`
+- Il timeout globale OpenRouter era 120 secondi. Con Claude Opus 4 e codegen
+  frontend e' troppo basso.
+
+### Fix applicato
+- `callOpenRouterChat()` accetta ora `timeoutMs` per chiamata.
+- `frontendCodegen` passa `config.generatedApps.codegenTimeoutMs`.
+- Nuova env:
+  - `FRONTEND_CODEGEN_TIMEOUT_MS` default `600000` (10 minuti)
+- `FRONTEND_CODEGEN_RETRIES` default da `2` a `3`.
+- Se OpenRouter va in timeout durante codegen e restano tentativi, ora il
+  sistema ritenta invece di fallire subito.
+- Messaggio build piu' umano per timeout codegen:
+  "Il modello ha impiegato troppo a generare l'interfaccia..."
+
+### Deploy/env da mantenere
+Sul server:
+- `FRONTEND_CODEGEN_TIMEOUT_MS=600000`
+- `FRONTEND_CODEGEN_RETRIES=3`
+
+Nota: resta un timeout di sicurezza per evitare socket appesi per ore. Non e'
+un limite funzionale basso come 120 secondi.
+
+---
+
 ## Aggiornamento Codex - 2026-05-19 (fix limite orchestrator: risposta AI troncata)
 
 Antonio ha segnalato build fallita con messaggio "Risposta AI non valida".
