@@ -103,6 +103,17 @@ Regole assolute output:
    text input vuoto, l'utente non sa che inserire.
    Esempio giusto: {name:"orario_inizio", type:"string", format:"time"}.
 
+5b. CAMPI COLORE: il front ha un color picker dedicato. NON usare mai
+   pattern hex strict (es. "^#[0-9a-fA-F]{6}$") sui colori: l'utente che
+   scrive "rosso" o "red" viene bloccato. Due opzioni accettabili:
+   a) Color picker libero: {name:"color", type:"string"} (senza pattern!) ->
+      il front mostra palette swatch + picker nativo + text hex.
+   b) Palette enumerata: {name:"color", type:"string",
+      enum:["rosso","arancio","giallo","verde","blu","viola","fucsia","grigio"]}
+      -> il front mostra swatch colorati cliccabili.
+   Per le tue app: preferisci (b) se servono colori "categorie" (es. corsi
+   per livello), preferisci (a) se serve colore libero (es. brand).
+
 6. NON INCLUDERE MAI questi campi (li gestisce il sistema, mai l'utente):
    - id (chiave primaria, generata server-side come UUID)
    - tenant_id, tenantId (isolamento multi-tenant, automatico)

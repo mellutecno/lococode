@@ -65,7 +65,41 @@ const NAME_HEURISTICS = [
   { re: /^(ora|orario|hour|time|schedule|opening|chiusura|apertura)$|_(ora|orario|hour|time|inizio|fine|start|end)$/i, kind: "time" },
   // date picker: solo giorno (compleanno, scadenza, data evento)
   { re: /(_at$|^data$|_data$|date|scadenza|expiry|deadline|nascita|birth|emissione|consegna|delivery)/i, kind: "date" },
+  // color picker nativo (nome contiene color/colour/colore)
+  { re: /(^|_)(color|colour|colore)($|_)/i, kind: "color" },
 ];
+
+// Palette default con nome italiano: usata se l'AI ha messo un enum
+// di nomi colore (rosso, blu, ecc.) o se vogliamo offrire una scelta
+// rapida prima di scrivere hex.
+export const COLOR_NAMED_PALETTE = {
+  rosso: "#ef4444", red: "#ef4444",
+  arancio: "#f59e0b", arancione: "#f59e0b", orange: "#f59e0b",
+  giallo: "#eab308", yellow: "#eab308",
+  verde: "#22c55e", green: "#22c55e",
+  ciano: "#06b6d4", cyan: "#06b6d4", azzurro: "#22d3ee",
+  blu: "#3b82f6", blue: "#3b82f6",
+  viola: "#8b5cf6", purple: "#8b5cf6",
+  fucsia: "#ec4899", pink: "#ec4899", rosa: "#ec4899",
+  nero: "#0a0a0a", black: "#0a0a0a",
+  bianco: "#fafafa", white: "#fafafa",
+  grigio: "#737373", gray: "#737373", grey: "#737373",
+};
+
+// Hex valido (#rgb o #rrggbb)
+export function isValidHex(s) {
+  return typeof s === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s);
+}
+
+// Normalizza un valore colore (nome o hex) -> hex sempre.
+export function toHexColor(value) {
+  if (!value) return "#7c3aff";
+  if (isValidHex(value)) return value.length === 4
+    ? `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`
+    : value;
+  const n = String(value).toLowerCase().trim();
+  return COLOR_NAMED_PALETTE[n] || "#7c3aff";
+}
 
 function fieldKind(name, field) {
   const n = String(name).toLowerCase();
