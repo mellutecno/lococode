@@ -1,5 +1,108 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Claude Code - 2026-05-19 sera (codegen disabilitato, palestra live)
+
+**Antonio era a un mese senza vedere una app funzionante.** Stato dopo ore di
+debugging con Codex: build palestra fallita 4 volte di fila per timeout codegen
+frontend. Ultima build queued-poi-running era appesa su una chiamata OpenRouter
+da 6+ minuti, con altri 24 minuti potenziali davanti (timeout 10 min x retry 3).
+
+### Mossa fatta adesso (Claude Code)
+1. **Cancellata la build appesa** `963f25e2`: marked failed in DB.
+2. **Disabilitato il codegen frontend** sul server: `FRONTEND_CODEGEN_ENABLED=false`
+   nel `.env` di `/opt/mellucode/platform/api/`. Il problema strutturale e' che
+   Claude Opus 4 e' troppo lento per codegen frontend (lasciato in attesa
+   sostenuta senza throttling o stream). I retry x3 con timeout 600s = 30 min
+   per build, inaccettabile.
+3. **Reset password creator** `mellucciantonio@gmail.com` -> `MellucodeOpen2026!`
+   per poter loggarsi via API e lanciare la build dal canale ufficiale (i miei
+   tentativi precedenti con node script standalone fallivano perche'
+   setImmediate del worker buildRunner gira nel process PM2, non in uno script
+   one-shot che termina subito).
+4. **Build palestra completata in 24 secondi**: `skipSchema=true` riusando le 7
+   tabelle dati gia' generate da Codex. Template parametrizzato puro
+   (dark + theme dalla metadata).
+5. **/apps/paletra/ ora HTTP 200, navigabile.**
+
+### Credenziali attuali (di servizio, da cambiare)
+- Creator MelluCode: `mellucciantonio@gmail.com` / `MellucodeOpen2026!`
+- App-user admin palestra: `mellucciantonio@gmail.com` / `Palestra2026!`
+
+### Stato codegen frontend
+Codice resta deployato (`platform/api/src/orchestrator/frontendCodegen.js`,
+fallback `_base/src/generated/GeneratedHome.jsx` e `GeneratedEntityList.jsx`).
+Disattivato a runtime via env. Per riattivarlo serve PRIMA:
+- modello piu' veloce (es. `anthropic/claude-sonnet-4.5` o anche
+  `openai/gpt-4o` come fallback)
+- cap output stretto (`FRONTEND_CODEGEN_MAX_TOKENS=8000-12000`, non infinito)
+- prompt piu' chiuso (meno richieste per generazione)
+- test su mock prima di prod
+
+### Cosa funziona ORA, end-to-end
+- Console su `/`: login, lista app, crea app con prompt, dettaglio, chat modifiche
+- Pipeline: prompt -> schema generation con Opus 4 -> template parametrizzato
+  -> build vite -> deploy su `/apps/{slug}/`
+- Time picker / date picker / format auto-detect funzionano nei form generati
+- Filtraggio system fields (no piu' "ID *" come campo utente)
+- Log AI in `mc_ai_usage` per costo trasparente
+- Multi-tenant: ogni app e' un tenant isolato, files/dati/quote separati
+
+### Cosa NON funziona ancora
+- **Codegen frontend per UI dominio-specifica**: disabilitato. Le app sono
+  esteticamente uguali (cambia solo palette+nomi). Da risolvere prima di
+  considerarci "Lovable-like".
+- **SDD / pricing / pagamento**: mai implementato in v2. Apps generate gratis.
+- **Mobile**: non testato seriamente.
+
+### Caveat sicurezza (da risolvere prossima sessione)
+- Password creator `mellucciantonio@gmail.com` appare in chiaro qui sopra
+  (necessaria per recuperare l'accesso). Antonio la cambia dalla Console o
+  via SQL.
+- OPENROUTER_API_KEY apparsa in transcript Claude precedentemente, da ruotare
+  su OpenRouter dashboard quando possibile.
+
+### Prossimo passo (proposto, NON ancora confermato)
+Antonio prova la palestra adesso. **Se va bene come prima impressione** ->
+parliamo di SDD/pricing/pagamento (il pezzo che manca da v1). **Se l'estetica
+"tutte uguali" e' bloccante** -> riattiviamo codegen con modello+cap calibrati
+(Sonnet 4.5 + 10k tokens + prompt stretto), test mock prima.
+
+Non promettere altri "prossimi passi" finche' Antonio non vede la palestra
+ora pubblicata e dice se gli basta o no.
+
+### Commit ultimi 5 (server allineato a 15d75c9)
+- `15d75c9` Increase frontend codegen timeout and retry OpenRouter timeouts
+- `f389320` Remove low orchestrator caps and handle truncated AI replies
+- `a9f4cff` Extend controlled codegen to entity list views
+- `6579523` Add controlled frontend codegen pipeline
+- `8d3d376` Improve generated apps with multi-entity navigation
+
+---
+
+## Aggiornamento Codex - 2026-05-19 (correzione codegen senza cap)
+
+Dopo aver tolto i cap bassi, la build manuale di "Palestra" ha mostrato un
+secondo problema: con `FRONTEND_CODEGEN_MAX_TOKENS=0` Claude Opus puo' restare
+appeso a generare codice troppo lungo senza chiudere rapidamente il JSON.
+
+### Decisione tecnica
+- Per lo **schema/orchestrator** manteniamo `ORCHESTRATOR_MAX_TOKENS=0`.
+- Per il **frontend codegen** NON usiamo `0`: serve un budget alto ma finito.
+- Default nuovo:
+  - `FRONTEND_CODEGEN_MAX_TOKENS=16000`
+  - `FRONTEND_CODEGEN_TIMEOUT_MS=600000`
+  - `FRONTEND_CODEGEN_RETRIES=3`
+
+Motivo: non e' un limite basso tipo 2048. E' un guardrail operativo per far
+chiudere la risposta JSON e arrivare a `npm run build`, invece di lasciare il
+processo appeso.
+
+### Stato build manuale
+- Build manuale `dcc63ddb-1554-4c7f-9ebf-a39261eaa142` interrotta e marcata
+  failed: era rimasta running in `frontend` con codegen senza budget token.
+
+---
+
 ## Aggiornamento Codex - 2026-05-19 (fix frontend codegen timeout)
 
 Subito dopo il fix token/schema, Antonio ha rilanciato la build "Palestra":
@@ -59,7 +162,9 @@ una vera risposta "sbagliata".
 - `ORCHESTRATOR_MAX_TOKENS=0` default: MelluCode non invia piu' `max_tokens`
   a OpenRouter quando il valore e' `0` o negativo. Restano solo i limiti fisici
   del provider/modello.
-- `FRONTEND_CODEGEN_MAX_TOKENS=0` default: stesso principio per codegen UI.
+- `FRONTEND_CODEGEN_MAX_TOKENS` era stato messo a `0`, ma poi corretto a
+  `16000`: il codegen frontend ha bisogno di un budget alto ma finito per
+  chiudere JSON e file.
 - `ORCHESTRATOR_MAX_ENTITIES=0` default: nessun taglio artificiale delle
   entita' generate. Il prompt chiede comunque di evitare duplicati inutili.
 - `callOpenRouterChat()` ora omette `max_tokens` se `maxTokens <= 0`.
@@ -76,10 +181,10 @@ una vera risposta "sbagliata".
 Sul server impostare/lasciare:
 - `ORCHESTRATOR_MAX_TOKENS=0`
 - `ORCHESTRATOR_MAX_ENTITIES=0`
-- `FRONTEND_CODEGEN_MAX_TOKENS=0`
+- `FRONTEND_CODEGEN_MAX_TOKENS=16000`
 
-Nota: `0` significa "nessun cap MelluCode". Se un provider richiedera' in
-futuro un valore esplicito, usare un valore alto, non 2048/6000.
+Nota: `0` significa "nessun cap MelluCode" e resta valido per lo schema.
+Sul codegen usare un valore alto e finito, non 2048/6000 e non 0.
 
 ---
 
