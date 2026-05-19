@@ -10,6 +10,7 @@ const DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini";
 // sensati) rispetto a gpt-4o-mini. Costo ~$0.01-0.05/app vs $0.0006
 // (sempre margine enorme rispetto a un prezzo €1.99+).
 const DEFAULT_ORCHESTRATOR_MODEL = "anthropic/claude-sonnet-4";
+const DEFAULT_FRONTEND_CODEGEN_MODEL = "anthropic/claude-opus-4";
 
 function req(key, fallback) {
   const v = process.env[key] ?? fallback;
@@ -96,6 +97,10 @@ export const config = {
     buildRoot: opt("GENERATED_APP_BUILD_ROOT"),
     sdkDir: opt("MELLUCODE_SDK_DIR"),
     buildTimeoutMs: Number(opt("GENERATED_APP_BUILD_TIMEOUT_MS", "600000")),
+    codegenEnabled: opt("FRONTEND_CODEGEN_ENABLED", "false") === "true",
+    codegenModel: opt("FRONTEND_CODEGEN_MODEL", opt("ORCHESTRATOR_MODEL", DEFAULT_FRONTEND_CODEGEN_MODEL)),
+    codegenMaxTokens: Number(opt("FRONTEND_CODEGEN_MAX_TOKENS", "6000")),
+    codegenRetries: Number(opt("FRONTEND_CODEGEN_RETRIES", "2")),
   },
 };
 

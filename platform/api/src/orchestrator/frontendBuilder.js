@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { config } from "../config.js";
+import { generateFrontendCodeWithRetry } from "./frontendCodegen.js";
 import { themeReplaceMap } from "./themePalettes.js";
 import { isValidThemeId } from "./themes.js";
 
@@ -207,7 +208,13 @@ export async function buildGeneratedFrontend({ tenant, entities }) {
     await copyTemplate(templateDir, workDir);
     await replaceTokensInTree(workDir, replacements, sdkDir);
     await runNpm(["install", "--silent", "--no-audit", "--no-fund", "--include=dev"], workDir, timeoutMs);
-    await runNpm(["run", "build"], workDir, timeoutMs);
+    const codegen = await generateFrontendCodeWithRetry({
+      tenant,
+      entities,
+      replacements,
+      workDir,
+      buildOnce: () => runNpm(["run", "build"], workDir, timeoutMs),
+    });
 
     const distDir = path.join(workDir, "dist");
     await fs.rm(targetDir, { recursive: true, force: true });
@@ -220,6 +227,7 @@ export async function buildGeneratedFrontend({ tenant, entities }) {
       theme,
       layout: replacements.APP_LAYOUT,
       primaryEntity: replacements.PRIMARY_ENTITY_NAME,
+      codegen,
       buildMs: Date.now() - started,
     };
   } finally {

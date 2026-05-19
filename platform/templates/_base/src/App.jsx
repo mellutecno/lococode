@@ -5,6 +5,8 @@ import LoginPage from "./pages/LoginPage.jsx";
 import EntityListPage from "./pages/EntityListPage.jsx";
 import EntityFormPage from "./pages/EntityFormPage.jsx";
 import EntityDetailPage from "./pages/EntityDetailPage.jsx";
+import GeneratedHome from "./generated/GeneratedHome.jsx";
+import "./generated/generated.css";
 import { mc, APP_LAYOUT, APP_NAME, entityRoute } from "./lib/api.js";
 import Logo from "./components/Logo.jsx";
 import PageBackground from "./components/PageBackground.jsx";
@@ -120,7 +122,7 @@ export default function App() {
         <main key={location.pathname} className="flex-1 max-w-6xl w-full mx-auto px-5 sm:px-8 py-8 sm:py-10 animate-rise">
           <Routes>
             <Route path="/login" element={<LoginPage onLoggedIn={refresh} />} />
-            <Route path="/" element={<RequireAuth user={user} loading={loading}><EntityListPage /></RequireAuth>} />
+            <Route path="/" element={<RequireAuth user={user} loading={loading}><GeneratedHome /></RequireAuth>} />
             <Route path="/new" element={<RequireAuth user={user} loading={loading}><EntityFormPage /></RequireAuth>} />
             <Route path="/r/:id" element={<RequireAuth user={user} loading={loading}><EntityDetailPage /></RequireAuth>} />
             <Route path="/r/:id/edit" element={<RequireAuth user={user} loading={loading}><EntityFormPage /></RequireAuth>} />

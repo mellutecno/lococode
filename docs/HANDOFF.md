@@ -1,5 +1,72 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Codex - 2026-05-19 (Step 3b MVP: frontend codegen controllato)
+
+Antonio ha chiesto il salto vero verso Lovable-style: non solo template
+parametrizzato, ma pagine/layout specifici per dominio generati dall'AI, con
+build obbligatoria e retry automatico se non compila.
+
+### Cosa e' stato implementato
+- Nuove env:
+  - `FRONTEND_CODEGEN_ENABLED` (`false` default locale, da attivare in prod)
+  - `FRONTEND_CODEGEN_MODEL` (default consigliato: `anthropic/claude-opus-4`)
+  - `FRONTEND_CODEGEN_MAX_TOKENS` (default `6000`)
+  - `FRONTEND_CODEGEN_RETRIES` (default `2`, max clamp interno `4`)
+- Nuovo modulo:
+  - `platform/api/src/orchestrator/frontendCodegen.js`
+- Il codegen puo' scrivere SOLO:
+  - `src/generated/GeneratedHome.jsx`
+  - `src/generated/generated.css`
+- La shell `_base` resta controllata da noi:
+  - auth
+  - routing
+  - SDK
+  - CRUD multi-entita'
+  - pagine dettaglio/form
+  - deploy `/apps/{slug}/`
+- Il file generato sostituisce solo la home/dashboard (`/`), cioe' il primo
+  impatto visivo dell'app.
+- Il builder ora fa:
+  1. copia template
+  2. token replace
+  3. `npm install`
+  4. se codegen attivo: OpenRouter -> validazione file -> scrittura file
+  5. `npm run build`
+  6. se build fallisce: nuovo tentativo AI con errore di build
+  7. publish solo se la build passa
+- `tenant.metadata.frontend.codegen` salva esito, tentativi e file generati.
+- Il costo codegen viene tracciato in `mc_ai_usage` con feature
+  `frontend-codegen`, senza scalare la quota AI dell'app generata.
+
+### Guardrail importanti
+- Vietati file fuori whitelist.
+- Vietati import esterni e import relativi non esplicitamente consentiti.
+- Vietati `dangerouslySetInnerHTML`, `eval`, `new Function`, `localStorage`,
+  `sessionStorage`, `window.location`, `XMLHttpRequest`, `fetch` diretto via URL
+  esterni e simili.
+- `generated.css` viene importato globalmente da `App.jsx`, quindi gli stili
+  generati si caricano anche se l'AI dimentica l'import nel componente.
+
+### Verifiche fatte
+- `npm test` in `platform/api`: 135 pass, 1 skip, 0 fail.
+- Smoke build con `FRONTEND_CODEGEN_ENABLED=false`: OK.
+- Smoke build con `OPENROUTER_TRANSPORT=mock` e
+  `FRONTEND_CODEGEN_ENABLED=true`: OK, build pubblicata in cartella temporanea
+  con `codegen.used=true`.
+
+### Limite attuale
+Questo e' Step 3b MVP: genera la home/dashboard specifica, non ancora tutte le
+pagine dell'app. Le route CRUD restano il template multi-entita'. Il passo
+successivo naturale e':
+- codegen controllato anche per pagine entita' principali;
+- codegen di componenti dominio-specifici (calendario, prenotazioni, kanban,
+  catalogo, ecc.) sempre con build+retry;
+- eventuale fallback automatico al template se Opus fallisce tutti i tentativi.
+
+Le app gia' esistenti non cambiano da sole: vanno rigenerate/ribuildate.
+
+---
+
 ## Aggiornamento Codex - 2026-05-18 notte (template generato meno povero: multi-entita' + layout)
 
 Antonio e' molto frustrato perche' le app generate sembrano tutte uguali e

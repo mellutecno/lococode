@@ -227,6 +227,7 @@ export async function runBuild(buildId, { ownerUserId, logger = console } = {}) 
         theme: buildResult.theme,
         layout: buildResult.layout,
         primaryEntity: buildResult.primaryEntity,
+        codegen: buildResult.codegen || null,
       },
     };
     await db

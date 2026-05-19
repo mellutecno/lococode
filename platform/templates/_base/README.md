@@ -28,6 +28,9 @@ tutte le entita' generate dall'orchestrator.
 - upload e anteprima immagini/file con `mc.files`
 - rendering automatico campi string, textarea, enum, boolean, number, date e JSON
 - varianti layout per ridurre l'effetto "tutte uguali"
+- home/dashboard in `src/generated/GeneratedHome.jsx`: fallback generico nel
+  template, sovrascrivibile dal codegen controllato quando
+  `FRONTEND_CODEGEN_ENABLED=true`
 
 ## Sviluppo locale
 
