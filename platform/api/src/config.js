@@ -87,8 +87,11 @@ export const config = {
 
   orchestrator: {
     model: opt("ORCHESTRATOR_MODEL", DEFAULT_ORCHESTRATOR_MODEL),
-    maxTokens: Number(opt("ORCHESTRATOR_MAX_TOKENS", "2048")),
-    maxEntities: Number(opt("ORCHESTRATOR_MAX_ENTITIES", "8")),
+    // 0 = nessun cap MelluCode: non inviamo max_tokens a OpenRouter.
+    // Il provider/modello conserva comunque i suoi limiti fisici.
+    maxTokens: Number(opt("ORCHESTRATOR_MAX_TOKENS", "0")),
+    // 0 = nessun taglio artificiale del numero di entita' generate.
+    maxEntities: Number(opt("ORCHESTRATOR_MAX_ENTITIES", "0")),
   },
 
   generatedApps: {
@@ -99,7 +102,7 @@ export const config = {
     buildTimeoutMs: Number(opt("GENERATED_APP_BUILD_TIMEOUT_MS", "600000")),
     codegenEnabled: opt("FRONTEND_CODEGEN_ENABLED", "false") === "true",
     codegenModel: opt("FRONTEND_CODEGEN_MODEL", opt("ORCHESTRATOR_MODEL", DEFAULT_FRONTEND_CODEGEN_MODEL)),
-    codegenMaxTokens: Number(opt("FRONTEND_CODEGEN_MAX_TOKENS", "6000")),
+    codegenMaxTokens: Number(opt("FRONTEND_CODEGEN_MAX_TOKENS", "0")),
     codegenRetries: Number(opt("FRONTEND_CODEGEN_RETRIES", "2")),
   },
 };

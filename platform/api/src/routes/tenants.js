@@ -448,6 +448,7 @@ export default async function tenantRoutes(fastify) {
           AI_NOT_CONFIGURED: 503,
           AI_UNAVAILABLE: 502,
           AI_INVALID_RESPONSE: 502,
+          AI_RESPONSE_TRUNCATED: 502,
           NO_VALID_ENTITIES: 400,
           DB_SAVE_FAILED: 502,
         };
@@ -698,6 +699,7 @@ export default async function tenantRoutes(fastify) {
           AI_NOT_CONFIGURED: 503,
           AI_UNAVAILABLE: 502,
           AI_INVALID_RESPONSE: 422,
+          AI_RESPONSE_TRUNCATED: 422,
           NO_VALID_ACTIONS: 422,
           DB_FAILED: 502,
         };

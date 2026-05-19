@@ -1,5 +1,48 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Codex - 2026-05-19 (fix limite orchestrator: risposta AI troncata)
+
+Antonio ha segnalato build fallita con messaggio "Risposta AI non valida".
+Verifica DB/server: OpenRouter aveva risposto con `finishReason: length`.
+Quindi il JSON dello schema era stato troncato dal nostro cap basso, non era
+una vera risposta "sbagliata".
+
+### Root cause
+- `ORCHESTRATOR_MAX_TOKENS` aveva default `2048`: troppo basso per schema
+  serio con Claude Opus/Sonnet su app reali.
+- Il parser provava a leggere il JSON troncato, falliva e mostrava
+  "Risposta AI non valida", messaggio fuorviante.
+- `ORCHESTRATOR_MAX_ENTITIES` aveva default `8`: altro limite artificiale
+  troppo rigido in fase test.
+
+### Fix applicato
+- `ORCHESTRATOR_MAX_TOKENS=0` default: MelluCode non invia piu' `max_tokens`
+  a OpenRouter quando il valore e' `0` o negativo. Restano solo i limiti fisici
+  del provider/modello.
+- `FRONTEND_CODEGEN_MAX_TOKENS=0` default: stesso principio per codegen UI.
+- `ORCHESTRATOR_MAX_ENTITIES=0` default: nessun taglio artificiale delle
+  entita' generate. Il prompt chiede comunque di evitare duplicati inutili.
+- `callOpenRouterChat()` ora omette `max_tokens` se `maxTokens <= 0`.
+- `schemaGeneration` ora riconosce `finish_reason` `length`/`max_tokens` e
+  restituisce `AI_RESPONSE_TRUNCATED` con messaggio chiaro, invece di
+  "Risposta AI non valida".
+- `schemaGeneration` ora attende il log usage (`logOrchestratorSuccess`) prima
+  di proseguire.
+- `extractJsonArray()` accetta anche wrapper recuperabili tipo:
+  `{ "entities": [...] }`, `{ "tables": [...] }`, `{ "schema": [...] }`,
+  `{ "data": [...] }`.
+
+### Deploy/env da mantenere
+Sul server impostare/lasciare:
+- `ORCHESTRATOR_MAX_TOKENS=0`
+- `ORCHESTRATOR_MAX_ENTITIES=0`
+- `FRONTEND_CODEGEN_MAX_TOKENS=0`
+
+Nota: `0` significa "nessun cap MelluCode". Se un provider richiedera' in
+futuro un valore esplicito, usare un valore alto, non 2048/6000.
+
+---
+
 ## Aggiornamento Codex - 2026-05-19 (Step 3b.1: codegen anche per vista dati)
 
 Prosecuzione del codegen controllato. Prima generavamo solo la home/dashboard.
@@ -58,7 +101,7 @@ build obbligatoria e retry automatico se non compila.
 - Nuove env:
   - `FRONTEND_CODEGEN_ENABLED` (`false` default locale, da attivare in prod)
   - `FRONTEND_CODEGEN_MODEL` (default consigliato: `anthropic/claude-opus-4`)
-  - `FRONTEND_CODEGEN_MAX_TOKENS` (default `6000`)
+  - `FRONTEND_CODEGEN_MAX_TOKENS` (default `0`, nessun cap MelluCode)
   - `FRONTEND_CODEGEN_RETRIES` (default `2`, max clamp interno `4`)
 - Nuovo modulo:
   - `platform/api/src/orchestrator/frontendCodegen.js`

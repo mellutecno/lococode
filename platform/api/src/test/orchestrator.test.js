@@ -117,6 +117,11 @@ describe("extractJsonArray", () => {
     const result = extractJsonArray('{\"name\":\"users\"}');
     assert.equal(result, null);
   });
+
+  test("accepts object wrapper with entities array", () => {
+    const result = extractJsonArray('{\"entities\":[{\"name\":\"users\"}]}');
+    assert.deepEqual(result, [{ name: "users" }]);
+  });
 });
 
 describe("validateEntityDef", () => {

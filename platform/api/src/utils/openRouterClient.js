@@ -49,6 +49,19 @@ export async function callOpenRouterChat({
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), openrouter.timeoutMs);
+  const body = {
+    model,
+    messages,
+    temperature,
+    user,
+    metadata,
+  };
+
+  // In fase di test/prodotto non vogliamo un tappo MelluCode basso che
+  // tronca JSON e codice. maxTokens <= 0 significa: lascia fare al provider.
+  if (Number(maxTokens) > 0) {
+    body.max_tokens = Number(maxTokens);
+  }
 
   try {
     const response = await fetch(`${openrouter.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
@@ -60,14 +73,7 @@ export async function callOpenRouterChat({
         "HTTP-Referer": openrouter.appUrl,
         "X-Title": openrouter.appTitle,
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: maxTokens,
-        temperature,
-        user,
-        metadata,
-      }),
+      body: JSON.stringify(body),
     });
 
     const text = await response.text();

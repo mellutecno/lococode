@@ -84,8 +84,11 @@ Regole assolute output:
      theme?: id valido }. Theme se presente DEVE essere uno della lista temi
      disponibili sotto. Mettilo solo sulla PRIMA entita' (quella primary),
      diventera' il tema dell'app intera.
-3. Genera da 2 a 8 entita' massimo. Concentrati sugli oggetti core del dominio.
-4. Ogni entita' deve avere fra 2 e 15 proprieta'.
+3. Genera tutte le entita' necessarie per rendere l'app usabile davvero.
+   In genere saranno 3-12 entita', ma non tagliare funzionalita' importanti
+   solo per stare basso. Evita pero' duplicati inutili o tabelle decorative.
+4. Ogni entita' deve avere le proprieta' necessarie al dominio: abbastanza
+   campi da essere utile, senza chiedere all'utente campi tecnici interni.
 5. USA SEMPRE IL FORMAT GIUSTO per campi temporali, altrimenti il form
    mostra un text input vuoto e l'utente non sa cosa scrivere:
    - campo "data X" / "X_at" / scadenza / nascita: type=string + format=date
@@ -109,8 +112,7 @@ Regole assolute output:
    Se metti uno di questi nelle properties o required, l'utente vedra' un
    campo "ID" da riempire a mano nel form -> bug grave, NON FARLO.
 
-7. Genera da 2 a 8 entita' massimo (re-iterato). Concentrati sugli oggetti core del dominio.
-6. Se la descrizione e' vaga, inferisci valori ragionevoli ma resta minimale.`,
+7. Se la descrizione e' vaga, inferisci valori ragionevoli ma resta pulito.`,
   ];
 
   if (designBrief) parts.push(DESIGN_BRIEF_SHORT);
@@ -125,11 +127,20 @@ export function extractJsonArray(text) {
   if (!text) return null;
   const trimmed = text.trim();
 
+  const fromParsed = (parsed) => {
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      for (const key of ["entities", "tables", "schema", "data"]) {
+        if (Array.isArray(parsed[key])) return parsed[key];
+      }
+    }
+    return null;
+  };
+
   // Tentativo diretto
   try {
     const parsed = JSON.parse(trimmed);
-    if (Array.isArray(parsed)) return parsed;
-    return null;
+    return fromParsed(parsed);
   } catch {}
 
   // Strip markdown fences
@@ -137,7 +148,8 @@ export function extractJsonArray(text) {
   if (fence) {
     try {
       const parsed = JSON.parse(fence[1]);
-      if (Array.isArray(parsed)) return parsed;
+      const found = fromParsed(parsed);
+      if (found) return found;
     } catch {}
   }
 

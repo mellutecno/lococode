@@ -8,6 +8,8 @@
 //   - "AI_NOT_CONFIGURED"   : OpenRouter non configurato
 //   - "AI_UNAVAILABLE"      : errore upstream OpenRouter
 //   - "AI_INVALID_RESPONSE" : reply non e' un JSON array
+//   - "AI_RESPONSE_TRUNCATED": il provider ha troncato la risposta prima
+//                              di chiudere il JSON
 //   - "NO_VALID_ENTITIES"   : nessuna entita' validata
 //   - "DB_SAVE_FAILED"      : errore inserimento DB
 //
@@ -28,6 +30,15 @@ function err(code, userMessage, extra = {}) {
   e.userMessage = userMessage;
   Object.assign(e, extra);
   return e;
+}
+
+function finishReason(ai) {
+  return ai?.choices?.[0]?.finish_reason || ai?.finish_reason || null;
+}
+
+function wasTruncated(ai) {
+  const reason = String(finishReason(ai) || "").toLowerCase();
+  return reason === "length" || reason === "max_tokens" || reason.includes("max_token");
 }
 
 export async function runSchemaGeneration({ tenant, promptOverride, ownerUserId, logger = console }) {
@@ -80,7 +91,7 @@ export async function runSchemaGeneration({ tenant, promptOverride, ownerUserId,
 
   // Log usage (best-effort, non blocca la pipeline). Cosi' il costo della
   // schema generation appare in mc_ai_usage e si puo' calibrare il pricing.
-  logOrchestratorSuccess({
+  await logOrchestratorSuccess({
     tenantId: tenant.id,
     feature: "schema-generation",
     model: aiModel,
@@ -91,10 +102,21 @@ export async function runSchemaGeneration({ tenant, promptOverride, ownerUserId,
 
   const array = extractJsonArray(ai.reply);
   if (!Array.isArray(array)) {
+    if (wasTruncated(ai)) {
+      throw err(
+        "AI_RESPONSE_TRUNCATED",
+        "La risposta AI e' stata troncata prima di completare la struttura. Ho tolto il limite basso di MelluCode: rilancia la build.",
+        {
+          finishReason: finishReason(ai),
+          reply: ai.reply?.slice(0, 500),
+        }
+      );
+    }
     throw err("AI_INVALID_RESPONSE", "Risposta AI non valida.", { reply: ai.reply?.slice(0, 500) });
   }
 
-  const capped = array.slice(0, config.orchestrator.maxEntities);
+  const maxEntities = Number(config.orchestrator.maxEntities || 0);
+  const capped = maxEntities > 0 ? array.slice(0, maxEntities) : array;
   const validated = capped.map((raw) => validateEntityDef(raw));
   const valid = validated.filter((v) => v.ok);
   const invalid = validated.filter((v) => !v.ok);
