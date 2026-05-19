@@ -31,6 +31,9 @@ tutte le entita' generate dall'orchestrator.
 - home/dashboard in `src/generated/GeneratedHome.jsx`: fallback generico nel
   template, sovrascrivibile dal codegen controllato quando
   `FRONTEND_CODEGEN_ENABLED=true`
+- lista operativa in `src/generated/GeneratedEntityList.jsx`: fallback sulla
+  lista CRUD generica, sovrascrivibile dallo stesso codegen controllato
+- `/` e' la dashboard; le liste dati vivono sempre sotto `/e/:entityName`
 
 ## Sviluppo locale
 

@@ -33,6 +33,10 @@ test("validateGeneratedFiles accetta solo file consentiti e aggiunge css fallbac
       import { APP_NAME } from "../lib/api.js";
       export default function GeneratedHome(){ return <Link to="/">{APP_NAME}</Link>; }
     `,
+    "src/generated/GeneratedEntityList.jsx": `
+      import EntityListPage from "../pages/EntityListPage.jsx";
+      export default function GeneratedEntityList(){ return <EntityListPage />; }
+    `,
   });
   assert.equal(result.ok, true);
   assert.ok(result.files["src/generated/generated.css"]);
@@ -53,5 +57,10 @@ test("validateGeneratedFiles rifiuta import esterni e API pericolose", () => {
 
   assert.equal(validateGeneratedFiles({
     "src/generated/GeneratedHome.jsx": `export default function X(){ eval("alert(1)"); return null;}`,
+  }).ok, false);
+
+  assert.equal(validateGeneratedFiles({
+    "src/generated/GeneratedHome.jsx": `export default function X(){ return null; }`,
+    "src/generated/GeneratedEntityList.jsx": `export default function Y(){ fetch("/x"); return null; }`,
   }).ok, false);
 });

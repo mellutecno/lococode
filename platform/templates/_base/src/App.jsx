@@ -6,6 +6,7 @@ import EntityListPage from "./pages/EntityListPage.jsx";
 import EntityFormPage from "./pages/EntityFormPage.jsx";
 import EntityDetailPage from "./pages/EntityDetailPage.jsx";
 import GeneratedHome from "./generated/GeneratedHome.jsx";
+import GeneratedEntityList from "./generated/GeneratedEntityList.jsx";
 import "./generated/generated.css";
 import { mc, APP_LAYOUT, APP_NAME, entityRoute } from "./lib/api.js";
 import Logo from "./components/Logo.jsx";
@@ -126,7 +127,7 @@ export default function App() {
             <Route path="/new" element={<RequireAuth user={user} loading={loading}><EntityFormPage /></RequireAuth>} />
             <Route path="/r/:id" element={<RequireAuth user={user} loading={loading}><EntityDetailPage /></RequireAuth>} />
             <Route path="/r/:id/edit" element={<RequireAuth user={user} loading={loading}><EntityFormPage /></RequireAuth>} />
-            <Route path="/e/:entityName" element={<RequireAuth user={user} loading={loading}><EntityListPage /></RequireAuth>} />
+            <Route path="/e/:entityName" element={<RequireAuth user={user} loading={loading}><GeneratedEntityList /></RequireAuth>} />
             <Route path="/e/:entityName/new" element={<RequireAuth user={user} loading={loading}><EntityFormPage /></RequireAuth>} />
             <Route path="/e/:entityName/r/:id" element={<RequireAuth user={user} loading={loading}><EntityDetailPage /></RequireAuth>} />
             <Route path="/e/:entityName/r/:id/edit" element={<RequireAuth user={user} loading={loading}><EntityFormPage /></RequireAuth>} />

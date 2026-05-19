@@ -1,5 +1,53 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Codex - 2026-05-19 (Step 3b.1: codegen anche per vista dati)
+
+Prosecuzione del codegen controllato. Prima generavamo solo la home/dashboard.
+Ora il sistema puo' generare anche una vista operativa per le liste dati,
+sempre con file whitelistati e build obbligatoria.
+
+### Cosa e' cambiato
+- Nuovo fallback template:
+  - `platform/templates/_base/src/generated/GeneratedEntityList.jsx`
+  - di default rende `EntityListPage`, quindi se il codegen non la sovrascrive
+    l'app resta comunque funzionante.
+- `App.jsx` ora usa:
+  - `/` -> `GeneratedHome`
+  - `/e/:entityName` -> `GeneratedEntityList`
+  - form e dettaglio restano quelli controllati dal template.
+- `entityRoute`, `entityNewRoute`, `recordRoute`, `recordEditRoute` non
+  mandano piu' la primary entity su `/`: ora tutte le entita' vivono sotto
+  `/e/:entityName`. Questo evita il rimbalzo sulla dashboard quando la home
+  linka alla lista primaria.
+- `frontendCodegen.js` accetta ora anche:
+  - `src/generated/GeneratedEntityList.jsx`
+- Il prompt codegen chiede all'AI:
+  - dashboard specifica;
+  - lista operativa specifica per dominio;
+  - loading, error, empty state;
+  - record cliccabili con `recordRoute`;
+  - niente create/update/delete custom, solo link alle route sicure esistenti.
+- Guardrail rafforzati:
+  - bloccati `fetch(` e `import(`;
+  - import relativi permessi solo da whitelist esplicita;
+  - import side-effect esterni bloccati.
+
+### Verifiche fatte
+- `npm test` in `platform/api`: 135 pass, 1 skip, 0 fail.
+- Smoke build con codegen disattivato: OK.
+- Smoke build con `OPENROUTER_TRANSPORT=mock` e codegen attivo, generando
+  `GeneratedHome.jsx`, `GeneratedEntityList.jsx` e `generated.css`: OK.
+
+### Limite attuale
+Siamo ancora su codegen controllato, non codegen libero dell'intera app.
+La qualita' puo' migliorare molto per primo impatto e lista operativa, ma form
+e dettaglio restano generici. Prossimo passo logico:
+- generare componenti dominio-specifici per form/dettaglio oppure widget
+  controllati (calendario, prenotazione, catalogo, kanban) su file separati,
+  sempre build+retry.
+
+---
+
 ## Aggiornamento Codex - 2026-05-19 (Step 3b MVP: frontend codegen controllato)
 
 Antonio ha chiesto il salto vero verso Lovable-style: non solo template

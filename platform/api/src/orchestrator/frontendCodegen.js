@@ -6,10 +6,12 @@ import { logOrchestratorSuccess, logOrchestratorFailure } from "../utils/aiUsage
 
 export const ALLOWED_CODEGEN_FILES = Object.freeze([
   "src/generated/GeneratedHome.jsx",
+  "src/generated/GeneratedEntityList.jsx",
   "src/generated/generated.css",
 ]);
 
 const REQUIRED_HOME_FILE = "src/generated/GeneratedHome.jsx";
+const ENTITY_LIST_FILE = "src/generated/GeneratedEntityList.jsx";
 const CSS_FILE = "src/generated/generated.css";
 const MAX_FILE_CHARS = 24000;
 
@@ -70,7 +72,9 @@ const DISALLOWED_JS = [
   "sessionStorage",
   "window.location",
   "XMLHttpRequest",
+  "fetch(",
   "import.meta",
+  "import(",
   "process.",
   "require(",
   "child_process",
@@ -157,6 +161,18 @@ export function validateGeneratedFiles(files) {
   const importError = validateImports(home);
   if (importError) return { ok: false, error: importError };
 
+  const entityList = normalized[ENTITY_LIST_FILE];
+  if (entityList) {
+    if (!/export\s+default/.test(entityList)) {
+      return { ok: false, error: "GeneratedEntityList.jsx deve esportare un default React component." };
+    }
+    const badEntityList = DISALLOWED_JS.find((needle) => entityList.includes(needle));
+    if (badEntityList) return { ok: false, error: `Uso non consentito in GeneratedEntityList.jsx: ${badEntityList}` };
+
+    const entityImportError = validateImports(entityList);
+    if (entityImportError) return { ok: false, error: entityImportError };
+  }
+
   const css = normalized[CSS_FILE];
   if (/@import|url\s*\(\s*["']?https?:/i.test(css)) {
     return { ok: false, error: "generated.css non puo' importare risorse esterne." };
@@ -184,7 +200,8 @@ function summarizeEntities(entities = []) {
 function buildCodegenPrompt({ tenant, entities, replacements, previousError = null }) {
   const entitySummary = summarizeEntities(entities);
   return `Sei MelluCode Frontend Codegen. Devi generare SOLO due file per
-personalizzare la HOME/dashboard di una web app gia' funzionante.
+personalizzare la HOME/dashboard e la LISTA operativa di una web app gia'
+funzionante.
 
 APP:
 - nome: ${tenant.name}
@@ -196,7 +213,8 @@ APP:
 ${JSON.stringify(entitySummary, null, 2)}
 
 CONTESTO TECNICO:
-- Il file vive in src/generated/GeneratedHome.jsx.
+- La dashboard vive in src/generated/GeneratedHome.jsx.
+- La lista operativa vive in src/generated/GeneratedEntityList.jsx.
 - Puoi importare SOLO:
   - react
   - react-router-dom
@@ -211,9 +229,15 @@ CONTESTO TECNICO:
   - "../lib/entityIntrospect.js"
 - Da "../lib/api.js" puoi usare: APP_NAME, APP_SUBTITLE, APP_LAYOUT, mc,
   entityRoute, entityNewRoute, recordRoute, statusTone.
-- Se vuoi caricare dati, usa mc.entities.list() e mc.data(entity.name).list({limit: 6}).
+- In GeneratedHome puoi caricare dati sintetici con mc.entities.list() e
+  mc.data(entity.name).list({limit: 6}).
+- In GeneratedEntityList devi usare useParams() per leggere entityName, poi
+  mc.entities.list() e mc.data(entity.name).list({limit: 100}).
 - Mantieni tutte le sezioni collegate: ogni card/CTA deve linkare a
   entityRoute(entity.name) o entityNewRoute(entity.name).
+- GeneratedEntityList deve mostrare loading, errore, empty state e record
+  cliccabili con recordRoute(entity.name, record.id). Non implementare create,
+  update o delete: usa i link alle route esistenti.
 
 OBIETTIVO UI:
 - Deve sembrare una dashboard/landing interna premium e specifica per dominio,
@@ -235,6 +259,7 @@ Rispondi SOLO con JSON puro, nessun markdown:
 {
   "files": {
     "src/generated/GeneratedHome.jsx": "contenuto completo del file",
+    "src/generated/GeneratedEntityList.jsx": "contenuto completo del file",
     "src/generated/generated.css": "contenuto CSS opzionale"
   }
 }`;
