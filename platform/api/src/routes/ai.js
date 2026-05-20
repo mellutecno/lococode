@@ -152,10 +152,8 @@ function quotaAllowsCall(quota) {
   const remaining = Math.max(0, limit - used);
   const reserve = creditsToMicros(config.openrouter.reservePerRequestCredits);
 
-  if (!quota.hardLimit) return { ok: true, remaining, reserve };
-  if (limit <= 0) return { ok: false, remaining, reserve, reason: "inactive" };
-  if (reserve > 0 && remaining < reserve) return { ok: false, remaining, reserve, reason: "low_credit" };
-  if (remaining <= 0) return { ok: false, remaining, reserve, reason: "empty" };
+  // Quote AI disabilitate: ogni utente puo' usare l'AI senza limiti.
+  // Il tracking in mc_ai_usage continua per trasparenza, ma non blocca.
   return { ok: true, remaining, reserve };
 }
 
