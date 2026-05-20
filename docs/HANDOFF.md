@@ -1,5 +1,81 @@
 # HANDOFF MelluCode
 
+## Aggiornamento Claude Code - 2026-05-19 notte (template premium a mano, post-palestra)
+
+Dopo la sessione serale di disabilitazione codegen e messa online della palestra,
+Antonio ha testato l'app e ha segnalato che l'estetica "tutte uguali" resta
+il problema numero uno. Invece di riattivare subito il codegen AI (rischioso),
+ho fatto un intervento pragmatico: **template `_base` riscritto a mano con
+pagine premium** che si adattano automaticamente al dominio leggendo lo schema.
+
+### Committati dopo l'ultimo HANDOFF (non ancora deployati sul server)
+1. **`a1a5ba8` HomePage premium** — sostituisce il fallback banale con una vera
+dashboard intelligente: hero aurora, stats tile per entita', sezione "In arrivo"
+(auto-detect campi data), "In scadenza" (auto-detect expiry), attivita' recente,
+azioni rapide, empty state. Zero hardcode: funziona per palestra, gelateria,
+parrucchiere, studio legale. Il tutto con glass cards, skeleton loading,
+animate-rise, text-gradient.
+2. **`99edc73` EntityListPage premium** — lista con filtri smart: status tiles
+(color-coded, con count) per entita' con enum status, search bar con clear,
+sort dropdown (recenti/vecchi/A-Z), card record con avatar+ring+status pill+hover
+glow, empty state differenziato. Si adatta automaticamente: se non c'e' status
+-> niente tiles, se non c'e' foto -> avatar iniziali gradient.
+3. **`9122a95` Color picker premium + fix pattern hex** — bug palestra: campo
+"color" con pattern `^#[0-9a-fA-F]{6}$` rendeva il form inutilizzabile. Fix:
+- `FieldRenderer.jsx`: nuovo `ColorInput` con palette swatch, color picker nativo,
+input hex/nome italiano (`rosso`, `verde`...).
+- `entityIntrospect.js`: kind "color" auto-detect, mapping nomi italiani -> hex.
+- Prompt orchestrator: vietato pattern hex strict sui colori (meglio enum nomi
+  colore -> swatch, o niente pattern -> picker libero).
+
+### Stato deploy
+- **Locale/GitHub**: allineato a `9122a95`.
+- **Server `/opt/mellucode`**: fermo a `15d75c9` (4 commit indietro). Prima di
+  testare la palestra con le nuove UI, serve deploy di questi commit + patch SQL.
+
+### Patch SQL richiesta per palestra esistente
+L'entita' `class_courses` (o chi ha il campo `color`) ha ancora il pattern hex
+strict nel jsonSchema salvato in DB. Dopo il deploy, eseguire:
+```sql
+UPDATE mc_app_entities
+SET json_schema = jsonb_set(
+  jsonb_set(json_schema, '{properties,color,pattern}', 'null'::jsonb, true),
+  '{properties,color,enum}', '["rosso","arancio","giallo","verde","ciano","blu","viola","fucsia","nero","bianco","grigio"]'::jsonb,
+  true
+)
+WHERE json_schema->'properties'->'color'->>'pattern' LIKE '^#%';
+```
+Oppure, piu' semplicemente, rimuovere il pattern e lasciare il picker libero:
+```sql
+UPDATE mc_app_entities
+SET json_schema = jsonb_set(json_schema, '{properties,color,pattern}', 'null'::jsonb, true)
+WHERE json_schema->'properties'->'color'->>'pattern' LIKE '^#%';
+```
+
+### Cosa funziona ORA (locale)
+- Template `_base` e' ora **premium SaaS/AI** anche senza codegen: ogni app
+  generata ha una dashboard che sembra disegnata su misura e liste dati con
+  filtri e search. Cambia solo il nome/palette, ma l'esperienza e' molto piu'
+  vicina a Lovable del CRUD generico precedente.
+- Color picker funzionante per campi colore.
+- Skeleton loading ovunque (mai testo "Loading...").
+
+### Cosa NON funziona ancora
+- **Codegen frontend AI**: sempre disabilitato in produzione. Il template premium
+  mitiga ma non sostituisce la personalizzazione AI per dominio.
+- **SDD / pricing / pagamento**: mai implementato in v2.
+- **Mobile**: non testato seriamente.
+
+### Prossimo passo proposto
+1. **Deploy** i 4 commit mancanti sul server (`git pull`, `npm install`, build
+   Console, restart PM2).
+2. **Patch SQL** palestra per il campo color.
+3. **Rebuild** la palestra (`skipSchema=true`, ~24 sec) e farla provare ad Antonio.
+4. Se la qualita' premium del template basta: si passa a **SDD/pricing/pagamento**.
+   Se ancora troppo generica: si riattiva codegen con Sonnet 4.5 + cap stretto.
+
+---
+
 ## Aggiornamento Claude Code - 2026-05-19 sera (codegen disabilitato, palestra live)
 
 **Antonio era a un mese senza vedere una app funzionante.** Stato dopo ore di

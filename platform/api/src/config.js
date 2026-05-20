@@ -10,7 +10,7 @@ const DEFAULT_OPENROUTER_MODEL = "openai/gpt-4o-mini";
 // sensati) rispetto a gpt-4o-mini. Costo ~$0.01-0.05/app vs $0.0006
 // (sempre margine enorme rispetto a un prezzo €1.99+).
 const DEFAULT_ORCHESTRATOR_MODEL = "anthropic/claude-sonnet-4";
-const DEFAULT_FRONTEND_CODEGEN_MODEL = "anthropic/claude-opus-4";
+const DEFAULT_FRONTEND_CODEGEN_MODEL = "anthropic/claude-sonnet-4";
 
 function req(key, fallback) {
   const v = process.env[key] ?? fallback;
@@ -102,12 +102,13 @@ export const config = {
     buildTimeoutMs: Number(opt("GENERATED_APP_BUILD_TIMEOUT_MS", "600000")),
     codegenEnabled: opt("FRONTEND_CODEGEN_ENABLED", "false") === "true",
     codegenModel: opt("FRONTEND_CODEGEN_MODEL", opt("ORCHESTRATOR_MODEL", DEFAULT_FRONTEND_CODEGEN_MODEL)),
-    codegenMaxTokens: Number(opt("FRONTEND_CODEGEN_MAX_TOKENS", "0")),
-    codegenRetries: Number(opt("FRONTEND_CODEGEN_RETRIES", "3")),
-    // Codegen con modelli premium puo' richiedere piu' di 2 minuti.
-    // Teniamo un timeout di sicurezza per non lasciare socket appesi per ore,
-    // ma non un tappo basso che fa fallire build valide.
-    codegenTimeoutMs: Number(opt("FRONTEND_CODEGEN_TIMEOUT_MS", opt("OPENROUTER_TIMEOUT_MS", "600000"))),
+    // Codegen usa Sonnet 4 (piu' veloce di Opus) e genera solo la Home.
+    // Budget 10000 token e' sufficiente per un file JSX + CSS, senza far
+    // restare il provider appeso a generare output infiniti.
+    codegenMaxTokens: Number(opt("FRONTEND_CODEGEN_MAX_TOKENS", "10000")),
+    codegenRetries: Number(opt("FRONTEND_CODEGEN_RETRIES", "2")),
+    // Sonnet 4 genera la Home in 60-120s. 5 min e' un guardrail sicuro.
+    codegenTimeoutMs: Number(opt("FRONTEND_CODEGEN_TIMEOUT_MS", "300000")),
   },
 };
 

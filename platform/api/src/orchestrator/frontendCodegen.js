@@ -6,14 +6,29 @@ import { logOrchestratorSuccess, logOrchestratorFailure } from "../utils/aiUsage
 
 export const ALLOWED_CODEGEN_FILES = Object.freeze([
   "src/generated/GeneratedHome.jsx",
-  "src/generated/GeneratedEntityList.jsx",
   "src/generated/generated.css",
 ]);
 
 const REQUIRED_HOME_FILE = "src/generated/GeneratedHome.jsx";
-const ENTITY_LIST_FILE = "src/generated/GeneratedEntityList.jsx";
 const CSS_FILE = "src/generated/generated.css";
 const MAX_FILE_CHARS = 24000;
+
+const FALLBACK_HOME = `import "./generated.css";
+import HomePage from "../pages/HomePage.jsx";
+
+export default function GeneratedHome() {
+  return <HomePage />;
+}
+`;
+
+const FALLBACK_ENTITY_LIST = `import EntityListPage from "../pages/EntityListPage.jsx";
+
+export default function GeneratedEntityList() {
+  return <EntityListPage />;
+}
+`;
+
+const FALLBACK_CSS = "/* MelluCode generated styles */\n";
 
 function isObj(v) {
   return v && typeof v === "object" && !Array.isArray(v);
@@ -161,18 +176,6 @@ export function validateGeneratedFiles(files) {
   const importError = validateImports(home);
   if (importError) return { ok: false, error: importError };
 
-  const entityList = normalized[ENTITY_LIST_FILE];
-  if (entityList) {
-    if (!/export\s+default/.test(entityList)) {
-      return { ok: false, error: "GeneratedEntityList.jsx deve esportare un default React component." };
-    }
-    const badEntityList = DISALLOWED_JS.find((needle) => entityList.includes(needle));
-    if (badEntityList) return { ok: false, error: `Uso non consentito in GeneratedEntityList.jsx: ${badEntityList}` };
-
-    const entityImportError = validateImports(entityList);
-    if (entityImportError) return { ok: false, error: entityImportError };
-  }
-
   const css = normalized[CSS_FILE];
   if (/@import|url\s*\(\s*["']?https?:/i.test(css)) {
     return { ok: false, error: "generated.css non puo' importare risorse esterne." };
@@ -199,9 +202,10 @@ function summarizeEntities(entities = []) {
 
 function buildCodegenPrompt({ tenant, entities, replacements, previousError = null }) {
   const entitySummary = summarizeEntities(entities);
-  return `Sei MelluCode Frontend Codegen. Devi generare SOLO due file per
-personalizzare la HOME/dashboard e la LISTA operativa di una web app gia'
-funzionante.
+  return `Sei MelluCode Frontend Codegen. Devi generare SOLO il file per
+personalizzare la HOME/dashboard di una web app gia' funzionante.
+La lista dati e le pagine CRUD sono gia' gestite dal template: tu devi solo
+fare la dashboard/hero di primo impatto.
 
 APP:
 - nome: ${tenant.name}
@@ -213,8 +217,7 @@ APP:
 ${JSON.stringify(entitySummary, null, 2)}
 
 CONTESTO TECNICO:
-- La dashboard vive in src/generated/GeneratedHome.jsx.
-- La lista operativa vive in src/generated/GeneratedEntityList.jsx.
+- Il file da generare e' src/generated/GeneratedHome.jsx.
 - Puoi importare SOLO:
   - react
   - react-router-dom
@@ -231,13 +234,8 @@ CONTESTO TECNICO:
   entityRoute, entityNewRoute, recordRoute, statusTone.
 - In GeneratedHome puoi caricare dati sintetici con mc.entities.list() e
   mc.data(entity.name).list({limit: 6}).
-- In GeneratedEntityList devi usare useParams() per leggere entityName, poi
-  mc.entities.list() e mc.data(entity.name).list({limit: 100}).
 - Mantieni tutte le sezioni collegate: ogni card/CTA deve linkare a
   entityRoute(entity.name) o entityNewRoute(entity.name).
-- GeneratedEntityList deve mostrare loading, errore, empty state e record
-  cliccabili con recordRoute(entity.name, record.id). Non implementare create,
-  update o delete: usa i link alle route esistenti.
 
 OBIETTIVO UI:
 - Deve sembrare una dashboard/landing interna premium e specifica per dominio,
@@ -259,7 +257,6 @@ Rispondi SOLO con JSON puro, nessun markdown:
 {
   "files": {
     "src/generated/GeneratedHome.jsx": "contenuto completo del file",
-    "src/generated/GeneratedEntityList.jsx": "contenuto completo del file",
     "src/generated/generated.css": "contenuto CSS opzionale"
   }
 }`;
@@ -361,9 +358,18 @@ export async function generateFrontendCodeWithRetry({
     }
   }
 
-  throw new Error(
-    `Frontend codegen non compilato dopo ${attempts} tentativi.` +
-    (previousError ? ` Ultimo errore: ${previousError}` : "") +
-    (lastValidationError ? ` Validazione: ${lastValidationError}` : "")
-  );
+  // Fallback graceful: ripristina i file originali del template e builda.
+  // L'utente ottiene comunque un'app funzionante con il template premium.
+  await writeGeneratedFiles(workDir, {
+    [REQUIRED_HOME_FILE]: FALLBACK_HOME,
+    [CSS_FILE]: FALLBACK_CSS,
+    "src/generated/GeneratedEntityList.jsx": FALLBACK_ENTITY_LIST,
+  });
+  await buildOnce();
+  return {
+    enabled: true,
+    used: false,
+    attempts,
+    error: previousError || lastValidationError || "Codegen fallito, usato fallback template.",
+  };
 }
