@@ -111,9 +111,7 @@ const ALLOWED_RELATIVE_IMPORTS = new Set([
   "../pages/EntityListPage.jsx",
   "../components/Avatar.jsx",
   "../components/StatusPill.jsx",
-  "../components/Skeleton.jsx",
   "../components/EmptyState.jsx",
-  "../components/FieldRenderer.jsx",
   "../lib/entityIntrospect.js",
 ]);
 
@@ -226,9 +224,7 @@ CONTESTO TECNICO:
   - "../pages/EntityListPage.jsx"
   - "../components/Avatar.jsx"
   - "../components/StatusPill.jsx"
-  - "../components/Skeleton.jsx"
   - "../components/EmptyState.jsx"
-  - "../components/FieldRenderer.jsx"
   - "../lib/entityIntrospect.js"
 - Da "../lib/api.js" puoi usare: APP_NAME, APP_SUBTITLE, APP_LAYOUT, mc,
   entityRoute, entityNewRoute, recordRoute, statusTone.
